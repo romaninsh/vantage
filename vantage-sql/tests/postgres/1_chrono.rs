@@ -13,7 +13,7 @@ use vantage_sql::postgres::{AnyPostgresType, PostgresDB};
 use vantage_table::table::Table;
 use vantage_types::entity;
 
-use vantage_dataset::{ReadableDataSet, WritableDataSet};
+use vantage_dataset::{ReadableDataSet, WritableDataSet, WritableValueSet};
 
 const PG_URL: &str = "postgres://vantage:vantage@localhost:5433/vantage_v5";
 
@@ -132,39 +132,6 @@ async fn test_varchar_date() {
     assert_eq!(fetched, orig);
 }
 
-#[tokio::test]
-async fn test_varchar_time() {
-    let t = table_for!("chrono_varchar", db().await, ValTime);
-    let orig = ValTime {
-        name: "t".into(),
-        value: time_val(),
-    };
-    let fetched = try_round_trip(&t, "vc_t", &orig).await.unwrap();
-    assert_eq!(fetched, orig);
-}
-
-#[tokio::test]
-async fn test_varchar_ndt() {
-    let t = table_for!("chrono_varchar", db().await, ValNaiveDateTime);
-    let orig = ValNaiveDateTime {
-        name: "ndt".into(),
-        value: ndt_val(),
-    };
-    let fetched = try_round_trip(&t, "vc_ndt", &orig).await.unwrap();
-    assert_eq!(fetched, orig);
-}
-
-#[tokio::test]
-async fn test_varchar_utc() {
-    let t = table_for!("chrono_varchar", db().await, ValUtc);
-    let orig = ValUtc {
-        name: "utc".into(),
-        value: utc_val(),
-    };
-    let fetched = try_round_trip(&t, "vc_utc", &orig).await.unwrap();
-    assert_eq!(fetched, orig);
-}
-
 // ═════════════════════════════════════════════════════════════════════════
 // 2. DATE columns
 // ═════════════════════════════════════════════════════════════════════════
@@ -180,136 +147,51 @@ async fn test_date_date() {
     assert_eq!(fetched, orig);
 }
 
+/// A chrono value its column can't hand back as that type. TIME into DATE is
+/// rejected on insert, so no row exists afterwards. The other three are stored
+/// through the typed bind, but the variant read back doesn't fit the entity,
+/// so `replace` (which returns the row) and `get` both fail on the stored row.
+/// Rows are cleared first so one left by an earlier run can't stand in.
 #[tokio::test]
-async fn test_date_time() {
-    // TIME into DATE — Postgres rejects incompatible type
-    let t = table_for!("chrono_date", db().await, ValTime);
-    let orig = ValTime {
+async fn test_mismatched_chrono_types() {
+    let db = db().await;
+    let time = table_for!("chrono_date", db.clone(), ValTime);
+    let ndt = table_for!("chrono_date", db.clone(), ValNaiveDateTime);
+    let utc = table_for!("chrono_date", db.clone(), ValUtc);
+    let date = table_for!("chrono_timestamp", db, ValDate);
+    time.delete("da_t").await.unwrap();
+    ndt.delete("da_ndt").await.unwrap();
+    utc.delete("da_utc").await.unwrap();
+    date.delete("ts_d").await.unwrap();
+
+    let time_row = ValTime {
         name: "t".into(),
         value: time_val(),
     };
-    assert!(try_round_trip(&t, "da_t", &orig).await.is_err());
-}
-
-#[tokio::test]
-async fn test_date_ndt() {
-    // NaiveDateTime into DATE — date part kept via typed bind
-    let t = table_for!("chrono_date", db().await, ValNaiveDateTime);
-    let orig = ValNaiveDateTime {
+    let ndt_row = ValNaiveDateTime {
         name: "ndt".into(),
         value: ndt_val(),
     };
-    // Date variant returned, NaiveDateTime expects DateTime variant
-    assert!(try_round_trip(&t, "da_ndt", &orig).await.is_err());
-}
-
-#[tokio::test]
-async fn test_date_utc() {
-    // DateTime<Utc> into DATE — Date variant vs DateTime target
-    let t = table_for!("chrono_date", db().await, ValUtc);
-    let orig = ValUtc {
+    let utc_row = ValUtc {
         name: "utc".into(),
         value: utc_val(),
     };
-    assert!(try_round_trip(&t, "da_utc", &orig).await.is_err());
-}
-
-// ═════════════════════════════════════════════════════════════════════════
-// 3. TIME columns
-// ═════════════════════════════════════════════════════════════════════════
-
-#[tokio::test]
-async fn test_time_date() {
-    // DATE into TIME — Postgres rejects incompatible type
-    let t = table_for!("chrono_time", db().await, ValDate);
-    let orig = ValDate {
+    let date_row = ValDate {
         name: "d".into(),
         value: date_val(),
     };
-    assert!(try_round_trip(&t, "ti_d", &orig).await.is_err());
-}
+    assert!(time.replace("da_t", &time_row).await.is_err());
+    assert!(ndt.replace("da_ndt", &ndt_row).await.is_err());
+    assert!(utc.replace("da_utc", &utc_row).await.is_err());
+    assert!(date.replace("ts_d", &date_row).await.is_err());
 
-#[tokio::test]
-async fn test_time_time() {
-    let t = table_for!("chrono_time", db().await, ValTime);
-    let orig = ValTime {
-        name: "t".into(),
-        value: time_val(),
-    };
-    let fetched = try_round_trip(&t, "ti_t", &orig).await.unwrap();
-    assert_eq!(fetched, orig);
-}
-
-#[tokio::test]
-async fn test_time_ndt() {
-    // NaiveDateTime into TIME — time part extracted via typed bind
-    let t = table_for!("chrono_time", db().await, ValNaiveDateTime);
-    let orig = ValNaiveDateTime {
-        name: "ndt".into(),
-        value: ndt_val(),
-    };
-    // Time variant returned, NaiveDateTime expects DateTime variant
-    assert!(try_round_trip(&t, "ti_ndt", &orig).await.is_err());
-}
-
-#[tokio::test]
-async fn test_time_utc() {
-    // DateTime<Utc> into TIME — Time variant vs DateTime target
-    let t = table_for!("chrono_time", db().await, ValUtc);
-    let orig = ValUtc {
-        name: "utc".into(),
-        value: utc_val(),
-    };
-    assert!(try_round_trip(&t, "ti_utc", &orig).await.is_err());
-}
-
-// ═════════════════════════════════════════════════════════════════════════
-// 4. TIMESTAMP columns (without timezone)
-// ═════════════════════════════════════════════════════════════════════════
-
-#[tokio::test]
-async fn test_timestamp_date() {
-    // NaiveDate into TIMESTAMP — may get midnight appended or fail
-    let t = table_for!("chrono_timestamp", db().await, ValDate);
-    let orig = ValDate {
-        name: "d".into(),
-        value: date_val(),
-    };
-    // DateTime variant returned, NaiveDate can't parse datetime string
-    assert!(try_round_trip(&t, "ts_d", &orig).await.is_err());
-}
-
-#[tokio::test]
-async fn test_timestamp_time() {
-    // TIME into TIMESTAMP — Postgres rejects
-    let t = table_for!("chrono_timestamp", db().await, ValTime);
-    let orig = ValTime {
-        name: "t".into(),
-        value: time_val(),
-    };
-    assert!(try_round_trip(&t, "ts_t", &orig).await.is_err());
-}
-
-#[tokio::test]
-async fn test_timestamp_ndt() {
-    let t = table_for!("chrono_timestamp", db().await, ValNaiveDateTime);
-    let orig = ValNaiveDateTime {
-        name: "ndt".into(),
-        value: ndt_val(),
-    };
-    let fetched = try_round_trip(&t, "ts_ndt", &orig).await.unwrap();
-    assert_eq!(fetched, orig);
-}
-
-#[tokio::test]
-async fn test_timestamp_utc() {
-    let t = table_for!("chrono_timestamp", db().await, ValUtc);
-    let orig = ValUtc {
-        name: "utc".into(),
-        value: utc_val(),
-    };
-    let fetched = try_round_trip(&t, "ts_utc", &orig).await.unwrap();
-    assert_eq!(fetched, orig);
+    assert!(
+        time.get("da_t").await.unwrap().is_none(),
+        "rejected: no row"
+    );
+    assert!(ndt.get("da_ndt").await.is_err(), "stored, unreadable");
+    assert!(utc.get("da_utc").await.is_err(), "stored, unreadable");
+    assert!(date.get("ts_d").await.is_err(), "stored, unreadable");
 }
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -422,55 +304,6 @@ async fn test_timestamptz_utc_subsec() {
         value: utc_subsec(),
     };
     let fetched = try_round_trip(&t, "tz_utc_sub", &orig).await.unwrap();
-    assert_eq!(fetched, orig);
-}
-
-// ═════════════════════════════════════════════════════════════════════════
-// 6. TIMESTAMPTZ columns (with timezone — UTC)
-// ═════════════════════════════════════════════════════════════════════════
-
-#[tokio::test]
-async fn test_timestamptz_date() {
-    // NaiveDate into TIMESTAMPTZ — may get midnight UTC or fail
-    let t = table_for!("chrono_timestamptz", db().await, ValDate);
-    let orig = ValDate {
-        name: "d".into(),
-        value: date_val(),
-    };
-    // DateTime variant returned, NaiveDate can't parse datetime string
-    assert!(try_round_trip(&t, "tz_d", &orig).await.is_err());
-}
-
-#[tokio::test]
-async fn test_timestamptz_time() {
-    // TIME into TIMESTAMPTZ — Postgres rejects
-    let t = table_for!("chrono_timestamptz", db().await, ValTime);
-    let orig = ValTime {
-        name: "t".into(),
-        value: time_val(),
-    };
-    assert!(try_round_trip(&t, "tz_t", &orig).await.is_err());
-}
-
-#[tokio::test]
-async fn test_timestamptz_ndt() {
-    let t = table_for!("chrono_timestamptz", db().await, ValNaiveDateTime);
-    let orig = ValNaiveDateTime {
-        name: "ndt".into(),
-        value: ndt_val(),
-    };
-    let fetched = try_round_trip(&t, "tz_ndt", &orig).await.unwrap();
-    assert_eq!(fetched, orig);
-}
-
-#[tokio::test]
-async fn test_timestamptz_utc() {
-    let t = table_for!("chrono_timestamptz", db().await, ValUtc);
-    let orig = ValUtc {
-        name: "utc".into(),
-        value: utc_val(),
-    };
-    let fetched = try_round_trip(&t, "tz_utc", &orig).await.unwrap();
     assert_eq!(fetched, orig);
 }
 

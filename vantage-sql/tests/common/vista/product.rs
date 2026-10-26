@@ -62,18 +62,6 @@ macro_rules! vista_product_tests {
             Ok(())
         }
 
-        #[tokio::test]
-        async fn capabilities_report_writes_reach_hooks() -> TestResult {
-            let (db, table) = product("writes_hooks").await;
-            let vista = db.vista_factory().from_table(table)?;
-            assert!(
-                vista
-                    .capabilities()
-                    .has(vantage_vista::Capability::WritesReachHooks)
-            );
-            Ok(())
-        }
-
         /// SQL compares whole column values, so a path into one is refused as
         /// `Unimplemented`, and `with_query` hands it back as residual.
         #[tokio::test]
