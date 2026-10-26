@@ -2,7 +2,7 @@
 #
 # Other repos running the shared pipeline add their own keys; vantage keeps
 # every default:
-#   runner / build_runner / small_runner   runner labels (ubuntu-latest)
+#   runner / build_runner / small_runner   runner labels (ubuntu-26.04)
 #   env: {VAR: value}                      extra env for every cargo job
 #   dependents: true                       also test members depending on a changed one
 #   cache: warpbuild                       WarpBuild's cache instead of rust-cache

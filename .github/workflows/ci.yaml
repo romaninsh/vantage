@@ -37,7 +37,7 @@ jobs:
   lint:
     needs: changes
     if: needs.changes.outputs.crates != '[]'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     timeout-minutes: 30
@@ -68,7 +68,7 @@ jobs:
   public-api:
     needs: changes
     if: needs.changes.outputs.api == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     timeout-minutes: 20
@@ -126,7 +126,7 @@ jobs:
   ci-self:
     needs: changes
     if: needs.changes.outputs.ci_self == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     timeout-minutes: 10
@@ -164,7 +164,7 @@ jobs:
   doctests:
     needs: changes
     if: needs.changes.outputs.libs != '[]'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     timeout-minutes: 30
@@ -203,7 +203,7 @@ jobs:
   gated:
     needs: changes
     if: needs.changes.outputs.gated == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     timeout-minutes: 40

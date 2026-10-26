@@ -81,10 +81,19 @@ runs:
     # The week rotates the key: a restore-key hit saves restored plus new
     # downloads, so without it the cache only grows. `deps-` and `cargo-` keep
     # the two kinds apart: WarpBuild matched a key across path lists.
+    # The OS release too (ubuntu26.04, macos15): runner.os is only "Linux", and
+    # dependencies built on one release mustn't be restored on another.
     - if: inputs.backend == 'warpbuild'
       id: week
       shell: bash
-      run: echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+      run: |
+        echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+        if [ -f /etc/os-release ]; then
+          os=$(. /etc/os-release && echo "$ID$VERSION_ID")
+        else
+          os=macos$(sw_vers -productVersion | cut -d. -f1)
+        fi
+        echo "os=$os" >> "$GITHUB_OUTPUT"
     # The keys hash the caller's lockfiles only: the shared checkout (.ci/)
     # brings vantage's own, and every pin bump would rotate the caller's key.
     - if: inputs.cache == 'true' && inputs.backend == 'warpbuild' && inputs.lookup != 'true' && inputs.target != 'true'
@@ -94,9 +103,9 @@ runs:
           ~/.cargo/registry/index
           ~/.cargo/registry/cache
           ~/.cargo/git/db
-        key: cargo-${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.week.outputs.week }}-${{ hashFiles('**/Cargo.lock', '!.ci/**') }}
+        key: cargo-${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}-${{ steps.week.outputs.os }}-${{ runner.arch }}-${{ steps.week.outputs.week }}-${{ hashFiles('**/Cargo.lock', '!.ci/**') }}
         restore-keys: |
-          cargo-${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.week.outputs.week }}-
+          cargo-${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}-${{ steps.week.outputs.os }}-${{ runner.arch }}-${{ steps.week.outputs.week }}-
     # With target/: restore only. The job saves it itself, last, after pruning,
     # whether it passed or not (the action's own save runs on success only, and
     # a suite with one failing test would never save).
@@ -109,9 +118,9 @@ runs:
           ~/.cargo/registry/cache
           ~/.cargo/git/db
           target
-        key: deps-${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.week.outputs.week }}-${{ hashFiles('**/Cargo.lock', '!.ci/**') }}
+        key: deps-${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}-${{ steps.week.outputs.os }}-${{ runner.arch }}-${{ steps.week.outputs.week }}-${{ hashFiles('**/Cargo.lock', '!.ci/**') }}
         restore-keys: |
-          deps-${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.week.outputs.week }}-
+          deps-${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}-${{ steps.week.outputs.os }}-${{ runner.arch }}-${{ steps.week.outputs.week }}-
     - if: inputs.lookup == 'true'
       id: lookup
       uses: WarpBuilds/cache/restore@40f3443ae7b70e568d6e2070ea897f3df94d7553 # v1
@@ -122,7 +131,7 @@ runs:
           ~/.cargo/registry/cache
           ~/.cargo/git/db
           ${{ inputs.target == 'true' && 'target' || '' }}
-        key: ${{ inputs.target == 'true' && 'deps' || 'cargo' }}-${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.week.outputs.week }}-${{ hashFiles('**/Cargo.lock', '!.ci/**') }}
+        key: ${{ inputs.target == 'true' && 'deps' || 'cargo' }}-${{ inputs.profile }}${{ inputs.key && format('-{0}', inputs.key) || '' }}-${{ steps.week.outputs.os }}-${{ runner.arch }}-${{ steps.week.outputs.week }}-${{ hashFiles('**/Cargo.lock', '!.ci/**') }}
         lookup-only: true
 
     - if: inputs.tools != '' && inputs.lookup != 'true'

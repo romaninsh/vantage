@@ -20,7 +20,7 @@ permissions: {}
 jobs:
   summary:
     # The changes job may have failed and left no outputs.
-    runs-on: ${{ fromJSON(inputs.run).small_runner && fromJSON(fromJSON(inputs.run).small_runner) || 'ubuntu-latest' }}
+    runs-on: ${{ fromJSON(inputs.run).small_runner && fromJSON(fromJSON(inputs.run).small_runner) || 'ubuntu-26.04' }}
     permissions:
       contents: read
       actions: read # this run's artifacts and main's coverage-baseline

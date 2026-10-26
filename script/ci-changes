@@ -30,7 +30,7 @@ Prints key=json lines (and appends them to $GITHUB_OUTPUT when set):
   gated     the ALL_TESTS label is set
 
 The repo's own settings, from .github/ci-crates.yaml (defaults suit vantage):
-  runner, build_runner, small_runner  runner labels (ubuntu-latest)
+  runner, build_runner, small_runner  runner labels (ubuntu-26.04)
   env       extra env for every cargo job ({})
   setup     .github/ci-setup.sh exists: shared cargo jobs run it (apt packages)
   cache     rust-cache | warpbuild (rust-cache)
@@ -340,10 +340,11 @@ def main():
             out["changelogs"][c] = {"path": f"{dirs[c]}/CHANGELOG.md", "text": entry}
     out["no_changelog"] = [c for c in sorted(out["versions"]) if c not in out["changelogs"]]
 
-    runner = config.get("runner", "ubuntu-latest")
+    # Pinned, not `latest`: the alias moves between Ubuntu releases on its own.
+    runner = config.get("runner", "ubuntu-26.04")
     out["runner"] = runner
     out["build_runner"] = config.get("build_runner", runner)
-    out["small_runner"] = config.get("small_runner", "ubuntu-latest")
+    out["small_runner"] = config.get("small_runner", "ubuntu-26.04")
     out["env"] = config.get("env") or {}
     out["setup"] = os.path.isfile(os.path.join(ROOT, ".github", "ci-setup.sh"))
     out["cache"] = config.get("cache", "rust-cache")

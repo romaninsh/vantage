@@ -163,8 +163,9 @@ def crate_row(crate, m, was, versions, published, no_changelog=(), changelogs=No
         covered = f"{mark}{now:.1f}%{change(now, before, '{:+.1f}')}"
     dupes = overlaps = "—"
     if "identical" in m:
-        dupes = f"{'💔' if m['identical'] else '❤️'} {m['identical']}{change(m['identical'], was.get('identical'))}"
-        overlaps = f"🔍 {m['near']}{change(m['near'], was.get('near'))}"
+        # Zero is "—", so the crates with some stand out in a long table.
+        dupes = (f"💔 {m['identical']}" if m["identical"] else "—") + change(m["identical"], was.get("identical"))
+        overlaps = (f"🔍 {m['near']}" if m["near"] else "—") + change(m["near"], was.get("near"))
     cells = [f"`{crate}`", tests, covered, dupes, overlaps]
     if versions is not None:
         cells.insert(1, version_cell(crate, versions, published, no_changelog, changelogs))

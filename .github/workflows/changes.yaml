@@ -18,7 +18,7 @@ on:
           Runner label. post-merge with `warm: full-on-miss` needs the build's runner,
           to look up its cache.
         type: string
-        default: ubuntu-latest
+        default: ubuntu-26.04
       base:
         description: >-
           post-merge: the commit main's last baseline measured (script/ci-baseline).

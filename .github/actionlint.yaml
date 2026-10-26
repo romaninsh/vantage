@@ -1,5 +1,9 @@
 # actionlint (1.7.12, the latest) doesn't know job.workflow_repository and
 # job.workflow_sha yet: the shared workflows check themselves out with them.
+# Nor ubuntu-26.04, which went GA after its release.
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04
 paths:
   .github/workflows/**/*.yaml:
     ignore:
