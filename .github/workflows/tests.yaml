@@ -1,0 +1,268 @@
+name: Tests
+
+# The test pipeline, shared by PRs (ci.yaml) and main (post-merge.yaml) so both
+# measure the same way: one instrumented build packed per database group, the
+# suites and the coverage matrix. `pr` mode also checks new tests for
+# duplicates (ci.yaml's summary reports it all); `baseline` mode refreshes
+# main's numbers PRs compare against. The job ids are the same for both
+# callers, so they share rust-cache entries.
+on:
+  workflow_call:
+    inputs:
+      mode:
+        description: "pr | baseline"
+        type: string
+        required: true
+      groups:
+        type: string
+        required: true
+      tested:
+        type: string
+        required: true
+      new_tests:
+        type: string
+        default: "[]"
+      measured:
+        type: string
+        default: "[]"
+      versions:
+        type: string
+        default: "{}"
+      crates:
+        type: string
+        default: "[]"
+      all:
+        type: string
+        default: "false"
+      gated:
+        type: string
+        default: "false"
+      base:
+        description: The PR's base commit (pr mode)
+        type: string
+        default: ""
+
+permissions: {}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # One instrumented build of every changed crate that has tests, packed into
+  # one archive per database group (a filterset over the same build, so no
+  # recompile), so each suite downloads only its own binaries.
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-rust
+        with:
+          profile: instrumented
+          tools: cargo-llvm-cov,cargo-nextest
+      - name: Build and pack an archive per group
+        env:
+          TESTED: ${{ inputs.tested }}
+          GROUP_LIST: ${{ inputs.groups }}
+        run: |
+          cp .config/nextest.toml.example .config/nextest.toml
+          mapfile -t pkgs < <(jq -r '.[] | "-p", .' <<<"$TESTED")
+          # The first call compiles, the rest only pack: --timings goes on the first.
+          timings=--timings
+          for group in $(jq -c '.[]' <<<"$GROUP_LIST"); do
+            name=$(jq -r .name <<<"$group")
+            filter=$(jq -r '.crates | map("package(" + . + ")") | join(" or ")' <<<"$group")
+            # --no-clean: llvm-cov otherwise wipes the workspace crates before
+            # every call, rebuilding them once per group.
+            cargo llvm-cov nextest-archive --no-clean $timings --all-features "${pkgs[@]}" -E "$filter" \
+              --zstd-level 9 --archive-file "ci-$name.tar.zst"
+            timings=
+          done
+          ls -la ci-*.tar.zst
+      # Cargo's per-crate compile timeline: which crates hold up the build.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cargo-timings
+          path: target/**/cargo-timings/cargo-timing.html
+          if-no-files-found: ignore
+          retention-days: 7
+      # Fixed names: upload-artifact can't loop. A group without a step fails here.
+      - name: Every archive has an upload step
+        run: |
+          for f in ci-*.tar.zst; do
+            case "$f" in
+              ci-plain.tar.zst|ci-mongo.tar.zst|ci-surreal.tar.zst|ci-mysql-postgres-sqlite.tar.zst) ;;
+              *) echo "::error::no upload step for $f (add one in tests.yaml)"; exit 1 ;;
+            esac
+          done
+      - if: hashFiles('ci-plain.tar.zst') != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with: { name: ci-tests-plain, path: ci-plain.tar.zst, retention-days: 1, compression-level: 0 }
+      - if: hashFiles('ci-mongo.tar.zst') != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with: { name: ci-tests-mongo, path: ci-mongo.tar.zst, retention-days: 1, compression-level: 0 }
+      - if: hashFiles('ci-surreal.tar.zst') != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with: { name: ci-tests-surreal, path: ci-surreal.tar.zst, retention-days: 1, compression-level: 0 }
+      - if: hashFiles('ci-mysql-postgres-sqlite.tar.zst') != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with: { name: ci-tests-mysql-postgres-sqlite, path: ci-mysql-postgres-sqlite.tar.zst, retention-days: 1, compression-level: 0 }
+
+  # The coverage matrix's per-test runner: its own workspace and cache, built
+  # alongside the archive instead of after it.
+  matrix-rs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-rust
+        with:
+          key: matrix-rs
+          workspaces: coverage/matrix-rs -> ../../target/matrix-rs
+      - run: cargo build --release --locked --manifest-path coverage/matrix-rs/Cargo.toml --target-dir target/matrix-rs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with: { name: matrix-rs, path: target/matrix-rs/release/matrix-rs, retention-days: 1 }
+
+  # Each group starts only its databases, runs its crates' tests from its
+  # archive, writes its coverage, measures its crates with the matrix, and
+  # (pr mode) checks the PR's new tests for duplicates.
+  suite:
+    needs: [build, matrix-rs]
+    name: suite (${{ matrix.group.name }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        group: ${{ fromJSON(inputs.groups) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup-rust
+        with:
+          profile: instrumented
+          tools: cargo-llvm-cov,cargo-nextest
+          cache: "false"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ci-tests-${{ matrix.group.name }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: matrix-rs
+      - if: toJSON(matrix.group.services) != '[]'
+        uses: ./.github/actions/start-services
+        with:
+          services: ${{ toJSON(matrix.group.services) }}
+      - name: Tests
+        env:
+          ARCHIVE: ci-${{ matrix.group.name }}.tar.zst
+          # The ci profile also writes JUnit for the report.
+          NEXTEST_PROFILE: ci
+        run: |
+          cp .config/nextest.toml.example .config/nextest.toml
+          # A fresh runner has no target dir to extract into.
+          mkdir -p target/llvm-cov-target
+          cargo llvm-cov nextest --archive-file "$ARCHIVE" --no-report --no-fail-fast
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-${{ matrix.group.name }}
+          # An archive run keeps nextest's store in the workspace target dir.
+          path: target/nextest/ci/junit.xml
+          if-no-files-found: ignore
+          retention-days: 1
+      - name: Coverage for this group
+        if: always()
+        env:
+          ARCHIVE: ci-${{ matrix.group.name }}.tar.zst
+        run: cargo llvm-cov report --nextest-archive-file "$ARCHIVE" --lcov --output-path "lcov-${{ matrix.group.name }}.info"
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: lcov-${{ matrix.group.name }}
+          path: lcov-${{ matrix.group.name }}.info
+          if-no-files-found: ignore
+          retention-days: 1
+      # Every crate of the group: its duplicate counts go into the report. The
+      # matrix runs the PR's test binaries, so it gets no secret.
+      - name: Coverage matrix
+        id: matrix
+        env:
+          ARCHIVE: ci-${{ matrix.group.name }}.tar.zst
+          CRATES: ${{ toJSON(matrix.group.crates) }}
+        run: |
+          chmod +x matrix-rs
+          mkdir -p stats
+          status=0
+          for name in $(jq -r '.[]' <<<"$CRATES"); do
+            MATRIX_REPORTS=0 MATRIX_ARCHIVE=$ARCHIVE MATRIX_RS=$PWD/matrix-rs coverage/matrix.sh "$name" || { status=1; continue; }
+            cp "coverage/report/$name/pairs.json" "stats/$name.pairs.json"
+          done
+          exit $status
+      # Only crates whose tests/ gained lines can hold a new duplicate. Reads
+      # the matrix reports only; the exceptions key never reaches PR code.
+      - name: Duplicate tests
+        if: always() && inputs.mode == 'pr' && steps.matrix.outcome != 'skipped'
+        env:
+          BASE: ${{ inputs.base }}
+          CRATES: ${{ toJSON(matrix.group.crates) }}
+          NEW_TESTS: ${{ inputs.new_tests }}
+          COVERAGE_EXCEPTIONS_KEY: ${{ secrets.COVERAGE_EXCEPTIONS_KEY }}
+          # Without the key (forks), only entries unchanged since this base count.
+          EXCEPTIONS_BASE: ${{ inputs.base }}
+        run: |
+          status=0
+          for row in $(jq -c --argjson in "$CRATES" '.[] | select(.name as $n | $in | index($n))' <<<"$NEW_TESTS"); do
+            name=$(jq -r .name <<<"$row"); dir=$(jq -r .dir <<<"$row")
+            [ -f "coverage/report/$name/regions.json" ] || { echo "::error::no matrix report for $name"; status=1; continue; }
+            python3 -I coverage/new_tests.py clusters "$name" "$dir" "$BASE" || status=1
+            [ -f "coverage/report/$name/findings.json" ] && cp "coverage/report/$name/findings.json" "stats/$name.findings.json"
+          done
+          exit $status
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: stats-${{ matrix.group.name }}
+          path: stats
+          if-no-files-found: ignore
+          retention-days: 1
+
+  # baseline mode: main's per-crate numbers (coverage, tests, dupes, overlaps),
+  # the previous baseline with this merge's crates replaced. On PRs, ci.yaml's
+  # summary job reports instead.
+  baseline:
+    needs: suite
+    if: always() && inputs.mode == 'baseline' && needs.suite.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read # the previous coverage-baseline artifact
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/ci-results
+      - name: Baseline
+        env:
+          RUN: ${{ toJSON(inputs) }}
+        run: |
+          python3 -I coverage/ci-report.py --run "$RUN" --junit junit --lcov lcov.info --stats stats \
+            --baseline baseline/coverage-baseline.json --update-baseline coverage-baseline.json >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-baseline
+          path: coverage-baseline.json
+          retention-days: 90

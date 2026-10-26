@@ -73,6 +73,8 @@ dir=$(cargo metadata --format-version 1 --no-deps \
 m = json.load(sys.stdin)
 print(next(os.path.dirname(p["manifest_path"]) for p in m["packages"] if p["name"] == sys.argv[1]))' "$pkg")
 
+# The package's excluded paths (coverage/config.yaml), for matrix-rs's pairs.json.
+MATRIX_EXCLUDE=$(python3 -I -c 'import sys; sys.path.insert(0, sys.argv[1]); import config; print(",".join(config.patterns(sys.argv[2])))' "$root/coverage" "$pkg") \
 "$matrix_rs" "$out/list.json" "$dir" "$out" "${JOBS:-$(getconf _NPROCESSORS_ONLN)}"
 python3 -I "$root/coverage/matrix.py" "$out" | tee -a "$log"
 # MATRIX_REPORTS=0 (CI) stops at regions.json: the duplicate check reads only

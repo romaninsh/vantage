@@ -8,7 +8,7 @@ Prints key=json lines (and appends them to $GITHUB_OUTPUT when set):
   tested    those with tests: the test archive and its groups hold only these
   libs      those whose library runs doctests (not `doctest = false`)
   measured  those that get a coverage report: [{name, dir}]
-  new_tests crates whose tests/ changed: the duplicate check runs for these only
+  new_tests crates whose tests/ gained lines: the duplicate check runs for these only
   api       a public-API snapshot may have changed
   manifests a Cargo.toml or Cargo.lock changed (repo-layer check)
   excluded  crates outside the workspace whose own suite runs: [{dir, workdir, kind}]
@@ -16,6 +16,13 @@ Prints key=json lines (and appends them to $GITHUB_OUTPUT when set):
   groups    crates split by the databases they need: [{name, crates, services}]
   all       every crate counts as changed
   book      the book changed
+  ci_self   CI's own files changed: the ci-self job checks them
+  versions  {crate: [old, new]} for changed crates whose version moved
+  published changed crates that go to crates.io (not `publish = false`),
+            excluded crates included
+  unbumped  of those, the ones whose version didn't change (the PR fails)
+  no_changelog bumped ones whose CHANGELOG.md has no `## <version>` (the PR fails)
+  changelogs {crate: {path, text}}: each bumped crate's entry, as one line
   gated     the ALL_TESTS label is set
 
 A file belongs to the crate whose directory holds it, longest prefix first,
@@ -28,6 +35,7 @@ import argparse
 import fnmatch
 import json
 import os
+import re
 import subprocess
 import sys
 import tomllib
@@ -40,6 +48,31 @@ LABEL = "ALL_TESTS"
 
 def run(*cmd):
     return subprocess.run(cmd, cwd=ROOT, check=True, capture_output=True, text=True).stdout
+
+
+def versions(names, dirs, base, head):
+    """{crate: [old, new]} for changed crates whose version moved; old is
+    null for a crate that didn't exist at base."""
+    def version(rev, name):
+        text = show(rev, f"{dirs[name]}/Cargo.toml")
+        return tomllib.loads(text).get("package", {}).get("version") if text else None
+    out = {}
+    for name in names:
+        old, new = version(base, name), version(head, name)
+        if old != new:
+            out[name] = [old, new]
+    return out
+
+
+def changelog_entry(text, version, limit=400):
+    """The `## <version>` section of a CHANGELOG as one plain line, or None
+    when there's no such heading."""
+    match = re.search(rf"^## {re.escape(version)}( [^\n]*)?\n(.*?)(?=^## |\Z)", text or "", re.M | re.S)
+    if not match:
+        return None
+    body = re.sub(r"(?m)^\s*[-*] ", "• ", re.sub(r"`|\*\*", "", match.group(2)))
+    plain = re.sub(r"\s+", " ", body).strip()
+    return plain if len(plain) <= limit else plain[: limit - 1].rstrip() + "…"
 
 
 def show(rev, path):
@@ -73,7 +106,9 @@ def members():
         if any(("lib" in t["kind"] or "proc-macro" in t["kind"]) and t.get("doctest", True) for t in p["targets"])
     }
     tested = {name for name, d in dirs.items() if has_tests(d)}
-    return dirs, libs, tested
+    # `publish = false` shows as an empty list; null means crates.io.
+    published = {p["name"] for p in packages if p.get("publish") != []}
+    return dirs, libs, tested, published
 
 
 def excluded(config):
@@ -101,27 +136,28 @@ def lock_is_global(old, new, member_names):
     return outside(old) != outside(new)
 
 
-def classify(files, locks, crates, libs, tested, outside, config, labels):
+def classify(files, locks, crates, libs, tested, outside, config, labels, adds=None):
     by_dir = sorted(((d, n) for n, d in crates.items()), key=lambda x: -len(x[0]))
     outside_dirs = sorted(outside, key=len, reverse=True)
     changed, changed_outside, tests_changed = set(), set(), set()
     everything = LABEL in labels
-    book = False
+    book = ci_self = False
     for f in files:
         if f == "Cargo.lock":
             # Excluded crates show up as path dependencies: ours, not external.
             ours = set(crates) | {os.path.basename(d) for d in outside}
             everything |= lock_is_global(*locks, ours)
             continue
-        if matches(f, config.get("not_global", [])):
-            pass
-        elif matches(f, config.get("global", [])):
+        if matches(f, config.get("global", [])):
             everything = True
+        ci_self |= matches(f, config.get("ci_self", []))
         book |= matches(f, config.get("book", []))
         owner = next((n for d, n in by_dir if f.startswith(d + "/")), None)
         if owner:
             changed.add(owner)
-            if f.startswith(crates[owner] + "/tests/"):
+            # Only added lines can add a test: a tests/ diff that only deletes
+            # can't make a duplicate, so it doesn't need the matrix.
+            if f.startswith(crates[owner] + "/tests/") and (adds is None or f in adds):
                 tests_changed.add(owner)
             continue
         owner = next((d for d in outside_dirs if f.startswith(d + "/")), None)
@@ -158,6 +194,7 @@ def classify(files, locks, crates, libs, tested, outside, config, labels):
         ],
         "all": everything,
         "book": book,
+        "ci_self": ci_self,
         "gated": LABEL in labels,
     }
 
@@ -173,8 +210,28 @@ def main():
     files = run("git", "diff", "--name-only", span).split()
     base = run("git", "merge-base", a.base, a.head).strip()
     locks = [show(base, "Cargo.lock"), show(a.head, "Cargo.lock")] if "Cargo.lock" in files else ["", ""]
-    dirs, libs, tested = members()
-    out = classify(files, locks, dirs, libs, tested, excluded(config), config, json.loads(a.labels))
+    dirs, libs, tested, published = members()
+    # Files the diff adds lines to ("-" marks a binary file; count it).
+    adds = {p for n, _, p in (row.split("\t", 2) for row in run("git", "diff", "--numstat", span).splitlines())
+            if n != "0"}
+    out = classify(files, locks, dirs, libs, tested, excluded(config), config, json.loads(a.labels), adds)
+    # Excluded crates release too: check them by their own Cargo.toml.
+    outside_names = {}
+    for entry in out["excluded"]:
+        manifest = tomllib.loads(show(a.head, f"{entry['workdir']}/Cargo.toml") or "").get("package", {})
+        if manifest.get("name") and manifest.get("publish", True) is not False:
+            dirs.setdefault(manifest["name"], entry["workdir"])
+            outside_names[manifest["name"]] = entry["workdir"]
+    checked = sorted((set(out["crates"]) & published) | set(outside_names))
+    out["versions"] = versions(checked, dirs, base, a.head)
+    out["published"] = checked
+    out["unbumped"] = [c for c in checked if c not in out["versions"]]
+    out["changelogs"] = {}
+    for c, (_, new) in sorted(out["versions"].items()):
+        entry = changelog_entry(show(a.head, f"{dirs[c]}/CHANGELOG.md"), new)
+        if entry is not None:
+            out["changelogs"][c] = {"path": f"{dirs[c]}/CHANGELOG.md", "text": entry}
+    out["no_changelog"] = [c for c in sorted(out["versions"]) if c not in out["changelogs"]]
     lines = [f"{k}={json.dumps(v, separators=(',', ':'))}" for k, v in out.items()]
     print("\n".join(lines))
     if os.environ.get("GITHUB_OUTPUT"):

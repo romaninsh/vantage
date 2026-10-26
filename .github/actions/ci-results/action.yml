@@ -1,0 +1,37 @@
+name: CI results
+description: The test pipeline's results in this run, and main's last baseline.
+
+# Leaves lcov.info, junit/<group>/junit.xml, stats/<crate>.{pairs,findings}.json
+# and baseline/coverage-baseline.json (when main has one) in the workspace.
+runs:
+  using: composite
+  steps:
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        pattern: lcov-*
+        merge-multiple: true
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        pattern: junit-*
+        path: junit
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        pattern: stats-*
+        path: stats
+        merge-multiple: true
+    - name: Join coverage
+      shell: bash
+      run: cat lcov-*.info > lcov.info 2>/dev/null || touch lcov.info
+    # Main's per-crate numbers, kept current by post-merge, found with one call.
+    - name: Main's baseline
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        run=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=coverage-baseline&per_page=1" \
+          -q '.artifacts[0].workflow_run.id // empty')
+        if [ -n "$run" ]; then
+          gh run download "$run" -R "$GITHUB_REPOSITORY" -n coverage-baseline -D baseline
+        else
+          echo "no baseline yet"
+        fi

@@ -1,13 +1,14 @@
 name: CI
 
 # One pipeline for every PR. `changes` maps the diff to crates; everything
-# after it tests only those (the ALL_TESTS label: everything). Layout A: one
-# instrumented build, archived, fanned out to suites grouped by the databases
-# they need. `ci-ok` is the one check to require.
+# after it tests only those (the ALL_TESTS label: everything). The tests
+# themselves are tests.yaml, which post-merge runs too. A change to CI's own
+# files runs ci-self instead of every crate. `summary` is the one check to
+# require: it posts the PR's summary comment and fails if any job failed.
 #
 # Labels are read live, not from the event: adding ALL_TESTS re-runs the
 # latest run (ci-label.yaml) instead of starting a second one, so no other
-# label can post a `ci-ok` over the real one.
+# label can post a `summary` over the real one.
 on:
   pull_request:
     branches: ["main", "v2"]
@@ -36,12 +37,18 @@ jobs:
       tested: ${{ steps.c.outputs.tested }}
       new_tests: ${{ steps.c.outputs.new_tests }}
       groups: ${{ steps.c.outputs.groups }}
-      services: ${{ steps.c.outputs.services }}
       excluded: ${{ steps.c.outputs.excluded }}
       api: ${{ steps.c.outputs.api }}
       manifests: ${{ steps.c.outputs.manifests }}
       book: ${{ steps.c.outputs.book }}
       gated: ${{ steps.c.outputs.gated }}
+      all: ${{ steps.c.outputs.all }}
+      ci_self: ${{ steps.c.outputs.ci_self }}
+      versions: ${{ steps.c.outputs.versions }}
+      published: ${{ steps.c.outputs.published }}
+      unbumped: ${{ steps.c.outputs.unbumped }}
+      no_changelog: ${{ steps.c.outputs.no_changelog }}
+      changelogs: ${{ steps.c.outputs.changelogs }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -142,242 +149,66 @@ jobs:
       - name: Check API rules
         run: bash api/rules.sh
 
-  # One instrumented build of every changed crate that has tests, packed into
-  # one archive per database group (a filterset over the same build, so no
-  # recompile), so each suite downloads only its own binaries.
-  build:
+  # Build, suites and coverage matrix: the same jobs main runs for its
+  # baseline, so the summary compares like with like.
+  tests:
     needs: changes
     if: needs.changes.outputs.groups != '[]'
-    runs-on: ubuntu-latest
+    uses: ./.github/workflows/tests.yaml
     permissions:
       contents: read
-    timeout-minutes: 40
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup-rust
-        with:
-          profile: instrumented
-          tools: cargo-llvm-cov,cargo-nextest
-      - name: Build and pack an archive per group
-        env:
-          TESTED: ${{ needs.changes.outputs.tested }}
-          GROUP_LIST: ${{ needs.changes.outputs.groups }}
-        run: |
-          cp .config/nextest.toml.example .config/nextest.toml
-          mapfile -t pkgs < <(jq -r '.[] | "-p", .' <<<"$TESTED")
-          for group in $(jq -c '.[]' <<<"$GROUP_LIST"); do
-            name=$(jq -r .name <<<"$group")
-            filter=$(jq -r '.crates | map("package(" + . + ")") | join(" or ")' <<<"$group")
-            # --no-clean: llvm-cov otherwise wipes the workspace crates before
-            # every call, rebuilding them once per group.
-            cargo llvm-cov nextest-archive --no-clean --all-features "${pkgs[@]}" -E "$filter" \
-              --zstd-level 9 --archive-file "ci-$name.tar.zst"
-          done
-          ls -la ci-*.tar.zst
-      # Fixed names: upload-artifact can't loop. A group without a step fails here.
-      - name: Every archive has an upload step
-        run: |
-          for f in ci-*.tar.zst; do
-            case "$f" in
-              ci-plain.tar.zst|ci-mongo.tar.zst|ci-surreal.tar.zst|ci-mysql-postgres-sqlite.tar.zst) ;;
-              *) echo "::error::no upload step for $f (add one in ci.yaml)"; exit 1 ;;
-            esac
-          done
-      - if: hashFiles('ci-plain.tar.zst') != ''
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with: { name: ci-tests-plain, path: ci-plain.tar.zst, retention-days: 1, compression-level: 0 }
-      - if: hashFiles('ci-mongo.tar.zst') != ''
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with: { name: ci-tests-mongo, path: ci-mongo.tar.zst, retention-days: 1, compression-level: 0 }
-      - if: hashFiles('ci-surreal.tar.zst') != ''
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with: { name: ci-tests-surreal, path: ci-surreal.tar.zst, retention-days: 1, compression-level: 0 }
-      - if: hashFiles('ci-mysql-postgres-sqlite.tar.zst') != ''
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with: { name: ci-tests-mysql-postgres-sqlite, path: ci-mysql-postgres-sqlite.tar.zst, retention-days: 1, compression-level: 0 }
+      actions: read
+    with:
+      mode: pr
+      groups: ${{ needs.changes.outputs.groups }}
+      tested: ${{ needs.changes.outputs.tested }}
+      new_tests: ${{ needs.changes.outputs.new_tests }}
+      measured: ${{ needs.changes.outputs.measured }}
+      versions: ${{ needs.changes.outputs.versions }}
+      crates: ${{ needs.changes.outputs.crates }}
+      all: ${{ needs.changes.outputs.all }}
+      gated: ${{ needs.changes.outputs.gated }}
+      base: ${{ github.event.pull_request.base.sha }}
+    secrets: inherit
 
-  # The coverage matrix's per-test runner: its own workspace and cache, built
-  # alongside the archive instead of after it.
-  matrix-rs:
+  # CI's own files changed: lint the workflows and check that ci-changes still
+  # selects sensibly on known merges, instead of running every crate's tests.
+  ci-self:
     needs: changes
-    if: needs.changes.outputs.new_tests != '[]'
+    if: needs.changes.outputs.ci_self == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup-rust
-        with:
-          key: matrix-rs
-          workspaces: coverage/matrix-rs -> ../../target/matrix-rs
-      - run: cargo build --release --locked --manifest-path coverage/matrix-rs/Cargo.toml --target-dir target/matrix-rs
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with: { name: matrix-rs, path: target/matrix-rs/release/matrix-rs, retention-days: 1 }
-
-  # Each group starts only its databases, runs its crates' tests from its
-  # archive, writes its own coverage, then runs the duplicate-test check.
-  suite:
-    needs: [changes, build, matrix-rs]
-    if: always() && needs.build.result == 'success' && needs.matrix-rs.result != 'failure'
-    name: suite (${{ matrix.group.name }})
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    timeout-minutes: 40
-    strategy:
-      fail-fast: false
-      matrix:
-        group: ${{ fromJSON(needs.changes.outputs.groups) }}
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: ./.github/actions/setup-rust
-        with:
-          profile: instrumented
-          tools: cargo-llvm-cov,cargo-nextest
-          cache: "false"
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: ci-tests-${{ matrix.group.name }}
-      - if: needs.matrix-rs.result == 'success'
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: matrix-rs
-      - if: toJSON(matrix.group.services) != '[]'
-        uses: ./.github/actions/start-services
-        with:
-          services: ${{ toJSON(matrix.group.services) }}
-      - name: Tests
-        env:
-          ARCHIVE: ci-${{ matrix.group.name }}.tar.zst
-          # The ci profile also writes JUnit for the PR's test report.
-          NEXTEST_PROFILE: ci
-        run: |
-          cp .config/nextest.toml.example .config/nextest.toml
-          # A fresh runner has no target dir to extract into.
-          mkdir -p target/llvm-cov-target
-          cargo llvm-cov nextest --archive-file "$ARCHIVE" --no-report --no-fail-fast
-      - if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: junit-${{ matrix.group.name }}
-          path: target/llvm-cov-target/nextest/ci/junit.xml
-          if-no-files-found: ignore
-          retention-days: 1
-      - name: Coverage for this group
-        if: always()
-        env:
-          ARCHIVE: ci-${{ matrix.group.name }}.tar.zst
-        run: cargo llvm-cov report --nextest-archive-file "$ARCHIVE" --lcov --output-path "lcov-${{ matrix.group.name }}.info"
-      - if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: lcov-${{ matrix.group.name }}
-          path: lcov-${{ matrix.group.name }}.info
-          if-no-files-found: ignore
-          retention-days: 1
-      # Only crates whose tests/ changed: a PR without new tests can't add a
-      # duplicate. The matrix runs the PR's test binaries, so it gets no secret.
-      - name: Coverage matrix
-        id: matrix
-        env:
-          ARCHIVE: ci-${{ matrix.group.name }}.tar.zst
-          CRATES: ${{ toJSON(matrix.group.crates) }}
-          NEW_TESTS: ${{ needs.changes.outputs.new_tests }}
-        run: |
-          status=0
-          for name in $(jq -r --argjson in "$CRATES" '.[] | select(.name as $n | $in | index($n)) | .name' <<<"$NEW_TESTS"); do
-            chmod +x matrix-rs
-            MATRIX_REPORTS=0 MATRIX_ARCHIVE=$ARCHIVE MATRIX_RS=$PWD/matrix-rs coverage/matrix.sh "$name" || status=1
-          done
-          exit $status
-      # Reads the matrix reports only; the exceptions key never reaches PR code.
-      - name: Duplicate tests
-        if: always() && steps.matrix.outcome != 'skipped'
-        env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-          CRATES: ${{ toJSON(matrix.group.crates) }}
-          NEW_TESTS: ${{ needs.changes.outputs.new_tests }}
-          COVERAGE_EXCEPTIONS_KEY: ${{ secrets.COVERAGE_EXCEPTIONS_KEY }}
-          # Without the key (forks), only entries unchanged since this base count.
-          EXCEPTIONS_BASE: ${{ github.event.pull_request.base.sha }}
-        run: |
-          status=0
-          for row in $(jq -c --argjson in "$CRATES" '.[] | select(.name as $n | $in | index($n))' <<<"$NEW_TESTS"); do
-            name=$(jq -r .name <<<"$row"); dir=$(jq -r .dir <<<"$row")
-            [ -f "coverage/report/$name/regions.json" ] || { echo "::error::no matrix report for $name"; status=1; continue; }
-            python3 -I coverage/new_tests.py clusters "$name" "$dir" "$BASE" || status=1
-          done
-          exit $status
-
-  # Joins the groups' lcov files; the groups hold disjoint crates.
-  # Joins the groups' results: one PR comment with tests and per-crate coverage
-  # against main, updated in place on every run.
-  coverage:
-    needs: [changes, suite]
-    if: always() && needs.suite.result != 'skipped'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-      pull-requests: write # the report comment
-      actions: read # main's coverage-baseline artifact
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          pattern: lcov-*
-          merge-multiple: true
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          pattern: junit-*
-          path: junit
-      - name: Join coverage
-        run: cat lcov-*.info > lcov.info 2>/dev/null || touch lcov.info
-      # Main's per-crate numbers: one artifact post-merge keeps current, found
-      # with one API call (octocov searched the artifacts once per crate).
-      - name: Main's coverage baseline
+      # install-action doesn't carry actionlint (it falls back to crates.io,
+      # where there's no such crate): the release binary, pinned.
+      - name: actionlint
         env:
           GH_TOKEN: ${{ github.token }}
+          # shellcheck's info notes (publish-on-merge's unquoted words) don't fail it.
+          SHELLCHECK_OPTS: --severity=warning
         run: |
-          run=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=coverage-baseline&per_page=1" \
-            -q '.artifacts[0].workflow_run.id // empty')
-          if [ -n "$run" ]; then
-            gh run download "$run" -R "$GITHUB_REPOSITORY" -n coverage-baseline -D baseline
-          else
-            echo "no baseline yet: coverage is shown without a comparison"
-          fi
-      - name: Test report
-        env:
-          MEASURED: ${{ needs.changes.outputs.measured }}
+          gh release download v1.7.12 -R rhysd/actionlint -p 'actionlint_1.7.12_linux_amd64.tar.gz' -O - \
+            | tar -xz -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint"
+      # Known merges and what they must select: a crate-only change selects
+      # just its crates, a lockfile bump of members stays narrow.
+      - name: ci-changes on known merges
         run: |
-          python3 -I coverage/ci-report.py junit lcov.info "$MEASURED" \
-            --baseline baseline/coverage-baseline.json > report.md
-          cat report.md >> "$GITHUB_STEP_SUMMARY"
-      # One comment per PR, found by its marker and edited, never a new one per run.
-      # Fork PRs get a read-only token: the report stays in the job summary.
-      - name: PR comment
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.pull_request.number }}
-        run: |
-          id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate \
-            -q '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- vantage-ci-report -->"))) | .id' | head -1)
-          if [ -n "$id" ]; then
-            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F body=@report.md > /dev/null
-          else
-            gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -F body=@report.md > /dev/null
-          fi
+          check() {
+            got=$(script/ci-changes --base "$1^1" --head "$1" | sed -n 's/^crates=//p')
+            [ "$got" = "$2" ] || { echo "::error::ci-changes on $1 selected $got, expected $2"; exit 1; }
+          }
+          check ca159cb4 '["vantage-diorama","vantage-table","vantage-vista"]'
+          check ea5cfe11 '["surreal-client"]'
+          check 4ac8b5b9 '["vantage-api-adapters","vantage-diorama","vantage-docs","vantage-memory"]'
+      - name: Python scripts compile
+        run: python3 -m py_compile script/ci-changes coverage/*.py coverage/matrix-rs/skills/matrix-based-test-cleanup/*.py
 
   # Doctests and diorama's cucumber `bdd` can't run from a nextest archive.
   doctests:
@@ -452,17 +283,104 @@ jobs:
           cargo run -p bakery_model3 --example cli-vista -- csv products
           cargo run -p bakery_model3 --example cli-vista -- csv clients
 
-  ci-ok:
-    needs: [changes, lint, public-api, build, matrix-rs, suite, coverage, doctests, excluded, gated]
+  # RustSec advisories in the workspace lockfile, when the PR touches a
+  # manifest or the lockfile (nothing else can bring one in). Only advisories
+  # its lockfile change brings in fail it; the rest are listed in the summary
+  # for main to fix.
+  audit:
+    needs: changes
+    # Changed crates get their advisories listed; a lockfile change can bring new ones.
+    if: needs.changes.outputs.crates != '[]' || needs.changes.outputs.manifests == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+        with:
+          tool: cargo-audit
+      - name: Advisories, and the ones this PR brings in
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: script/ci-audit "$BASE" audit
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: audit
+          path: audit
+          retention-days: 1
+
+  # The one check to require: collects every job, posts the summary comment
+  # (edited in place on every run), and fails if any job failed. A broken
+  # comment never fails it; a failed job always does.
+  summary:
+    needs: [changes, lint, public-api, tests, ci-self, doctests, excluded, gated, audit]
     if: always()
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    timeout-minutes: 2
+      actions: read # this run's artifacts and main's coverage-baseline
+      pull-requests: write # the summary comment
+    timeout-minutes: 10
     steps:
-      - name: Every job passed or was skipped by design
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/ci-results
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: audit
+          path: audit
+        continue-on-error: true
+      - name: Summary
+        continue-on-error: true
         env:
-          RESULTS: ${{ toJSON(needs.*.result) }}
+          RUN: ${{ toJSON(needs.changes.outputs) }}
+          JOBS: ${{ toJSON(needs) }}
         run: |
-          echo "$RESULTS"
-          jq -e 'all(. == "success" or . == "skipped")' <<<"$RESULTS"
+          jobs=$(jq -c 'with_entries(.value = .value.result)' <<<"$JOBS")
+          python3 -I coverage/ci-report.py --run "$RUN" --jobs "$jobs" --junit junit --lcov lcov.info \
+            --stats stats --audit audit --baseline baseline/coverage-baseline.json > summary.md
+          cat summary.md >> "$GITHUB_STEP_SUMMARY"
+      # One comment per PR, found by its marker and edited, never a new one per run.
+      # Fork PRs get a read-only token: the summary stays in the job summary.
+      - name: PR comment
+        if: hashFiles('summary.md') != ''
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate \
+            -q '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- vantage-ci-report -->"))) | .id' | head -1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F body=@summary.md > /dev/null
+          else
+            gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -F body=@summary.md > /dev/null
+          fi
+      # Every changed crate that goes to crates.io is bumped, with a CHANGELOG
+      # entry for its new version (publish-on-merge releases it as it stands).
+      - name: Versions bumped, with a CHANGELOG entry
+        env:
+          UNBUMPED: ${{ needs.changes.outputs.unbumped }}
+          NO_CHANGELOG: ${{ needs.changes.outputs.no_changelog }}
+        run: |
+          status=0
+          for c in $(jq -r '.[]' <<<"${UNBUMPED:-[]}"); do
+            echo "::error::$c changed but its version didn't: bump it (patch is fine)"; status=1
+          done
+          for c in $(jq -r '.[]' <<<"${NO_CHANGELOG:-[]}"); do
+            echo "::error::$c has no CHANGELOG.md entry for its new version (a '## <version>' heading)"; status=1
+          done
+          exit $status
+      - name: Every job passed or was skipped by design
+        if: always()
+        env:
+          JOBS: ${{ toJSON(needs) }}
+        run: |
+          jq -c 'with_entries(.value = .value.result)' <<<"$JOBS"
+          jq -e 'all(.[]; .result == "success" or .result == "skipped")' <<<"$JOBS"

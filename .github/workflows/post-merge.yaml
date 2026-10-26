@@ -1,9 +1,9 @@
 name: Post-merge
 
-# After a merge, only what later PRs read: per-crate coverage for the crates
-# the merge changed (the baseline PR coverage compares against) and the
-# caches PRs restore. Everything else is assumed checked by the PR.
-# Publishing is publish-on-merge.yaml.
+# After a merge, only what later PRs read: main's baseline for the crates the
+# merge changed (coverage, tests, dupes, overlaps), measured by the same
+# tests.yaml PRs run, and the caches PRs restore. Everything else is assumed
+# checked by the PR. Publishing is publish-on-merge.yaml.
 on:
   push:
     branches: ["main"]
@@ -27,7 +27,8 @@ jobs:
     outputs:
       crates: ${{ steps.c.outputs.crates }}
       measured: ${{ steps.c.outputs.measured }}
-      services: ${{ steps.c.outputs.services }}
+      tested: ${{ steps.c.outputs.tested }}
+      groups: ${{ steps.c.outputs.groups }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -38,73 +39,25 @@ jobs:
           BASE: ${{ github.event.before }}
         run: script/ci-changes --base "$BASE" --head "$GITHUB_SHA"
 
-  # Named `build` so its cache is the one ci.yaml's `build` restores.
-  build:
+  # The PR pipeline in baseline mode. Its build and matrix-rs jobs share their
+  # ids with the PR's, so they also warm the caches PRs restore.
+  tests:
     needs: changes
-    if: needs.changes.outputs.measured != '[]'
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
+    if: needs.changes.outputs.groups != '[]'
+    uses: ./.github/workflows/tests.yaml
     permissions:
       contents: read
-      actions: read # the previous coverage-baseline artifact
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup-rust
-        with:
-          profile: instrumented
-          tools: cargo-llvm-cov,cargo-nextest
-      - if: needs.changes.outputs.services != '[]'
-        uses: ./.github/actions/start-services
-        with:
-          services: ${{ needs.changes.outputs.services }}
-      - name: Tests with coverage
-        env:
-          CRATES: ${{ needs.changes.outputs.crates }}
-        run: |
-          cp .config/nextest.toml.example .config/nextest.toml
-          mapfile -t pkgs < <(jq -r '.[] | "-p", .' <<<"$CRATES")
-          cargo llvm-cov nextest --all-features --no-fail-fast "${pkgs[@]}" --lcov --output-path lcov.info
-      # The baseline PR reports compare against: the last one, with the crates
-      # this merge measured replaced.
-      - name: Update the coverage baseline
-        env:
-          GH_TOKEN: ${{ github.token }}
-          MEASURED: ${{ needs.changes.outputs.measured }}
-        run: |
-          run=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=coverage-baseline&per_page=1" \
-            -q '.artifacts[0].workflow_run.id // empty')
-          [ -z "$run" ] || gh run download "$run" -R "$GITHUB_REPOSITORY" -n coverage-baseline -D previous
-          mkdir -p junit
-          python3 -I coverage/ci-report.py junit lcov.info "$MEASURED" \
-            --baseline previous/coverage-baseline.json --update-baseline coverage-baseline.json >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: coverage-baseline
-          path: coverage-baseline.json
-          retention-days: 90
+      actions: read
+    with:
+      mode: baseline
+      groups: ${{ needs.changes.outputs.groups }}
+      tested: ${{ needs.changes.outputs.tested }}
+      measured: ${{ needs.changes.outputs.measured }}
+      crates: ${{ needs.changes.outputs.crates }}
+    secrets: inherit
 
-  # rust-cache keys a cache by job id: each job below shares its id with the
-  # ci.yaml job it warms (matrix-rs, lint; build above warms build).
-  matrix-rs:
-    needs: changes
-    if: needs.changes.outputs.crates != '[]'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup-rust
-        with:
-          key: matrix-rs
-          workspaces: coverage/matrix-rs -> ../../target/matrix-rs
-      - run: cargo build --release --locked --manifest-path coverage/matrix-rs/Cargo.toml --target-dir target/matrix-rs
-
-  # Warms the cache every PR's clippy restores. Nothing is gated here.
+  # rust-cache keys a cache by job id: this warms the cache ci.yaml's lint
+  # restores. Nothing is gated here.
   lint:
     needs: changes
     if: needs.changes.outputs.crates != '[]'

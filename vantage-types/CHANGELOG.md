@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.3 — 2026-10-25
+
+- Tests of one behaviour are folded into one test each (epoch-pair rendering, `changes_from`,
+  entity rejection) and tests another test already covers are dropped: 113 tests become 99 with
+  the same coverage. No API or behaviour change.
+
 ## 1.0.2 — 2026-10-25
 
 - A test whose assertions another test already makes is dropped. No API or behaviour change.

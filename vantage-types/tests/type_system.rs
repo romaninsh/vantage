@@ -252,12 +252,6 @@ fn entity_converts_each_field_through_its_type() {
 }
 
 #[test]
-fn entity_round_trips_through_its_record() {
-    let record: Record<AnyDemo> = item().into_record();
-    assert_eq!(Item::from_record(record).unwrap(), item());
-}
-
-#[test]
 fn entity_round_trips_through_raw_stored_values() {
     let record: Record<AnyDemo> = item().into_record();
     let raw: Record<CborValue> = record.into_record();
@@ -266,15 +260,14 @@ fn entity_round_trips_through_raw_stored_values() {
 }
 
 #[test]
-fn entity_rejects_a_field_of_the_wrong_type() {
-    let mut record: Record<AnyDemo> = item().into_record();
-    record.insert("count".to_string(), AnyDemo::new("three".to_string()));
-    assert!(Item::from_record(record).is_err());
-}
+fn entity_rejects_a_record_missing_or_mistyping_a_field() {
+    let mut missing: Record<AnyDemo> = item().into_record();
+    missing.shift_remove("count");
+    let mut mistyped: Record<AnyDemo> = item().into_record();
+    mistyped.insert("count".to_string(), AnyDemo::new("three".to_string()));
 
-#[test]
-fn entity_rejects_a_record_missing_a_field() {
-    let mut record: Record<AnyDemo> = item().into_record();
-    record.shift_remove("count");
-    assert!(Item::from_record(record).is_err());
+    let missing = Item::from_record(missing).unwrap_err();
+    let mistyped = Item::from_record(mistyped).unwrap_err();
+
+    assert_ne!(missing.message(), mistyped.message());
 }
