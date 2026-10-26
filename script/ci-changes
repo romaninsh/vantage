@@ -95,9 +95,11 @@ def versions(names, dirs, base, head):
 
 
 def changelog_entry(text, heading, limit=400):
-    """The section under `heading` (say `## 1.2.3`) of a CHANGELOG as one plain
-    line, or None when there's no such heading."""
-    match = re.search(rf"^{re.escape(heading)}( [^\n]*)?\n(.*?)(?=^## |\Z)", text or "", re.M | re.S)
+    """The section under `heading` (say `## 1.2.3`, or `### 1.9.2` inside a
+    `## Vantage 1.9` block) of a CHANGELOG as one plain line, or None when
+    there's no such heading. It ends at the next heading of its level or above."""
+    level = len(heading) - len(heading.lstrip("#"))
+    match = re.search(rf"^{re.escape(heading)}( [^\n]*)?\n(.*?)(?=^#{{1,{level}}} |\Z)", text or "", re.M | re.S)
     if not match:
         return None
     body = re.sub(r"(?m)^\s*[-*] ", "• ", re.sub(r"`|\*\*", "", match.group(2)))
@@ -176,7 +178,11 @@ def app_version(settings, dirs, base, head, owed, labels):
     major, minor = (new or "0.0").split(".")[:2]
     path = settings.get("changelog", "CHANGELOG.md")
     heading = settings.get("heading", "## {major}.{minor}").format(major=major, minor=minor, version=new)
-    text = changelog_entry(show(head, path), heading) if new else None
+    changelog = show(head, path)
+    text = changelog_entry(changelog, heading) if new else None
+    # The block must exist (the gate); the hover shows this patch's own entry when it has one.
+    if text is not None:
+        text = changelog_entry(changelog, f"### {new}") or text
     plist = plist_ok = None
     if settings.get("plist"):
         info = plistlib.loads(show(head, settings["plist"]).encode() or b"<plist><dict/></plist>")
