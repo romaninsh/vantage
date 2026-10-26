@@ -6,8 +6,7 @@
 mod support;
 
 use vantage_api_client::{ResponseShape, RestApi, RestApiVistaFactory, RestApiVistaSpec};
-use vantage_dataset::traits::WritableValueSet;
-use vantage_vista::{Capability, JoinKey, ReferenceKind, VistaFactory};
+use vantage_vista::{JoinKey, ReferenceKind, VistaFactory};
 
 fn factory() -> RestApiVistaFactory {
     let api = RestApi::builder("https://example.com")
@@ -151,33 +150,6 @@ references:
             JoinKey::new("version_id", "version_id")
         ]
     );
-}
-
-/// The REST shell only reads: no write capability is advertised, so the
-/// Vista refuses writes before any request.
-#[tokio::test]
-async fn writes_are_refused_by_the_vista() {
-    let factory = factory();
-    let spec: RestApiVistaSpec =
-        serde_yaml_ng::from_str("name: users\ncolumns:\n  id: { type: int, flags: [id] }\n")
-            .unwrap();
-    let vista = factory.build_from_spec(spec).expect("build");
-    for write in [
-        Capability::Insert,
-        Capability::Update,
-        Capability::Delete,
-        Capability::Import,
-        Capability::ConfineWrites,
-    ] {
-        assert!(!vista.capabilities().has(write), "{write}");
-    }
-    assert!(!vista.capabilities().has(Capability::Cursor));
-    let err = vista
-        .insert_value("1", &Default::default())
-        .await
-        .unwrap_err();
-    assert!(err.is_unsupported(), "{err}");
-    assert!(vista.delete("1").await.unwrap_err().is_unsupported());
 }
 
 #[test]

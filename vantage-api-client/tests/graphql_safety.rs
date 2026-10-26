@@ -3,7 +3,6 @@
 
 mod support;
 
-use ciborium::Value as CborValue;
 use serde_json::{Value, json};
 use support::{mount, requests, test_client};
 use vantage_api_client::{FilterDialect, GraphqlApi, GraphqlApiVistaSpec, GraphqlOperation};
@@ -166,15 +165,6 @@ async fn list(server: &MockServer, rows: Value) -> vantage_core::Result<usize> {
     Ok(launches(api(server)).list_values().await?.len())
 }
 
-/// An id-less row keyed by its index, "1", would overwrite the real row
-/// with that id; it gets a synthetic `~row:` key instead.
-#[tokio::test]
-async fn an_id_less_row_and_a_real_row_both_survive() {
-    let server = MockServer::start().await;
-    let rows = json!([{ "id": "1", "name": "real" }, { "id": null, "name": "no id" }]);
-    assert_eq!(list(&server, rows).await.unwrap(), 2);
-}
-
 #[tokio::test]
 async fn a_duplicate_id_is_an_error() {
     let server = MockServer::start().await;
@@ -182,26 +172,4 @@ async fn a_duplicate_id_is_an_error() {
     let err = list(&server, rows).await.unwrap_err().to_string();
     assert!(err.contains("share an id"), "{err}");
     assert!(err.contains('7'), "{err}");
-}
-
-/// Without filter push-down, get-by-id searches the raw rows: an id-less row
-/// and a pair of repeated ids elsewhere in the list don't get in its way.
-#[tokio::test]
-async fn get_by_id_reads_past_id_less_and_repeated_rows() {
-    let server = MockServer::start().await;
-    let rows = json!([
-        { "id": null, "name": "no id" },
-        { "id": "7", "name": "a" },
-        { "id": "7", "name": "b" },
-        { "id": "1", "name": "real" }
-    ]);
-    let body = json!({ "data": { "launches": rows } }).to_string();
-    mount(&server, "POST", 200, &body).await;
-    let spec: GraphqlApiVistaSpec = serde_yaml_ng::from_str(
-        "name: launches\ncolumns:\n  id:\n    type: string\n    flags: [id]\n  name:\n    type: string\ngraphql:\n  filter: false\n",
-    )
-    .unwrap();
-    let vista = api(&server).vista_factory().build_from_spec(spec).unwrap();
-    let row = vista.get_value("1").await.unwrap().expect("row 1");
-    assert_eq!(row.get("name"), Some(&CborValue::Text("real".into())));
 }

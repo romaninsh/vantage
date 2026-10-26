@@ -14,7 +14,7 @@ use support::{mount, test_client};
 use vantage_api_client::{
     PaginationParams, ResponseShape, RestApi, RestApiBuilder, RestApiVistaFactory, RestApiVistaSpec,
 };
-use vantage_dataset::traits::ReadableValueSet;
+use vantage_dataset::traits::{ReadableValueSet, WritableValueSet};
 use vantage_vista::{Capability, Vista, VistaFactory, VistaResolver};
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -142,6 +142,8 @@ async fn before_select_refuses_vista_list_get_count_and_window() {
     assert!(server.received_requests().await.unwrap().is_empty());
 }
 
+/// The REST shell only reads: it traverses, but advertises no search, no
+/// cursor and no write, and refuses them before any request.
 #[tokio::test]
 async fn a_rest_vista_traverses_and_reads_but_neither_searches_nor_writes() {
     let server = MockServer::start().await;
@@ -149,7 +151,20 @@ async fn a_rest_vista_traverses_and_reads_but_neither_searches_nor_writes() {
     let caps = products.capabilities();
     assert!(caps.has(Capability::Traverse));
     assert!(!caps.has(Capability::Search));
+    assert!(!caps.has(Capability::Cursor));
+    assert!(!caps.has(Capability::Insert));
+    assert!(!caps.has(Capability::Update));
+    assert!(!caps.has(Capability::Delete));
+    assert!(!caps.has(Capability::Import));
+    assert!(!caps.has(Capability::ConfineWrites));
+
     assert!(products.set_search(Some("x")).unwrap_err().is_unsupported());
+    let err = products
+        .insert_value("1", &Default::default())
+        .await
+        .unwrap_err();
+    assert!(err.is_unsupported(), "{err}");
+    assert!(products.delete("1").await.unwrap_err().is_unsupported());
     assert_eq!(support::requests(&server).await, 0);
 }
 

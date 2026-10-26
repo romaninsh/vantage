@@ -15,13 +15,6 @@ use vantage_table::table::Table;
 use vantage_types::EmptyEntity;
 use wiremock::MockServer;
 
-fn api(server: &MockServer) -> RestApi {
-    RestApi::builder(server.uri())
-        .response_shape(ResponseShape::BareArray)
-        .http_client(test_client())
-        .build()
-}
-
 async fn list_rows(api: &RestApi) -> vantage_core::Result<usize> {
     let table: Table<RestApi, EmptyEntity> = Table::new("things", api.clone()).with_id_column("id");
     Ok(table.list_values().await?.len())
@@ -56,30 +49,16 @@ async fn authorizations(server: &MockServer) -> Vec<Vec<String>> {
 }
 
 #[tokio::test]
-async fn bearer_source_is_read_per_request() {
+async fn bearer_source_is_asked_on_every_attempt() {
     let server = MockServer::start().await;
+    mount_n(&server, "GET", 503, "", 1).await;
     mount(&server, "GET", 200, "[]").await;
+    mount(&server, "POST", 200, "").await;
     let api = RestApi::builder(server.uri())
         .response_shape(ResponseShape::BareArray)
         .bearer_source(counting_source())
         .http_client(test_client())
         .build();
-
-    list_rows(&api).await.unwrap();
-    list_rows(&api).await.unwrap();
-
-    assert_eq!(
-        authorizations(&server).await,
-        [vec!["Bearer t0"], vec!["Bearer t1"]]
-    );
-}
-
-#[tokio::test]
-async fn bearer_source_is_asked_again_on_a_retry() {
-    let server = MockServer::start().await;
-    mount_n(&server, "GET", 503, "", 1).await;
-    mount(&server, "GET", 200, "[]").await;
-    let api = api(&server).with_bearer_source(counting_source());
 
     tokio::time::timeout(
         Duration::from_secs(5),
@@ -88,91 +67,48 @@ async fn bearer_source_is_asked_again_on_a_retry() {
     .await
     .expect("finishes")
     .expect("succeeds after the retry");
+    api.http_request(reqwest::Method::POST, "things", &[], None)
+        .await
+        .unwrap();
 
     assert_eq!(
         authorizations(&server).await,
-        [vec!["Bearer t0"], vec!["Bearer t1"]]
+        [vec!["Bearer t0"], vec!["Bearer t1"], vec!["Bearer t2"]]
     );
 }
 
+/// Clones of one API each send their own caller's bearer; `None` sends
+/// none, even over the shared API's fixed `auth`, and the shared API keeps
+/// its fixed header.
 #[tokio::test]
-async fn bearer_source_none_sends_no_authorization() {
+async fn clones_send_their_own_bearer_and_leave_the_original_alone() {
     let server = MockServer::start().await;
     mount(&server, "GET", 200, "[]").await;
-    // `None` also drops a fixed `auth` the shared API was built with.
     let shared = RestApi::builder(server.uri())
         .response_shape(ResponseShape::BareArray)
         .auth("Bearer fixed")
         .http_client(test_client())
         .build();
-    let signed_out = shared.with_bearer_source(Arc::new(|| None));
-
-    list_rows(&signed_out).await.unwrap();
-
-    assert_eq!(authorizations(&server).await, [Vec::<String>::new()]);
-}
-
-#[tokio::test]
-async fn two_clones_with_different_sources_send_their_own_bearer() {
-    let server = MockServer::start().await;
-    mount(&server, "GET", 200, "[]").await;
-    let shared = api(&server);
     let alice = shared.with_bearer_source(fixed_source("alice"));
     let bob = shared.with_bearer_source(fixed_source("bob"));
+    let signed_out = shared.with_bearer_source(Arc::new(|| None));
 
     list_rows(&alice).await.unwrap();
     list_rows(&bob).await.unwrap();
-    list_rows(&alice).await.unwrap();
+    list_rows(&signed_out).await.unwrap();
+    // `shared` has sent nothing yet, so a peak on its client means the
+    // clones' requests went through it.
+    assert_eq!(shared.client().peak_in_flight(), 1);
+    list_rows(&shared).await.unwrap();
 
     assert_eq!(
         authorizations(&server).await,
         [
             vec!["Bearer alice"],
             vec!["Bearer bob"],
-            vec!["Bearer alice"]
+            vec![],
+            vec!["Bearer fixed"]
         ]
-    );
-    // `shared` itself sent nothing, so a peak on its client means the
-    // clones' requests went through it.
-    assert_eq!(shared.client().peak_in_flight(), 1);
-}
-
-#[tokio::test]
-async fn fixed_bearer_still_works() {
-    let server = MockServer::start().await;
-    mount(&server, "GET", 200, "[]").await;
-    let shared = RestApi::builder(server.uri())
-        .response_shape(ResponseShape::BareArray)
-        .auth("Bearer fixed")
-        .http_client(test_client())
-        .build();
-    let session = shared.with_bearer_source(fixed_source("session"));
-
-    list_rows(&shared).await.unwrap();
-    list_rows(&session).await.unwrap();
-
-    assert_eq!(
-        authorizations(&server).await,
-        [vec!["Bearer fixed"], vec!["Bearer session"]],
-        "the clone's source leaves the original's fixed header alone"
-    );
-}
-
-#[tokio::test]
-async fn http_request_reads_the_bearer_source() {
-    let server = MockServer::start().await;
-    mount(&server, "POST", 200, "").await;
-    let api = api(&server).with_bearer_source(counting_source());
-
-    for _ in 0..2 {
-        api.http_request(reqwest::Method::POST, "things", &[], None)
-            .await
-            .unwrap();
-    }
-
-    assert_eq!(
-        authorizations(&server).await,
-        [vec!["Bearer t0"], vec!["Bearer t1"]]
     );
 }
 

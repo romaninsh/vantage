@@ -113,6 +113,56 @@ message or kind, where the contract names it). Two bare `is_err()` asserts show 
 and a mistyped field for their different branches, but asserted only `is_err()` on both. Where
 the contract doesn't name the messages, `assert_ne!` on them shows the branches differ.*
 
+## R12. Identical coverage isn't a duplicate by itself: a legit case gets an exception
+
+Not every duplicate the matrix or CI's duplicate check reports must be resolved. Two tests that
+run the same code in this crate but check different behaviours (different calls, different
+promises, their asserts showing the difference per R11) stay as two tests. They aren't merged
+into one test just to satisfy the check. The proposal names each such test and gives the exact
+`coverage/vend-exception.sh <package> <test id> "<reason>"` command; the user vends it. Tests that
+check the same behaviour still merge or go (R1, R3).
+
+*Case: vantage-sql #478. CI paired the sqlite vista metadata tests (capability flags, Orderable
+columns, a refused `set_order`) because each only builds a `from_table` vista in vantage-sql. The
+user ruled they stay apart with exceptions rather than become one test.*
+
 ## Agreed in runs
 
-(none yet)
+### A1. Sibling entry points: one call each, one test
+
+Sibling entry points over the same machinery (R10) that each add an output of their own can't
+share one call. They go in one test: one setup, then one plain line per entry point, each
+asserting its own distinct value. This is a second exception to R2's single call, next to R9.
+
+*Case: vantage-sql mysql `4_aggregates.rs`: `test_count`, `test_sum_price`, `test_max_price`,
+`test_min_price` became `test_aggregates`, with one `get_count` / `get_sum` / `get_max` /
+`get_min` line each (5, 973, 299, 120).*
+
+### A2. One result per call: one call per case
+
+When the public API under test returns a single result per call, cases that need different
+results (different rows) can't share one call. They go in one test: one setup, one call per
+case, each with its own plain assert. Use this only when no public form of the call carries
+several cases at once.
+
+*Case: vantage-sql mysql `2_records.rs`: `associate::<Record<JsonValue>>().get()` returns one row,
+so `test_select_single_record_into_entity` (cupcake, every column set) and
+`test_null_into_optional_field` (plain, NULLs → None) became one test with two fetches and two
+exact `Product` equalities.*
+
+### A4. Repetition or a separate subject: one call each, one test
+
+Some cases can't share one call. Either repeating the call is the behaviour (a slot evaluated
+against a second env, a second compile that must hit or miss the cache, a second batch through
+one pipe), or each case needs its own subject (hosts built with different limits). These cases go
+in one test: one setup, then one plain line per repetition or subject, each with its assert.
+Every case that can share a call still does, and the proposal names A4 for each extra call.
+This is another exception to R2's single call, next to R9, A1 and A2. A2 covers different inputs
+that each need their own result. A4 covers calls whose repetition is the point, or cases that need
+another subject.
+
+*Case: vantage-rhai `host.rs` `each_host_stops_work_past_its_operation_ceiling`: the UI, background
+and zero-ceiling hosts get one call each. Background's runaway loop is a second call by R9. The same
+rule allowed the second `eval` in `a_compiled_slot_evaluates_against_whichever_env_it_is_given` and
+`the_resolver_is_asked_once_per_read_on_every_evaluation`, the paired `ast`/`compile` calls in the
+cache tests, and the second batch in `rows_are_answered_in_order_by_one_script_that_keeps_its_state`.*

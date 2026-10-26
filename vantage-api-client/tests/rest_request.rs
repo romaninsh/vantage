@@ -49,69 +49,30 @@ fn vista(api: RestApi, yaml: &str) -> Vista {
 const USERS: &str =
     "name: users\ncolumns:\n  id: { type: int, flags: [id] }\n  kind: { type: string }\n";
 
+/// An eq-condition with a scalar value becomes one URL-encoded `field=value`
+/// param; an array, a null, or a condition that is not an equality can't be
+/// one param and is not sent.
 #[tokio::test]
 async fn eq_conditions_become_query_params() {
     let server = MockServer::start().await;
     mount(&server, "GET", 200, "[]").await;
     let mut users = table("users", bare(&server).build());
     users.add_condition(eq_condition("status", "active"));
-    users.add_condition(eq_condition("role", "admin"));
-    users.list_values().await.unwrap();
-    assert_eq!(
-        sent(&server).await,
-        ("/users".into(), Some("role=admin&status=active".into()))
-    );
-}
-
-#[tokio::test]
-async fn condition_values_are_url_encoded() {
-    let server = MockServer::start().await;
-    mount(&server, "GET", 200, "[]").await;
-    let mut users = table("users", bare(&server).build());
     users.add_condition(eq_condition("title", "a b&c=d"));
-    users.list_values().await.unwrap();
-    assert_eq!(
-        sent(&server).await,
-        ("/users".into(), Some("title=a%20b%26c%3Dd".into()))
-    );
-}
-
-#[tokio::test]
-async fn scalar_condition_values_render_as_text() {
-    let server = MockServer::start().await;
-    mount(&server, "GET", 200, "[]").await;
-    let mut users = table("users", bare(&server).build());
     users.add_condition(eq_condition("done", true));
     users.add_condition(eq_condition("n", 7i64));
     users.add_condition(eq_condition("ratio", 1.5f64));
+    users.add_condition(eq_condition("tags", vec![CborValue::Text("a".into())]));
+    users.add_condition(eq_condition("gone", CborValue::Null));
+    users.add_condition(Expression::<CborValue>::new("CUSTOM SQL", vec![]));
     users.list_values().await.unwrap();
     assert_eq!(
         sent(&server).await,
-        ("/users".into(), Some("done=true&n=7&ratio=1.5".into()))
+        (
+            "/users".into(),
+            Some("done=true&n=7&ratio=1.5&status=active&title=a%20b%26c%3Dd".into())
+        )
     );
-}
-
-#[tokio::test]
-async fn array_and_null_condition_values_are_not_sent() {
-    let server = MockServer::start().await;
-    mount(&server, "GET", 200, "[]").await;
-    let mut users = table("users", bare(&server).build());
-    users.add_condition(eq_condition("tags", vec![CborValue::Text("a".into())]));
-    users.add_condition(eq_condition("gone", CborValue::Null));
-    users.add_condition(eq_condition("id", 3i64));
-    users.list_values().await.unwrap();
-    assert_eq!(sent(&server).await, ("/users".into(), Some("id=3".into())));
-}
-
-#[tokio::test]
-async fn a_condition_that_is_not_an_equality_is_not_sent() {
-    let server = MockServer::start().await;
-    mount(&server, "GET", 200, "[]").await;
-    let mut users = table("users", bare(&server).build());
-    users.add_condition(Expression::<CborValue>::new("CUSTOM SQL", vec![]));
-    users.add_condition(eq_condition("id", 3i64));
-    users.list_values().await.unwrap();
-    assert_eq!(sent(&server).await, ("/users".into(), Some("id=3".into())));
 }
 
 #[test]
