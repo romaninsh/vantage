@@ -4,7 +4,9 @@ usage: python3 -I coverage/ci-report.py --run <json> [--jobs <json>] --junit <di
            --lcov <file> --stats <dir> [--audit <dir>]
            [--baseline main.json] [--update-baseline out.json] > summary.md
 
---run: crates, measured, versions, published, all, gated (ci-changes' outputs).
+--run: crates, measured, versions, published, all, gated, versioning_mode, app,
+skill_url (ci-changes' outputs, each a JSON string).
+--labels: the PR's labels (a JSON list); app mode notes its skip label.
 --jobs: {job: result} of the jobs the summary waits on.
 --junit: one directory per test group holding nextest's junit.xml.
 --stats: <crate>.pairs.json (matrix-rs) and <crate>.findings.json (new_tests.py).
@@ -34,10 +36,9 @@ def junit_counts(junit_dir):
     out = {}
     if not junit_dir or not os.path.isdir(junit_dir):
         return out
-    for group in sorted(os.listdir(junit_dir)):
-        path = os.path.join(junit_dir, group, "junit.xml")
-        if not os.path.isfile(path):
-            continue
+    # One group's artifact lands in junit/ itself, several in junit/<artifact>/.
+    paths = sorted(os.path.join(d, "junit.xml") for d, _, names in os.walk(junit_dir) if "junit.xml" in names)
+    for path in paths:
         for suite in ET.parse(path).getroot().iter("testsuite"):
             crate = suite.get("name", "").split("::")[0]
             row = out.setdefault(crate, [0, 0])
@@ -105,19 +106,47 @@ def version_cell(crate, versions, published, no_changelog=(), changelogs=None):
     if crate not in versions:
         return "💤 not bumped"
     old, new = versions[crate]
-    entry = (changelogs or {}).get(crate)
-    shown = new
-    if entry:
-        env = os.environ.get
-        url = f"{env('GITHUB_SERVER_URL', 'https://github.com')}/{env('GITHUB_REPOSITORY', '')}/blob/{env('GITHUB_SHA', 'HEAD')}/{entry['path']}"
-        shown = f'[{new}]({url} "{entry["text"].replace(chr(34), chr(39))}")'
+    shown = linked(new, (changelogs or {}).get(crate))
     note = " 📝 no CHANGELOG entry" if crate in no_changelog else ""
+    return f"{shown} ({bump(old, new)}){note}"
+
+
+def linked(version, entry):
+    """The version, linking to its CHANGELOG with the entry as the hover text."""
+    if not entry or entry.get("text") is None:
+        return version
+    env = os.environ.get
+    url = f"{env('GITHUB_SERVER_URL', 'https://github.com')}/{env('GITHUB_REPOSITORY', '')}/blob/{env('GITHUB_SHA', 'HEAD')}/{entry['path']}"
+    return f'[{version}]({url} "{entry["text"].replace(chr(34), chr(39))}")'
+
+
+def bump(old, new):
+    """Which part of the version moved, by position: +MAJOR, +minor, +patch."""
     if not old:
-        return f"{shown} (new){note}"
+        return "new"
     o, n = old.split("-")[0].split("."), new.split("-")[0].split(".")
     moved = next((i for i in range(3) if (o + ["0"] * 3)[i] != (n + ["0"] * 3)[i]), None)
-    kind = {0: "+MAJOR", 1: "+minor", 2: "+patch"}.get(moved, "+pre")
-    return f"{shown} ({kind}){note}"
+    return {0: "+MAJOR", 1: "+minor", 2: "+patch"}.get(moved, "+pre")
+
+
+def app_line(app, labels):
+    """App mode's one version line, or None when the PR owes no bump and made none."""
+    if not app or not app.get("new"):
+        return None
+    name, old, new = app["crate"], app.get("old"), app["new"]
+    if old == new:
+        if not app.get("owed"):
+            return None
+        line = f"💤 `{name}` not bumped"
+    else:
+        line = f"`{name}` {linked(new, app.get('changelog'))} ({bump(old, new)})"
+        if not app.get("changelog"):
+            line += f" · 📝 no `{app.get('heading', '## ' + new)}` in the CHANGELOG"
+        if not app.get("plist_ok", True):
+            line += f" · 🍎 Info.plist says {app.get('plist')}"
+    if app.get("skip_label") and app["skip_label"] in labels:
+        line += f" · skipped by `{app['skip_label']}`"
+    return line
 
 
 def crate_row(crate, m, was, versions, published, no_changelog=(), changelogs=None):
@@ -134,13 +163,16 @@ def crate_row(crate, m, was, versions, published, no_changelog=(), changelogs=No
         covered = f"{mark}{now:.1f}%{change(now, before, '{:+.1f}')}"
     dupes = overlaps = "—"
     if "identical" in m:
-        dupes = f"{'💔' if m['identical'] else '❤️'} {m['identical']}{change(m['identical'], was.get('identical'))}"
-        overlaps = f"🔍 {m['near']}{change(m['near'], was.get('near'))}"
-    version = version_cell(crate, versions, published, no_changelog, changelogs)
-    return f"| `{crate}` | {version} | {tests} | {covered} | {dupes} | {overlaps} |"
+        # Zero is "—", so the crates with some stand out in a long table.
+        dupes = (f"💔 {m['identical']}" if m["identical"] else "—") + change(m["identical"], was.get("identical"))
+        overlaps = (f"🔍 {m['near']}" if m["near"] else "—") + change(m["near"], was.get("near"))
+    cells = [f"`{crate}`", tests, covered, dupes, overlaps]
+    if versions is not None:
+        cells.insert(1, version_cell(crate, versions, published, no_changelog, changelogs))
+    return "| " + " | ".join(cells) + " |"
 
 
-def findings_section(stats, crates):
+def findings_section(stats, crates, skill=SKILL):
     blocking, near = [], []
     for crate in crates:
         for f in read_json(os.path.join(stats or "", f"{crate}.findings.json"), []):
@@ -149,7 +181,7 @@ def findings_section(stats, crates):
     out = []
     if blocking:
         out += ["", f"**💔 New tests that duplicate others ({len(blocking)})**: merge or drop them "
-                f"([cleanup skill]({SKILL}))", *blocking]
+                f"([cleanup skill]({skill}))", *blocking]
     if near:
         out += ["", f"<details><summary>🔍 New tests that overlap others ({len(near)})</summary>", "", *near,
                 "", "</details>"]
@@ -204,7 +236,8 @@ def headline(run, rows, jobs):
 
 def main():
     ap = argparse.ArgumentParser()
-    for flag in ("--run", "--jobs", "--junit", "--lcov", "--stats", "--audit", "--baseline", "--update-baseline"):
+    for flag in ("--run", "--jobs", "--junit", "--lcov", "--stats", "--audit", "--baseline", "--update-baseline",
+                 "--labels"):
         ap.add_argument(flag, default="")
     a = ap.parse_args()
     run = json.loads(a.run or "{}")
@@ -216,18 +249,26 @@ def main():
         updated.update({c: {k: v for k, v in m.items() if k != "failed"} for c, m in rows.items() if m})
         json.dump(updated, open(a.update_baseline, "w"), indent=1, sort_keys=True)
 
-    versions = json.loads(run.get("versions") or "{}")
+    # Per-crate versions (crates mode) are a table column; app mode has one line.
+    per_crate = json.loads(run.get("versioning_mode") or '"crates"') == "crates"
+    versions = json.loads(run.get("versions") or "{}") if per_crate else None
     published = set(json.loads(run.get("published") or "[]"))
     no_changelog = set(json.loads(run.get("no_changelog") or "[]"))
     changelogs = json.loads(run.get("changelogs") or "{}")
     out = [MARKER] + headline(run, rows, jobs)
+    line = None if per_crate else app_line(json.loads(run.get("app") or "{}"), json.loads(a.labels or "[]"))
+    if line:
+        out += ["", line]
     shown = {c: m for c, m in rows.items() if m or c in published}
     if shown:
-        out += ["", "| crate | version | tests | covered | dupes | overlaps |", "|---|---|--:|--:|--:|--:|"]
+        if per_crate:
+            out += ["", "| crate | version | tests | covered | dupes | overlaps |", "|---|---|--:|--:|--:|--:|"]
+        else:
+            out += ["", "| crate | tests | covered | dupes | overlaps |", "|---|--:|--:|--:|--:|"]
         for crate in sorted(shown):
             was = baseline.get(crate) if isinstance(baseline.get(crate), dict) else None
             out.append(crate_row(crate, shown[crate], was, versions, published, no_changelog, changelogs))
-    out += findings_section(a.stats, sorted(rows))
+    out += findings_section(a.stats, sorted(rows), json.loads(run.get("skill_url") or json.dumps(SKILL)))
     out += audit_section(a.audit, rows)
     env = os.environ.get
     url = f"{env('GITHUB_SERVER_URL', '')}/{env('GITHUB_REPOSITORY', '')}/actions/runs/{env('GITHUB_RUN_ID', '')}"

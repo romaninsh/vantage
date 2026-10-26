@@ -27,8 +27,11 @@ runs:
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
+        # The shared scripts sit beside this action (.ci/ in a caller repo).
+        SCRIPTS: ${{ github.action_path }}/../../../script
+        BASELINE_BRANCH: ${{ github.event.repository.default_branch }}
       run: |
-        run=$(script/ci-baseline | sed -n 's/^run=//p')
+        run=$("$SCRIPTS/ci-baseline" | sed -n 's/^run=//p')
         if [ -n "$run" ]; then
           gh run download "$run" -R "$GITHUB_REPOSITORY" -n coverage-baseline -D baseline
         else

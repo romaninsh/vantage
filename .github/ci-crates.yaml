@@ -1,4 +1,20 @@
 # What script/ci-changes needs to know beyond `cargo metadata`.
+#
+# Other repos running the shared pipeline add their own keys; vantage keeps
+# every default:
+#   runner / build_runner / small_runner   runner labels (ubuntu-26.04)
+#   env: {VAR: value}                      extra env for every cargo job
+#   dependents: true                       also test members depending on a changed one
+#   cache: warpbuild                       WarpBuild's cache instead of rust-cache
+#   warm: full-on-miss                     post-merge builds everything when main's cache key is new
+#   internal_tests: allow                  PRs may add tests under src/ (vantage forbids them)
+#   flags: {name: [crates]}                outputs flags.name: one of them is tested (gates own jobs)
+#   suite_exclude: <nextest filter>        tests the suites and the matrix don't run (run them elsewhere)
+#   one_job: true                          one test group builds and tests in one job, no archive
+#   skill_url: <url>                       the cleanup skill the summary links to
+#   versioning: {mode: app, crate, changelog, heading, plist, skip_label}
+#                                          one app version instead of per-crate versions
+# A script at .github/ci-setup.sh runs in every shared cargo job (apt packages).
 
 # Databases a crate's tests need. `sqlite` is a seeded file, not a container.
 services:
@@ -21,6 +37,9 @@ ci_self:
   - .github/**
   - script/ci-changes
   - script/ci-audit
+  - script/ci-baseline
+  - script/ci-cache-report
+  - script/ci-prune-target
   - script/check-repo-layers
   - coverage/**.py
   - coverage/**.sh

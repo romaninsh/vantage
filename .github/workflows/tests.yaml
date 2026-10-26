@@ -3,9 +3,13 @@ name: Tests
 # The test pipeline, shared by PRs (ci.yaml) and main (post-merge.yaml) so both
 # measure the same way: one instrumented build packed per database group, the
 # suites and the coverage matrix. `pr` mode also checks new tests for
-# duplicates (ci.yaml's summary reports it all); `baseline` mode refreshes
-# main's numbers PRs compare against. The job ids are the same for both
-# callers, so they share rust-cache entries.
+# duplicates (the summary reports it all); `baseline` mode refreshes main's
+# numbers PRs compare against. The job ids are the same for both callers, so
+# they share cache entries.
+#
+# Shared: another repo calls this at a vantage commit. `run` is its changes
+# job's outputs (runner, env, groups...), and every job runs the shared
+# scripts from a checkout of this workflow's commit (.ci/).
 on:
   workflow_call:
     inputs:
@@ -13,34 +17,20 @@ on:
         description: "pr | baseline"
         type: string
         required: true
-      groups:
+      run:
+        description: The changes job's outputs (toJSON(needs.changes.outputs))
         type: string
         required: true
-      tested:
-        type: string
-        required: true
-      new_tests:
-        type: string
-        default: "[]"
-      measured:
-        type: string
-        default: "[]"
-      versions:
-        type: string
-        default: "{}"
-      crates:
-        type: string
-        default: "[]"
-      all:
-        type: string
-        default: "false"
-      gated:
-        type: string
-        default: "false"
       base:
         description: The PR's base commit (pr mode)
         type: string
         default: ""
+    secrets:
+      CI_SSH_KEYS:
+        description: Deploy keys for private git dependencies (newline-joined)
+        required: false
+      COVERAGE_EXCEPTIONS_KEY:
+        required: false
 
 permissions: {}
 
@@ -50,37 +40,58 @@ env:
 jobs:
   # One instrumented build of every changed crate that has tests, packed into
   # one archive per database group (a filterset over the same build, so no
-  # recompile), so each suite downloads only its own binaries.
+  # recompile), so each suite downloads only its own binaries. With `one_job`
+  # (a single group) the suite builds and tests in place instead: no archive.
   build:
-    runs-on: ubuntu-latest
+    if: fromJSON(inputs.run).one_job != 'true'
+    runs-on: ${{ fromJSON(fromJSON(inputs.run).build_runner) }}
     permissions:
       contents: read
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: ./.github/actions/setup-rust
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .ci
+          persist-credentials: false
+      - id: prep
+        uses: ./.ci/.github/actions/prepare
+        with:
+          run: ${{ inputs.run }}
+          ssh-keys: ${{ secrets.CI_SSH_KEYS }}
           profile: instrumented
           tools: cargo-llvm-cov,cargo-nextest
+          cache-target: "true"
+      - name: nextest config
+        run: |
+          # The repo's own, when it tracks one; vantage's example otherwise. Either
+          # needs a `ci` profile writing junit.xml.
+          git ls-files --error-unmatch .config/nextest.toml > /dev/null 2>&1 \
+            || { mkdir -p .config && cp .ci/.config/nextest.toml.example .config/nextest.toml; }
       - name: Build and pack an archive per group
         env:
-          TESTED: ${{ inputs.tested }}
-          GROUP_LIST: ${{ inputs.groups }}
+          TESTED: ${{ fromJSON(inputs.run).tested }}
+          GROUP_LIST: ${{ fromJSON(inputs.run).groups }}
         run: |
-          cp .config/nextest.toml.example .config/nextest.toml
           mapfile -t pkgs < <(jq -r '.[] | "-p", .' <<<"$TESTED")
           # The first call compiles, the rest only pack: --timings goes on the first.
+          # CI_TIME=1 (the repo's env) reports the build's peak memory.
           timings=--timings
+          time=()
+          [ "${CI_TIME:-}" = 1 ] && time=(/usr/bin/time -v)
           for group in $(jq -c '.[]' <<<"$GROUP_LIST"); do
-            name=$(jq -r .name <<<"$group")
+            slot=$(jq -r .slot <<<"$group")
             filter=$(jq -r '.crates | map("package(" + . + ")") | join(" or ")' <<<"$group")
             # --no-clean: llvm-cov otherwise wipes the workspace crates before
             # every call, rebuilding them once per group.
-            cargo llvm-cov nextest-archive --no-clean $timings --all-features "${pkgs[@]}" -E "$filter" \
-              --zstd-level 9 --archive-file "ci-$name.tar.zst"
+            "${time[@]}" cargo llvm-cov nextest-archive --no-clean $timings --all-features "${pkgs[@]}" -E "$filter" \
+              --zstd-level 9 --archive-file "ci-$slot.tar.zst"
             timings=
+            time=()
           done
           ls -la ci-*.tar.zst
       # Cargo's per-crate compile timeline: which crates hold up the build.
@@ -90,44 +101,60 @@ jobs:
           path: target/**/cargo-timings/cargo-timing.html
           if-no-files-found: ignore
           retention-days: 7
-      # Fixed names: upload-artifact can't loop. A group without a step fails here.
-      - name: Every archive has an upload step
-        run: |
-          for f in ci-*.tar.zst; do
-            case "$f" in
-              ci-plain.tar.zst|ci-mongo.tar.zst|ci-surreal.tar.zst|ci-mysql-postgres-sqlite.tar.zst) ;;
-              *) echo "::error::no upload step for $f (add one in tests.yaml)"; exit 1 ;;
-            esac
-          done
-      - if: hashFiles('ci-plain.tar.zst') != ''
+      # upload-artifact can't loop: one step per slot (ci-changes allows six groups).
+      - if: hashFiles('ci-1.tar.zst') != ''
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with: { name: ci-tests-plain, path: ci-plain.tar.zst, retention-days: 1, compression-level: 0 }
-      - if: hashFiles('ci-mongo.tar.zst') != ''
+        with: { name: ci-tests-1, path: ci-1.tar.zst, retention-days: 1, compression-level: 0 }
+      - if: hashFiles('ci-2.tar.zst') != ''
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with: { name: ci-tests-mongo, path: ci-mongo.tar.zst, retention-days: 1, compression-level: 0 }
-      - if: hashFiles('ci-surreal.tar.zst') != ''
+        with: { name: ci-tests-2, path: ci-2.tar.zst, retention-days: 1, compression-level: 0 }
+      - if: hashFiles('ci-3.tar.zst') != ''
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with: { name: ci-tests-surreal, path: ci-surreal.tar.zst, retention-days: 1, compression-level: 0 }
-      - if: hashFiles('ci-mysql-postgres-sqlite.tar.zst') != ''
+        with: { name: ci-tests-3, path: ci-3.tar.zst, retention-days: 1, compression-level: 0 }
+      - if: hashFiles('ci-4.tar.zst') != ''
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with: { name: ci-tests-mysql-postgres-sqlite, path: ci-mysql-postgres-sqlite.tar.zst, retention-days: 1, compression-level: 0 }
+        with: { name: ci-tests-4, path: ci-4.tar.zst, retention-days: 1, compression-level: 0 }
+      - if: hashFiles('ci-5.tar.zst') != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with: { name: ci-tests-5, path: ci-5.tar.zst, retention-days: 1, compression-level: 0 }
+      - if: hashFiles('ci-6.tar.zst') != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with: { name: ci-tests-6, path: ci-6.tar.zst, retention-days: 1, compression-level: 0 }
+      # WarpBuild saves target/ after the last step: only third-party crates.
+      - name: Third-party crates only, for the cache
+        if: always() && steps.prep.outputs.target-key != '' && steps.prep.outputs.target-hit != 'true'
+        run: bash .ci/script/ci-prune-target target/llvm-cov-target/debug
+      # Saved here, failed or not: the cache action's own save is for passing jobs only.
+      - if: always() && steps.prep.outputs.target-key != '' && steps.prep.outputs.target-hit != 'true'
+        uses: WarpBuilds/cache/save@40f3443ae7b70e568d6e2070ea897f3df94d7553 # v1
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ steps.prep.outputs.target-key }}
 
   # The coverage matrix's per-test runner: its own workspace and cache, built
   # alongside the archive instead of after it.
   matrix-rs:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(fromJSON(inputs.run).runner) }}
     permissions:
       contents: read
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .ci
           persist-credentials: false
-      - uses: ./.github/actions/setup-rust
+      - uses: ./.ci/.github/actions/setup-rust
         with:
           key: matrix-rs
-          workspaces: coverage/matrix-rs -> ../../target/matrix-rs
-      - run: cargo build --release --locked --manifest-path coverage/matrix-rs/Cargo.toml --target-dir target/matrix-rs
+          workspaces: .ci/coverage/matrix-rs -> ../../../target/matrix-rs
+          backend: ${{ fromJSON(fromJSON(inputs.run).cache) }}
+      - run: cargo build --release --locked --manifest-path .ci/coverage/matrix-rs/Cargo.toml --target-dir target/matrix-rs
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with: { name: matrix-rs, path: target/matrix-rs/release/matrix-rs, retention-days: 1 }
 
@@ -135,59 +162,102 @@ jobs:
   # archive, writes its coverage, measures its crates with the matrix, and
   # (pr mode) checks the PR's new tests for duplicates.
   suite:
-    needs: [build, matrix-rs]
+    # Not matrix-rs: its binary is downloaded just before the matrix (built
+    # here if it isn't there), so a suite that builds (one_job) starts at once.
+    needs: build
+    # build is skipped with `one_job`: this job builds then.
+    if: >-
+      !cancelled() && (needs.build.result == 'success' || needs.build.result == 'skipped')
     name: suite (${{ matrix.group.name }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(fromJSON(inputs.run).one_job == 'true' && fromJSON(inputs.run).build_runner || fromJSON(inputs.run).runner) }}
     permissions:
       contents: read
     timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
-        group: ${{ fromJSON(inputs.groups) }}
+        group: ${{ fromJSON(fromJSON(inputs.run).groups) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: ./.github/actions/setup-rust
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .ci
+          persist-credentials: false
+      # Deploy keys and the hook too: some tests run cargo or shell out to tools.
+      - id: prep
+        uses: ./.ci/.github/actions/prepare
+        with:
+          run: ${{ inputs.run }}
+          ssh-keys: ${{ secrets.CI_SSH_KEYS }}
           profile: instrumented
           tools: cargo-llvm-cov,cargo-nextest
-          cache: "false"
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+          # Only a job that builds needs the build cache.
+          cache: ${{ fromJSON(inputs.run).one_job == 'true' && 'true' || 'false' }}
+          cache-target: ${{ fromJSON(inputs.run).one_job == 'true' && 'true' || 'false' }}
+      - if: fromJSON(inputs.run).one_job != 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: ci-tests-${{ matrix.group.name }}
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: matrix-rs
+          name: ci-tests-${{ matrix.group.slot }}
       - if: toJSON(matrix.group.services) != '[]'
-        uses: ./.github/actions/start-services
+        uses: ./.ci/.github/actions/start-services
         with:
           services: ${{ toJSON(matrix.group.services) }}
       - name: Tests
         env:
-          ARCHIVE: ci-${{ matrix.group.name }}.tar.zst
+          ARCHIVE: ci-${{ matrix.group.slot }}.tar.zst
           # The ci profile also writes JUnit for the report.
           NEXTEST_PROFILE: ci
+          # Tests the repo runs elsewhere (an archive can only leave out whole binaries).
+          EXCLUDE: ${{ fromJSON(fromJSON(inputs.run).suite_exclude || '""') }}
+          ONE_JOB: ${{ fromJSON(inputs.run).one_job }}
+          CRATES: ${{ toJSON(matrix.group.crates) }}
         run: |
-          cp .config/nextest.toml.example .config/nextest.toml
+          git ls-files --error-unmatch .config/nextest.toml > /dev/null 2>&1 \
+            || { mkdir -p .config && cp .ci/.config/nextest.toml.example .config/nextest.toml; }
           # A fresh runner has no target dir to extract into.
           mkdir -p target/llvm-cov-target
-          cargo llvm-cov nextest --archive-file "$ARCHIVE" --no-report --no-fail-fast
+          filter=()
+          [ -n "$EXCLUDE" ] && filter=(-E "not ($EXCLUDE)")
+          if [ "$ONE_JOB" = true ]; then
+            # Build and test in place; CI_TIME=1 (the repo's env) reports peak memory.
+            mapfile -t pkgs < <(jq -r '.[] | "-p", .' <<<"$CRATES")
+            time=()
+            [ "${CI_TIME:-}" = 1 ] && time=(/usr/bin/time -v)
+            "${time[@]}" cargo llvm-cov nextest --all-features "${pkgs[@]}" --no-report --no-fail-fast "${filter[@]}"
+          else
+            cargo llvm-cov nextest --archive-file "$ARCHIVE" --no-report --no-fail-fast "${filter[@]}"
+          fi
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: junit-${{ matrix.group.name }}
-          # An archive run keeps nextest's store in the workspace target dir.
-          path: target/nextest/ci/junit.xml
+          # An archive run keeps nextest's store in the workspace target dir, a
+          # build in place in llvm-cov's.
+          path: |
+            target/nextest/ci/junit.xml
+            target/llvm-cov-target/nextest/ci/junit.xml
           if-no-files-found: ignore
           retention-days: 1
       - name: Coverage for this group
         if: always()
         env:
-          ARCHIVE: ci-${{ matrix.group.name }}.tar.zst
-        run: cargo llvm-cov report --nextest-archive-file "$ARCHIVE" --lcov --output-path "lcov-${{ matrix.group.name }}.info"
+          ARCHIVE: ci-${{ matrix.group.slot }}.tar.zst
+          NAME: ${{ matrix.group.name }}
+          ONE_JOB: ${{ fromJSON(inputs.run).one_job }}
+        run: |
+          if [ "$ONE_JOB" = true ]; then
+            cargo llvm-cov report --lcov --output-path "lcov-$NAME.info"
+          else
+            cargo llvm-cov report --nextest-archive-file "$ARCHIVE" --lcov --output-path "lcov-$NAME.info"
+          fi
+          # Read: every test process left a profile of its whole binary, and
+          # the matrix needs the disk next.
+          cargo llvm-cov clean --profraw-only
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -195,20 +265,37 @@ jobs:
           path: lcov-${{ matrix.group.name }}.info
           if-no-files-found: ignore
           retention-days: 1
+      # The matrix-rs job finished long ago by now. If its binary isn't there,
+      # matrix.sh builds it (no MATRIX_RS).
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
+        with:
+          name: matrix-rs
       # Every crate of the group: its duplicate counts go into the report. The
       # matrix runs the PR's test binaries, so it gets no secret.
       - name: Coverage matrix
         id: matrix
         env:
-          ARCHIVE: ci-${{ matrix.group.name }}.tar.zst
+          # Built in place (one_job): the matrix lists the same build, no archive.
+          ARCHIVE: ${{ fromJSON(inputs.run).one_job != 'true' && format('ci-{0}.tar.zst', matrix.group.slot) || '' }}
           CRATES: ${{ toJSON(matrix.group.crates) }}
+          MATRIX_SKIP: ${{ fromJSON(fromJSON(inputs.run).suite_exclude || '""') }}
         run: |
-          chmod +x matrix-rs
+          if [ -f matrix-rs ]; then
+            chmod +x matrix-rs
+            export MATRIX_RS=$PWD/matrix-rs
+          else
+            echo "::notice::no matrix-rs artifact: building it here"
+          fi
           mkdir -p stats
+          mapfile -t crates < <(jq -r '.[]' <<<"$CRATES")
+          # The whole group in one run: one listing, one pool across every core.
           status=0
-          for name in $(jq -r '.[]' <<<"$CRATES"); do
-            MATRIX_REPORTS=0 MATRIX_ARCHIVE=$ARCHIVE MATRIX_RS=$PWD/matrix-rs coverage/matrix.sh "$name" || { status=1; continue; }
-            cp "coverage/report/$name/pairs.json" "stats/$name.pairs.json"
+          MATRIX_REPORTS=0 MATRIX_ARCHIVE=$ARCHIVE .ci/coverage/matrix.sh --group "${crates[@]}" || status=1
+          for name in "${crates[@]}"; do
+            if [ -f "coverage/report/$name/pairs.json" ]; then
+              cp "coverage/report/$name/pairs.json" "stats/$name.pairs.json"
+            fi
           done
           exit $status
       # Only crates whose tests/ gained lines can hold a new duplicate. Reads
@@ -218,7 +305,7 @@ jobs:
         env:
           BASE: ${{ inputs.base }}
           CRATES: ${{ toJSON(matrix.group.crates) }}
-          NEW_TESTS: ${{ inputs.new_tests }}
+          NEW_TESTS: ${{ fromJSON(inputs.run).new_tests }}
           COVERAGE_EXCEPTIONS_KEY: ${{ secrets.COVERAGE_EXCEPTIONS_KEY }}
           # Without the key (forks), only entries unchanged since this base count.
           EXCEPTIONS_BASE: ${{ inputs.base }}
@@ -227,7 +314,7 @@ jobs:
           for row in $(jq -c --argjson in "$CRATES" '.[] | select(.name as $n | $in | index($n))' <<<"$NEW_TESTS"); do
             name=$(jq -r .name <<<"$row"); dir=$(jq -r .dir <<<"$row")
             [ -f "coverage/report/$name/regions.json" ] || { echo "::error::no matrix report for $name"; status=1; continue; }
-            python3 -I coverage/new_tests.py clusters "$name" "$dir" "$BASE" || status=1
+            python3 -I .ci/coverage/new_tests.py clusters "$name" "$dir" "$BASE" || status=1
             [ -f "coverage/report/$name/findings.json" ] && cp "coverage/report/$name/findings.json" "stats/$name.findings.json"
           done
           exit $status
@@ -238,14 +325,29 @@ jobs:
           path: stats
           if-no-files-found: ignore
           retention-days: 1
+      # one_job built here: WarpBuild saves target/ after the last step, only
+      # third-party crates.
+      - name: Third-party crates only, for the cache
+        if: always() && steps.prep.outputs.target-key != '' && steps.prep.outputs.target-hit != 'true'
+        run: bash .ci/script/ci-prune-target target/llvm-cov-target/debug
+      # Saved here, failed or not: the cache action's own save is for passing jobs only.
+      - if: always() && steps.prep.outputs.target-key != '' && steps.prep.outputs.target-hit != 'true'
+        uses: WarpBuilds/cache/save@40f3443ae7b70e568d6e2070ea897f3df94d7553 # v1
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ steps.prep.outputs.target-key }}
 
   # baseline mode: main's per-crate numbers (coverage, tests, dupes, overlaps),
-  # the previous baseline with this merge's crates replaced. On PRs, ci.yaml's
+  # the previous baseline with this merge's crates replaced. On PRs, the
   # summary job reports instead.
   baseline:
     needs: suite
     if: always() && inputs.mode == 'baseline' && needs.suite.result != 'skipped'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(fromJSON(inputs.run).small_runner) }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -253,14 +355,19 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .ci
           persist-credentials: false
-      - uses: ./.github/actions/ci-results
+      - uses: ./.ci/.github/actions/ci-results
       - name: Baseline
         env:
-          RUN: ${{ toJSON(inputs) }}
+          RUN: ${{ inputs.run }}
         run: |
-          python3 -I coverage/ci-report.py --run "$RUN" --junit junit --lcov lcov.info --stats stats \
+          python3 -I .ci/coverage/ci-report.py --run "$RUN" --junit junit --lcov lcov.info --stats stats \
             --baseline baseline/coverage-baseline.json --update-baseline coverage-baseline.json >> "$GITHUB_STEP_SUMMARY"
+      # The caller's post-merge deletes the older ones (script/ci-baseline
+      # --prune): deleting needs `actions: write`, which PR callers don't grant.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-baseline

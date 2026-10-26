@@ -20,7 +20,9 @@ try:
 except ImportError:
     sys.exit("coverage/exceptions.py needs PyYAML (pip install pyyaml)")
 
-DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "exceptions")
+# The workspace's exceptions, wherever this script lives (another repo runs it from .ci/).
+ROOT = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True).stdout.strip()
+DIR = os.path.join(ROOT, "coverage", "exceptions")
 KEY = os.path.expanduser("~/.config/vantage/coverage-exceptions.key")
 HEADER = """\
 # @llm-protected: approved test exceptions. Add entries only with coverage/vend-exception.sh.
@@ -64,7 +66,7 @@ def base_entries(base, package):
     """The package's entries as committed at `base`, or [] if it had none."""
     shown = subprocess.run(
         ["git", "show", f"{base}:coverage/exceptions/{package}.yaml"],
-        cwd=os.path.dirname(DIR), capture_output=True, text=True,
+        cwd=ROOT, capture_output=True, text=True,
     )
     return (yaml.safe_load(shown.stdout) or []) if shown.returncode == 0 else []
 

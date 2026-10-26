@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Leaves only third-party crates in a cargo target dir, before CI caches it.
+#
+#   script/ci-prune-target <profile dir>     e.g. target/llvm-cov-target/debug
+#
+# The workspace's own crates rebuild on almost every run, and their linked
+# test binaries are most of the size (vantage-ui: 62 GB, mostly ~460 MB
+# instrumented binaries), so the cache keeps what doesn't change: compiled
+# dependencies, their build script output and their fingerprints.
+set -euo pipefail
+dir=$1
+[ -d "$dir" ] || exit 0
+before=$(du -sh "$dir" | cut -f1)
+
+# The workspace's package names (fingerprint/ and build/ dirs) and target
+# names, - as _ (deps/ files: libfoo_bar-<hash>.rlib, conformance-<hash>).
+meta=$(cargo metadata --no-deps --format-version 1 --offline)
+packages=$(jq -r '.packages[].name' <<<"$meta" | sort -u)
+targets=$(jq -r '.packages[].targets[].name | gsub("-"; "_")' <<<"$meta" | sort -u)
+
+# The name before the -<16 hex> hash, without lib.
+name() { sed -E 's/^(lib)?(.+)-[0-9a-f]{16}(\..*)?$/\2/'; }
+
+shopt -s nullglob
+for f in "$dir"/deps/*; do
+  if grep -qxF "$(basename "$f" | name)" <<<"$targets"; then rm -rf "$f"; fi
+done
+for d in "$dir"/.fingerprint/* "$dir"/build/*; do
+  if grep -qxF "$(basename "$d" | name)" <<<"$packages"; then rm -rf "$d"; fi
+done
+# Linked binaries and examples at the top level, and incremental state.
+find "$dir" -maxdepth 1 -type f -delete
+rm -rf "$dir/examples" "$dir/incremental"
+# nextest's output beside the profile dir (target/nextest, or
+# target/llvm-cov-target/nextest): a cached junit.xml would stand in for a
+# later run that never got to test.
+for out in "$(dirname "$dir")/nextest" "$(dirname "$(dirname "$dir")")/nextest"; do
+  case "$(basename "$(dirname "$out")")" in target | llvm-cov-target) rm -rf "$out" ;; esac
+done
+
+echo "pruned $dir for the cache: $before -> $(du -sh "$dir" | cut -f1)"

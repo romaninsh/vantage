@@ -26,45 +26,37 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  changes:
-    runs-on: ubuntu-latest
+  # The commit main's last coverage baseline measured. changes diffs from it,
+  # so crates of a queued run a later push replaced aren't lost. Its own job,
+  # so changes.yaml needs no `actions` permission from its callers.
+  last-baseline:
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
       actions: read # the last coverage-baseline artifact
     timeout-minutes: 5
     outputs:
-      crates: ${{ steps.c.outputs.crates }}
-      measured: ${{ steps.c.outputs.measured }}
-      tested: ${{ steps.c.outputs.tested }}
-      groups: ${{ steps.c.outputs.groups }}
+      sha: ${{ steps.last.outputs.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
           persist-credentials: false
       - id: last
         env:
           GH_TOKEN: ${{ github.token }}
+          BASELINE_BRANCH: ${{ github.event.repository.default_branch }}
         run: script/ci-baseline
-      # Diff from the commit the last baseline measured, not from the push's
-      # parent: a queued run that a later push replaced never measured its
-      # crates, so this run takes them over. A baseline commit that isn't on
-      # this history (a force push) falls back to the parent.
-      - id: c
-        env:
-          LAST: ${{ steps.last.outputs.sha }}
-          BEFORE: ${{ github.event.before }}
-          ALL: ${{ inputs.all }}
-        run: |
-          base=$BEFORE
-          if [ -n "$LAST" ] && git merge-base --is-ancestor "$LAST" "$GITHUB_SHA"; then
-            base=$LAST
-          fi
-          [ -n "$base" ] || base=$(git rev-parse "$GITHUB_SHA~1")
-          labels='[]'
-          [ "$ALL" = "true" ] && labels='["ALL_TESTS"]'
-          echo "base=$base labels=$labels"
-          script/ci-changes --base "$base" --head "$GITHUB_SHA" --labels "$labels"
+
+  changes:
+    needs: last-baseline
+    uses: ./.github/workflows/changes.yaml
+    permissions:
+      contents: read
+      pull-requests: read
+    with:
+      mode: post-merge
+      base: ${{ needs.last-baseline.outputs.sha }}
+      all: ${{ inputs.all == true }}
 
   # The PR pipeline in baseline mode. Its build and matrix-rs jobs share their
   # ids with the PR's, so they also warm the caches PRs restore.
@@ -77,18 +69,33 @@ jobs:
       actions: read
     with:
       mode: baseline
-      groups: ${{ needs.changes.outputs.groups }}
-      tested: ${{ needs.changes.outputs.tested }}
-      measured: ${{ needs.changes.outputs.measured }}
-      crates: ${{ needs.changes.outputs.crates }}
-    secrets: inherit
+      run: ${{ toJSON(needs.changes.outputs) }}
+
+  # Only the newest coverage-baseline is ever read: once this merge's is up,
+  # the older ones go, instead of piling up for 90 days.
+  prune-baselines:
+    needs: tests
+    if: needs.tests.result == 'success'
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      actions: write # delete artifacts
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          BASELINE_BRANCH: ${{ github.event.repository.default_branch }}
+        run: script/ci-baseline --prune
 
   # rust-cache keys a cache by job id: this warms the cache ci.yaml's lint
   # restores. Nothing is gated here.
   lint:
     needs: changes
     if: needs.changes.outputs.crates != '[]'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     timeout-minutes: 30

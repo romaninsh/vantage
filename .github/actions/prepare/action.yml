@@ -1,0 +1,73 @@
+name: Prepare a cargo job
+description: The repo's env, deploy keys and setup hook, then Rust. Every shared cargo job starts here.
+
+# Runs from the shared checkout (.ci/) in the caller's workspace. `run` is the
+# changes job's outputs (ci-changes' keys, each a JSON string). Secrets can't be
+# read in a composite action, so the job passes the deploy keys in.
+inputs:
+  run:
+    description: The changes job's outputs, as JSON
+    required: true
+  ssh-keys:
+    description: Private deploy keys for private git dependencies (newline-joined), or empty
+    default: ""
+  hook:
+    description: Run the repo's .github/ci-setup.sh (apt packages)
+    default: "true"
+  profile:
+    default: normal
+  tools:
+    default: ""
+  key:
+    default: ""
+  cache:
+    default: "true"
+  cache-target:
+    description: Also cache target/ (WarpBuild); the job must run script/ci-prune-target last
+    default: "false"
+
+outputs:
+  target-key:
+    description: With cache-target, the key to save the pruned target/ under
+    value: ${{ steps.rust.outputs.target-key }}
+  target-hit:
+    description: With cache-target, the exact key was restored (nothing to save)
+    value: ${{ steps.rust.outputs.target-hit }}
+
+runs:
+  using: composite
+  steps:
+    - name: The repo's env
+      shell: bash
+      env:
+        REPO_ENV: ${{ fromJSON(inputs.run).env || '{}' }}
+      run: jq -r 'to_entries[] | "\(.key)=\(.value)"' <<<"$REPO_ENV" >> "$GITHUB_ENV"
+    - if: inputs.ssh-keys != ''
+      uses: webfactory/ssh-agent@dc588b651fe13675774614f8e6a936a468676387 # v0.9.0
+      with:
+        ssh-private-key: ${{ inputs.ssh-keys }}
+    - name: The repo's setup hook
+      if: inputs.hook == 'true' && hashFiles('.github/ci-setup.sh') != ''
+      shell: bash
+      run: bash .github/ci-setup.sh
+    - id: rust
+      uses: ./.ci/.github/actions/setup-rust
+      with:
+        profile: ${{ inputs.profile }}
+        tools: ${{ inputs.tools }}
+        key: ${{ inputs.key }}
+        cache: ${{ inputs.cache }}
+        target: ${{ inputs.cache-target }}
+        backend: ${{ fromJSON(fromJSON(inputs.run).cache || '"rust-cache"') }}
+    # CI_CACHE_REPORT=1 (the repo's env): what the restored cache holds.
+    - name: What the cache restored
+      if: env.CI_CACHE_REPORT == '1' && inputs.cache == 'true'
+      shell: bash
+      run: bash .ci/script/ci-cache-report cache-report.md
+    - if: env.CI_CACHE_REPORT == '1' && inputs.cache == 'true'
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: cache-report-${{ github.job }}
+        path: cache-report.md
+        overwrite: true
+        retention-days: 7

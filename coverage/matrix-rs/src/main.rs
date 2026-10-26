@@ -1,13 +1,18 @@
 //! Per-test code regions for coverage/matrix.sh.
 //!
 //! usage: matrix-rs <list.json> <crate_dir> <out_dir> [jobs]
+//!        matrix-rs group <list.json> <out_root> [jobs]
 //!
 //! Runs every non-ignored test from `cargo nextest list --message-format json`
 //! alone with its own LLVM profile, then reads the code regions it covered
-//! inside <crate_dir>/src straight from the profile and the test binary's
+//! inside its crate's src/ straight from the profile and the test binary's
 //! coverage mapping. The mapping is read once per binary rather than once per
-//! test, which is what `llvm-cov export` costs. Writes <out_dir>/covered.json
-//! for matrix.py:
+//! test, which is what `llvm-cov export` costs. `group` takes a list of
+//! several crates and runs all their tests in one pool (each crate's dir is
+//! its suites' `cwd`), so no core waits for one crate's last tests; it writes
+//! each crate's files to <out_root>/<package>/, with the excluded paths from
+//! MATRIX_EXCLUDE_JSON ({package: [glob]}). Writes <out_dir>/covered.json for
+//! matrix.py:
 //!
 //!   {"tests": n, "internal": [key], "failed": [[key, code]],
 //!    "covered": {key: [[file, ls, cs, le, ce]]}}
@@ -47,6 +52,28 @@ struct Test {
     cwd: PathBuf,
     name: String,
     profile: PathBuf,
+    krate: usize,
+}
+
+/// A crate whose tests are measured: regions count under its dir's src/.
+struct Crate {
+    dirs: Vec<PathBuf>,
+    name: String,
+    out: PathBuf,
+    excluded: Vec<String>,
+}
+
+impl Crate {
+    fn new(dir: &Path, out: PathBuf, excluded: Vec<String>) -> Result<Self> {
+        let dir = std::path::absolute(dir)?;
+        let name = dir
+            .file_name()
+            .context("crate dir has no name")?
+            .to_string_lossy()
+            .into_owned();
+        let canonical = fs::canonicalize(&dir).unwrap_or_else(|_| dir.clone());
+        Ok(Crate { dirs: vec![dir, canonical], name, out, excluded })
+    }
 }
 
 /// One of the crate's functions with its code regions under src/.
@@ -148,22 +175,37 @@ fn covered(local: &[Local], profile: &Path) -> Result<BTreeSet<Region>> {
 }
 
 fn main() -> Result<()> {
-    let args: Vec<String> = std::env::args().collect();
-    if args.len() < 4 {
-        anyhow::bail!("usage: matrix-rs <list.json> <crate_dir> <out_dir> [jobs]");
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    let group = args.first().map(String::as_str) == Some("group");
+    if group {
+        args.remove(0);
+    }
+    if args.len() < if group { 2 } else { 3 } {
+        anyhow::bail!(
+            "usage: matrix-rs <list.json> <crate_dir> <out_dir> [jobs]\n       matrix-rs group <list.json> <out_root> [jobs]"
+        );
     }
     let list: Value =
-        serde_json::from_slice(&fs::read(&args[1]).context("reading the test list")?)?;
-    let crate_dir = std::path::absolute(&args[2])?;
-    let crate_dirs = vec![crate_dir.clone(), fs::canonicalize(&crate_dir)?];
-    let crate_name = crate_dir
-        .file_name()
-        .context("crate_dir has no name")?
-        .to_string_lossy()
-        .into_owned();
-    let out = std::path::absolute(&args[3])?;
-    let jobs = args.get(4).map(|j| j.parse()).transpose()?.unwrap_or(8);
-    let prof = out.join("prof");
+        serde_json::from_slice(&fs::read(&args[0]).context("reading the test list")?)?;
+    let excluded_of = |var: &str| -> Vec<String> {
+        var.split(',').filter(|g| !g.is_empty()).map(str::to_string).collect()
+    };
+    // group: one crate per package in the list; otherwise the one crate given.
+    let (root, jobs_arg) = if group { (&args[1], args.get(2)) } else { (&args[2], args.get(3)) };
+    let root = std::path::absolute(root)?;
+    let jobs = jobs_arg.map(|j| j.parse()).transpose()?.unwrap_or(8);
+    let group_excluded: HashMap<String, Vec<String>> = std::env::var("MATRIX_EXCLUDE_JSON")
+        .ok()
+        .map(|j| serde_json::from_str(&j))
+        .transpose()?
+        .unwrap_or_default();
+    let mut crates: Vec<Crate> = vec![];
+    let mut crate_of: HashMap<String, usize> = HashMap::new();
+    if !group {
+        let excluded = excluded_of(&std::env::var("MATRIX_EXCLUDE").unwrap_or_default());
+        crates.push(Crate::new(Path::new(&args[1]), root.clone(), excluded)?);
+    }
+    let prof = root.join("prof");
     fs::create_dir_all(&prof)?;
 
     let mut tests = vec![];
@@ -174,6 +216,21 @@ fn main() -> Result<()> {
         .values()
     {
         let id = suite["binary-id"].as_str().unwrap_or_default();
+        let krate = if group {
+            let package = suite["package-name"].as_str().unwrap_or_default().to_string();
+            match crate_of.get(&package) {
+                Some(&k) => k,
+                None => {
+                    let dir = Path::new(suite["cwd"].as_str().unwrap_or_default());
+                    let excluded = group_excluded.get(&package).cloned().unwrap_or_default();
+                    crates.push(Crate::new(dir, root.join(&package), excluded)?);
+                    crate_of.insert(package, crates.len() - 1);
+                    crates.len() - 1
+                }
+            }
+        } else {
+            0
+        };
         for (name, case) in suite["testcases"].as_object().into_iter().flatten() {
             if case["ignored"].as_bool() == Some(true)
                 || case["filter-match"]["status"] != "matches"
@@ -190,6 +247,7 @@ fn main() -> Result<()> {
                 binary: suite["binary-path"].as_str().unwrap_or_default().into(),
                 cwd: suite["cwd"].as_str().unwrap_or_default().into(),
                 name: name.clone(),
+                krate,
             });
         }
     }
@@ -210,9 +268,10 @@ fn main() -> Result<()> {
             .and_then(|s| s.code())
     };
 
-    // One binary at a time: run its tests, then read their profiles against
-    // its mapping (read once), so reading one binary's profiles overlaps the
-    // test runs of the others instead of waiting for every test to finish.
+    // Per binary: run one test and read the binary's mapping with its profile
+    // (once), then run the rest, each read and deleted as soon as it ends. A
+    // profile holds every counter of its binary, so keeping a whole binary's
+    // profiles until its last test ends can fill the disk.
     let started = std::time::Instant::now();
     let mut by_binary: BTreeMap<&Path, Vec<usize>> = BTreeMap::new();
     for (i, t) in tests.iter().enumerate() {
@@ -221,23 +280,40 @@ fn main() -> Result<()> {
     let results: Vec<(usize, Option<i32>, Option<BTreeSet<Region>>)> = by_binary
         .par_iter()
         .flat_map(|(binary, idx)| {
-            let codes: Vec<Option<i32>> = idx.par_iter().map(|&i| run(&tests[i])).collect();
-            let first = idx.iter().find_map(|&i| parse(&tests[i].profile).ok());
-            let info =
-                first.and_then(|p| read_object_file(binary, p.version().unwrap_or_default()).ok());
-            let local = info
-                .as_ref()
-                .map(|info| local(info, &crate_dirs, &crate_name));
-            idx.par_iter()
-                .zip(codes)
-                .map(|(&i, code)| {
-                    let set = local
-                        .as_ref()
-                        .and_then(|l| covered(l, &tests[i].profile).ok());
-                    let _ = fs::remove_file(&tests[i].profile);
-                    (i, code, set)
-                })
-                .collect::<Vec<_>>()
+            let mapping = |i: usize| {
+                let p = parse(&tests[i].profile).ok()?;
+                read_object_file(binary, p.version().unwrap_or_default()).ok()
+            };
+            let measure = |l: &Option<Vec<Local<'_>>>, i: usize| {
+                let set = l.as_ref().and_then(|l| covered(l, &tests[i].profile).ok());
+                let _ = fs::remove_file(&tests[i].profile);
+                set
+            };
+            let first = idx[0];
+            let first_code = run(&tests[first]);
+            let mut codes = vec![first_code];
+            let mut info = mapping(first);
+            if info.is_none() {
+                // The first test left no profile (it crashed before exiting):
+                // run the rest, then take the mapping from any profile there is.
+                codes.extend(idx[1..].par_iter().map(|&i| run(&tests[i])).collect::<Vec<_>>());
+                info = idx.iter().find_map(|&i| mapping(i));
+            }
+            let k = &crates[tests[first].krate];
+            let found = info.as_ref().map(|info| local(info, &k.dirs, &k.name));
+            if codes.len() == idx.len() {
+                return idx
+                    .par_iter()
+                    .zip(codes)
+                    .map(|(&i, code)| (i, code, measure(&found, i)))
+                    .collect::<Vec<_>>();
+            }
+            let mut out = vec![(first, first_code, measure(&found, first))];
+            out.par_extend(idx[1..].par_iter().map(|&i| {
+                let code = run(&tests[i]);
+                (i, code, measure(&found, i))
+            }));
+            out
         })
         .collect();
     eprintln!(
@@ -253,53 +329,54 @@ fn main() -> Result<()> {
         regions.push((i, set));
     }
 
-    let mut covered_json = serde_json::Map::new();
-    let mut failed = vec![];
     let mut sets: Vec<Option<BTreeSet<Region>>> = vec![None; tests.len()];
     for (i, set) in regions {
         sets[i] = set;
     }
-    for (i, t) in tests.iter().enumerate() {
-        let code = codes[i].unwrap_or(-1);
-        match &sets[i] {
-            None => failed.push(json!([t.key, if code == 0 { 1 } else { code }])),
-            Some(set) => {
-                if code != 0 {
-                    failed.push(json!([t.key, code]));
+    internal.sort();
+    for (k, krate) in crates.iter().enumerate() {
+        let mine: Vec<usize> = (0..tests.len()).filter(|&i| tests[i].krate == k).collect();
+        let mut covered_json = serde_json::Map::new();
+        let mut failed = vec![];
+        let mut own_internal = vec![];
+        for &i in &mine {
+            let t = &tests[i];
+            let code = codes[i].unwrap_or(-1);
+            if internal.binary_search(&t.key).is_ok() {
+                own_internal.push(t.key.clone());
+            }
+            match &sets[i] {
+                None => failed.push(json!([t.key, if code == 0 { 1 } else { code }])),
+                Some(set) => {
+                    if code != 0 {
+                        failed.push(json!([t.key, code]));
+                    }
+                    covered_json.insert(
+                        t.key.clone(),
+                        json!(
+                            set.iter()
+                                .map(|r| json!([r.0, r.1, r.2, r.3, r.4]))
+                                .collect::<Vec<_>>()
+                        ),
+                    );
                 }
-                covered_json.insert(
-                    t.key.clone(),
-                    json!(
-                        set.iter()
-                            .map(|r| json!([r.0, r.1, r.2, r.3, r.4]))
-                            .collect::<Vec<_>>()
-                    ),
-                );
             }
         }
+        fs::create_dir_all(&krate.out)?;
+        fs::write(
+            krate.out.join("covered.json"),
+            serde_json::to_vec(&json!({
+                "tests": mine.len(), "internal": own_internal, "failed": failed, "covered": covered_json,
+            }))?,
+        )?;
+        let blackbox: Vec<&BTreeSet<Region>> = mine
+            .iter()
+            .filter(|&&i| internal.binary_search(&tests[i].key).is_err())
+            .filter_map(|&i| sets[i].as_ref())
+            .collect();
+        let summary = pairs(&blackbox, &krate.excluded);
+        fs::write(krate.out.join("pairs.json"), serde_json::to_vec(&summary)?)?;
     }
-    internal.sort();
-    fs::write(
-        out.join("covered.json"),
-        serde_json::to_vec(&json!({
-            "tests": tests.len(), "internal": internal, "failed": failed, "covered": covered_json,
-        }))?,
-    )?;
-
-    let excluded: Vec<String> = std::env::var("MATRIX_EXCLUDE")
-        .unwrap_or_default()
-        .split(',')
-        .filter(|g| !g.is_empty())
-        .map(str::to_string)
-        .collect();
-    let blackbox: Vec<&BTreeSet<Region>> = tests
-        .iter()
-        .zip(&sets)
-        .filter(|(t, _)| internal.binary_search(&t.key).is_err())
-        .filter_map(|(_, set)| set.as_ref())
-        .collect();
-    let summary = pairs(&blackbox, &excluded);
-    fs::write(out.join("pairs.json"), serde_json::to_vec(&summary)?)?;
     Ok(())
 }
 
