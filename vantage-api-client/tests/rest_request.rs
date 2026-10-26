@@ -235,26 +235,6 @@ async fn no_pagination_sends_no_paging_params() {
     assert_eq!(sent(&server).await, ("/users".into(), None));
 }
 
-#[tokio::test]
-async fn the_client_filter_strategy_keeps_conditions_off_the_wire() {
-    let server = MockServer::start().await;
-    mount(
-        &server,
-        "GET",
-        200,
-        r#"[{"id":1,"kind":"a"},{"id":2,"kind":"b"}]"#,
-    )
-    .await;
-    let api = bare(&server)
-        .filter_strategy(FilterStrategy::Client)
-        .build();
-    let mut users = vista(api, USERS);
-    users.add_condition("kind", FilterOp::Eq, "b").unwrap();
-    let ids: Vec<String> = users.list_values().await.unwrap().into_keys().collect();
-    assert_eq!(ids, ["2"]);
-    assert_eq!(sent(&server).await, ("/users".into(), None));
-}
-
 // ── Preview ──────────────────────────────────────────────────────────
 
 fn offline() -> RestApiBuilder {

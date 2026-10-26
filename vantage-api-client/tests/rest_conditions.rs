@@ -187,12 +187,14 @@ columns:
 
 /// Activities filtered in memory, from a server that sends every row back
 /// whatever the conditions: one row has `kind` and the hidden `note`, one
-/// lacks both, and none echoes the `mode` request parameter.
+/// lacks both, one has another `kind` and no `note`, and none echoes the
+/// `mode` request parameter.
 async fn client_filtered(server: &MockServer) -> Vista {
     Mock::given(method("GET"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
             { "id": 1, "kind": "ride", "note": "x" },
-            { "id": 2 }
+            { "id": 2 },
+            { "id": 3, "kind": "walk" }
         ])))
         .mount(server)
         .await;
@@ -207,12 +209,13 @@ async fn client_filtered(server: &MockServer) -> Vista {
         .expect("build")
 }
 
-/// Filtered in memory, a row lacking a filtered column is excluded, a hidden
-/// one included (`Hidden` is display only: a hidden column is still a row
+/// Filtered in memory, conditions stay off the wire and a row is kept only
+/// if it matches. A row lacking a filtered column is excluded, a hidden one
+/// included (`Hidden` is display only: a hidden column is still a row
 /// field), but not a `request_param` column, which the server consumes and
 /// never echoes back.
 #[tokio::test]
-async fn a_row_missing_a_filtered_column_is_excluded_unless_it_is_a_request_param() {
+async fn client_side_filtering_keeps_matching_rows_and_conditions_off_the_wire() {
     let server = MockServer::start().await;
     let mut by_kind = client_filtered(&server).await;
     let mut by_note = client_filtered(&server).await;
@@ -228,5 +231,9 @@ async fn a_row_missing_a_filtered_column_is_excluded_unless_it_is_a_request_para
     let ids: Vec<String> = by_note.list_values().await.unwrap().into_keys().collect();
     assert_eq!(ids, ["1"]);
     let ids: Vec<String> = by_mode.list_values().await.unwrap().into_keys().collect();
-    assert_eq!(ids, ["1", "2"]);
+    assert_eq!(ids, ["1", "2", "3"]);
+
+    let received = server.received_requests().await.unwrap();
+    assert_eq!(received[0].url.query(), None, "kind is not sent");
+    assert_eq!(received[1].url.query(), None, "note is not sent");
 }
