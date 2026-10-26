@@ -67,10 +67,10 @@ struct Product {
 }
 
 #[tokio::test]
-async fn test_select_single_record_into_entity() {
+async fn test_select_record_into_entity() {
     let db = setup().await;
 
-    let record: Record<JsonValue> = db
+    let cupcake: Record<JsonValue> = db
         .associate(sqlite_expr!(
             "SELECT * FROM product WHERE id = {}",
             "cupcake"
@@ -78,90 +78,41 @@ async fn test_select_single_record_into_entity() {
         .get()
         .await
         .unwrap();
-
-    let product: Product = Product::from_record(record).unwrap();
-    assert_eq!(product.name, "Flux Cupcake");
-    assert_eq!(product.price, 120);
-    assert!((product.weight.unwrap() - 0.25).abs() < f64::EPSILON);
-    assert_eq!(product.description, Some("A tasty cupcake".to_string()));
-    assert!(!product.is_deleted);
-}
-
-#[tokio::test]
-async fn test_null_into_optional_field() {
-    let db = setup().await;
-
-    let record: Record<JsonValue> = db
-        .associate(sqlite_expr!(
-            "SELECT name, price, weight, description FROM product WHERE id = {}",
-            "plain"
-        ))
+    let plain: Record<JsonValue> = db
+        .associate(sqlite_expr!("SELECT * FROM product WHERE id = {}", "plain"))
         .get()
         .await
         .unwrap();
 
-    #[derive(Debug, PartialEq, Serialize, Deserialize)]
-    struct ProductOptional {
-        name: String,
-        price: i64,
-        weight: Option<f64>,
-        description: Option<String>,
-    }
-
-    let product: ProductOptional = ProductOptional::from_record(record).unwrap();
-    assert_eq!(product.name, "Plain Bread");
-    assert_eq!(product.weight, None);
-    assert_eq!(product.description, None);
+    assert_eq!(
+        Product::from_record(cupcake).unwrap(),
+        Product {
+            id: "cupcake".into(),
+            name: "Flux Cupcake".into(),
+            price: 120,
+            calories: 300,
+            weight: Some(0.25),
+            is_deleted: false,
+            description: Some("A tasty cupcake".into()),
+        }
+    );
+    // NULL columns land as None
+    assert_eq!(
+        Product::from_record(plain).unwrap(),
+        Product {
+            id: "plain".into(),
+            name: "Plain Bread".into(),
+            price: 50,
+            calories: 150,
+            weight: None,
+            is_deleted: false,
+            description: None,
+        }
+    );
 }
 
 #[tokio::test]
-async fn test_missing_field_fails() {
-    let db = setup().await;
-
-    let record: Record<JsonValue> = db
-        .associate(sqlite_expr!(
-            "SELECT * FROM product WHERE id = {}",
-            "cupcake"
-        ))
-        .get()
-        .await
-        .unwrap();
-
-    #[derive(Debug, Deserialize)]
-    #[allow(dead_code)]
-    struct ProductWithRating {
-        name: String,
-        rating: f64, // doesn't exist
-    }
-
-    assert!(ProductWithRating::from_record(record).is_err());
-}
-
-#[tokio::test]
-async fn test_null_into_required_field_fails() {
-    let db = setup().await;
-
-    let record: Record<JsonValue> = db
-        .associate(sqlite_expr!(
-            "SELECT name, weight FROM product WHERE id = {}",
-            "plain"
-        ))
-        .get()
-        .await
-        .unwrap();
-
-    #[derive(Debug, Deserialize)]
-    #[allow(dead_code)]
-    struct Strict {
-        name: String,
-        weight: f64, // NOT Option — plain has NULL here
-    }
-
-    assert!(Strict::from_record(record).is_err());
-}
-
-#[tokio::test]
-async fn test_wrong_field_type_fails() {
+async fn test_missing_or_mistyped_field_fails() {
     let db = setup().await;
 
     let record: Record<JsonValue> = db
@@ -175,10 +126,22 @@ async fn test_wrong_field_type_fails() {
 
     #[derive(Debug, Deserialize)]
     #[allow(dead_code)]
+    struct ProductWithRating {
+        name: String,
+        rating: f64, // not selected
+    }
+
+    #[derive(Debug, Deserialize)]
+    #[allow(dead_code)]
     struct WrongTypes {
         name: i64,     // TEXT in DB
         price: String, // INTEGER in DB
     }
 
-    assert!(WrongTypes::from_record(record).is_err());
+    let missing = ProductWithRating::from_record(record.clone())
+        .unwrap_err()
+        .to_string();
+    assert!(missing.contains("missing field `rating`"), "{missing}");
+    let mistyped = WrongTypes::from_record(record).unwrap_err().to_string();
+    assert!(mistyped.contains("invalid type"), "{mistyped}");
 }

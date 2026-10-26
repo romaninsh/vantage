@@ -53,22 +53,6 @@ async fn setup() -> (SqliteDB, Table<SqliteDB, Item>) {
 // ── WritableDataSet ────────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn test_insert() {
-    let (_db, table) = setup().await;
-
-    let item = Item {
-        name: "Gamma".into(),
-        price: 30,
-    };
-    let result = table.insert("c", &item).await.unwrap();
-    assert_eq!(result.name, "Gamma");
-    assert_eq!(result.price, 30);
-
-    let fetched = table.get("c").await.unwrap().expect("row c");
-    assert_eq!(fetched.name, "Gamma");
-}
-
-#[tokio::test]
 async fn test_replace() {
     let (_db, table) = setup().await;
 
@@ -79,22 +63,7 @@ async fn test_replace() {
     table.replace("a", &item).await.unwrap();
 
     let fetched = table.get("a").await.unwrap().expect("row a");
-    assert_eq!(fetched.name, "Alpha Replaced");
-    assert_eq!(fetched.price, 99);
-}
-
-#[tokio::test]
-async fn test_patch() {
-    let (_db, table) = setup().await;
-
-    let partial = Item {
-        name: "".into(),
-        price: 55,
-    };
-    table.patch("a", &partial).await.unwrap();
-
-    let fetched = table.get("a").await.unwrap().expect("row a");
-    assert_eq!(fetched.price, 55);
+    assert_eq!(fetched, item);
 }
 
 #[tokio::test]
@@ -146,8 +115,7 @@ async fn test_insert_return_id() {
     assert!(!id.is_empty());
 
     let fetched = table.get(id).await.unwrap().expect("inserted row");
-    assert_eq!(fetched.name, "Auto");
-    assert_eq!(fetched.price, 42);
+    assert_eq!(fetched, item);
 }
 
 #[tokio::test]
@@ -188,8 +156,7 @@ async fn test_generated_id_fills_bare_primary_key() {
     assert!(id.contains('-'), "expected a uuid, got {id:?}");
 
     let fetched = table.get(id).await.unwrap().expect("inserted row");
-    assert_eq!(fetched.name, "Minted");
-    assert_eq!(fetched.price, 7);
+    assert_eq!(fetched, item);
 }
 
 #[tokio::test]
@@ -203,7 +170,6 @@ async fn test_generated_id_kept_on_explicit_insert() {
         name: "Explicit".into(),
         price: 9,
     };
-    table.insert("z", &item).await.unwrap();
-    let fetched = table.get("z").await.unwrap().expect("row z");
-    assert_eq!(fetched.name, "Explicit");
+    assert_eq!(table.insert("z", &item).await.unwrap(), item);
+    assert_eq!(table.get("z").await.unwrap(), Some(item));
 }

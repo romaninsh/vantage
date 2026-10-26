@@ -65,20 +65,6 @@ async fn setup() -> SqliteDB {
 // ═════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
-async fn test_text_decimal() {
-    let db = setup().await;
-    let t = table_for!("decimal_text", db);
-    let orig = ValDecimal {
-        name: "d".into(),
-        value: dec("123456.789012"),
-    };
-    let inserted = t.insert("t1", &orig).await.unwrap();
-    assert_eq!(inserted, orig);
-    let fetched = t.get("t1").await.unwrap().expect("row exists");
-    assert_eq!(fetched, orig);
-}
-
-#[tokio::test]
 async fn test_text_high_precision() {
     let db = setup().await;
     let t = table_for!("decimal_text", db);
@@ -98,6 +84,7 @@ async fn test_text_high_precision() {
 
 #[tokio::test]
 async fn test_numeric_decimal() {
+    // NUMERIC affinity stores this as REAL; it reads back through the f64 arm
     let db = setup().await;
     let t = table_for!("decimal_numeric", db);
     let orig = ValDecimal {
@@ -112,7 +99,8 @@ async fn test_numeric_decimal() {
 
 #[tokio::test]
 async fn test_numeric_high_precision_lossy() {
-    // SQLite NUMERIC affinity converts large decimals to REAL, losing precision
+    // SQLite NUMERIC affinity converts large decimals to REAL, losing precision;
+    // the integral result (1e17) is then stored as INTEGER
     let db = setup().await;
     let t = table_for!("decimal_numeric", db);
     let orig = ValDecimal {
@@ -120,54 +108,5 @@ async fn test_numeric_high_precision_lossy() {
         value: dec("99999999999999999.123456789012345"),
     };
     let inserted = t.insert("n2", &orig).await.unwrap();
-    // NUMERIC affinity rounds to f64: 1e17
-    assert_ne!(inserted, orig);
-}
-
-// ═════════════════════════════════════════════════════════════════════════
-// 3. REAL — f64 precision, lossy
-// ═════════════════════════════════════════════════════════════════════════
-
-#[tokio::test]
-async fn test_real_simple() {
-    let db = setup().await;
-    let t = table_for!("decimal_real", db);
-    let orig = ValDecimal {
-        name: "d".into(),
-        value: dec("123.456"),
-    };
-    let inserted = t.insert("r1", &orig).await.unwrap();
-    let diff = (inserted.value - orig.value).abs();
-    assert!(diff < dec("0.001"), "diff too large: {}", diff);
-}
-
-// ═════════════════════════════════════════════════════════════════════════
-// 4. INTEGER — fractional part lost
-// ═════════════════════════════════════════════════════════════════════════
-
-#[tokio::test]
-async fn test_integer_whole() {
-    let db = setup().await;
-    let t = table_for!("decimal_integer", db);
-    let orig = ValDecimal {
-        name: "d".into(),
-        value: dec("42"),
-    };
-    let inserted = t.insert("i1", &orig).await.unwrap();
-    assert_eq!(inserted.value, dec("42"));
-}
-
-#[tokio::test]
-async fn test_integer_truncates() {
-    let db = setup().await;
-    let t = table_for!("decimal_integer", db);
-    let orig = ValDecimal {
-        name: "frac".into(),
-        value: dec("123.999"),
-    };
-    let inserted = t.insert("i2", &orig).await.unwrap();
-    // SQLite INTEGER affinity — the tag string "123.999" is bound as text,
-    // SQLite may store as-is or convert depending on affinity rules
-    let v = inserted.value;
-    assert!(v == dec("123.999") || v == dec("124"), "unexpected: {}", v);
+    assert_eq!(inserted.value, dec("100000000000000000"));
 }

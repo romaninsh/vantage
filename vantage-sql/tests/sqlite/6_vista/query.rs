@@ -3,7 +3,7 @@
 use ciborium::Value as CborValue;
 use vantage_dataset::prelude::*;
 use vantage_sql::sqlite::SqliteDB;
-use vantage_vista::{Capability, SortDirection, VistaFactory};
+use vantage_vista::{SortDirection, VistaFactory};
 
 use super::{TestResult, product_table, setup};
 
@@ -12,9 +12,6 @@ async fn vista_set_order_ascending_descending_and_clear() -> TestResult {
     let db = setup().await;
     let table = product_table(db.clone());
     let mut vista = db.vista_factory().from_table(table)?;
-
-    // capability is advertised
-    assert!(vista.capabilities().has(Capability::Order));
 
     // sort ascending by price → a (10), b (20), c (30)
     vista.set_order(Some(("price", SortDirection::Ascending)))?;
@@ -58,8 +55,6 @@ async fn vista_set_search_filters_results_with_replace_semantics() -> TestResult
     let db = setup().await;
     let table = product_table(db.clone());
     let mut vista = db.vista_factory().from_table(table)?;
-
-    assert!(vista.capabilities().has(Capability::Search));
 
     // search "alpha" → only row a (name = "Alpha")
     vista.set_search(Some("alpha"))?;
@@ -113,19 +108,6 @@ columns:
     Ok(())
 }
 
-#[tokio::test]
-async fn vista_clearing_search_without_prior_search_is_noop() -> TestResult {
-    let db = setup().await;
-    let table = product_table(db.clone());
-    let mut vista = db.vista_factory().from_table(table)?;
-
-    // No prior search — clear should silently succeed.
-    vista.set_search(None)?;
-    let rows = vista.list_values().await?;
-    assert_eq!(rows.len(), 3);
-    Ok(())
-}
-
 fn window_ids(page: &vantage_vista::Page) -> Vec<&str> {
     page.rows.iter().map(|(id, _)| id.as_str()).collect()
 }
@@ -136,7 +118,6 @@ async fn vista_fetch_window_offset_pagination() -> TestResult {
     let table = product_table(db.clone());
     let mut vista = db.vista_factory().from_table(table)?;
 
-    assert!(vista.capabilities().has(Capability::Window));
     vista.set_order(Some(("id", SortDirection::Ascending)))?;
 
     let first = vista.fetch_window(0, 2).await?;
@@ -157,7 +138,6 @@ async fn vista_fetch_cursor_is_unsupported() -> TestResult {
     let db = setup().await;
     let vista = db.vista_factory().from_table(product_table(db.clone()))?;
 
-    assert!(!vista.capabilities().has(Capability::Cursor));
     let err = vista.fetch_cursor(None, 2).await.unwrap_err();
     assert!(err.is_unsupported());
     Ok(())

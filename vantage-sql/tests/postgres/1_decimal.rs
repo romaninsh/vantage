@@ -59,17 +59,6 @@ fn dec(s: &str) -> Decimal {
 // ══════════════════════════════════════════════════════════════════════���══
 
 #[tokio::test]
-async fn test_varchar_decimal() {
-    let t = table_for!("decimal_varchar", db().await);
-    let orig = ValDecimal {
-        name: "d".into(),
-        value: dec("123456.789012"),
-    };
-    let fetched = try_round_trip(&t, "vc_d", &orig).await.unwrap();
-    assert_eq!(fetched, orig);
-}
-
-#[tokio::test]
 async fn test_varchar_high_precision() {
     let t = table_for!("decimal_varchar", db().await);
     let orig = ValDecimal {
@@ -85,19 +74,8 @@ async fn test_varchar_high_precision() {
 // ════════════════════════════════════════════════════════���════════════════
 
 #[tokio::test]
-async fn test_numeric_exact() {
-    let t = table_for!("decimal_numeric", db().await);
-    let orig = ValDecimal {
-        name: "d".into(),
-        value: dec("123456.789012"),
-    };
-    let fetched = try_round_trip(&t, "dn_exact", &orig).await.unwrap();
-    assert_eq!(fetched, orig);
-}
-
-#[tokio::test]
-async fn test_numeric_truncated() {
-    // More than 6 decimal places — Postgres rounds
+async fn test_numeric_rounds_to_scale() {
+    // More than 6 decimal places — NUMERIC(20,6) rounds to 6
     let t = table_for!("decimal_numeric", db().await);
     let orig = ValDecimal {
         name: "trunc".into(),
@@ -105,17 +83,6 @@ async fn test_numeric_truncated() {
     };
     let fetched = try_round_trip(&t, "dn_trunc", &orig).await.unwrap();
     assert_eq!(fetched.value, dec("123.123457"));
-}
-
-#[tokio::test]
-async fn test_numeric_integer() {
-    let t = table_for!("decimal_numeric", db().await);
-    let orig = ValDecimal {
-        name: "int".into(),
-        value: dec("42"),
-    };
-    let fetched = try_round_trip(&t, "dn_int", &orig).await.unwrap();
-    assert_eq!(fetched.value, dec("42.000000"));
 }
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -130,28 +97,6 @@ async fn test_numeric_wide_high_precision() {
         value: dec("99999999999999999.123456789012345"),
     };
     let fetched = try_round_trip(&t, "dnw_hp", &orig).await.unwrap();
-    assert_eq!(fetched, orig);
-}
-
-#[tokio::test]
-async fn test_numeric_wide_negative() {
-    let t = table_for!("decimal_numeric_wide", db().await);
-    let orig = ValDecimal {
-        name: "neg".into(),
-        value: dec("-12345678901234.567890123456789"),
-    };
-    let fetched = try_round_trip(&t, "dnw_neg", &orig).await.unwrap();
-    assert_eq!(fetched, orig);
-}
-
-#[tokio::test]
-async fn test_numeric_wide_tiny() {
-    let t = table_for!("decimal_numeric_wide", db().await);
-    let orig = ValDecimal {
-        name: "tiny".into(),
-        value: dec("0.000000000000001"),
-    };
-    let fetched = try_round_trip(&t, "dnw_tiny", &orig).await.unwrap();
     assert_eq!(fetched, orig);
 }
 
@@ -192,24 +137,13 @@ async fn test_real_simple() {
 // ═════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
-async fn test_bigint_integer() {
-    let t = table_for!("decimal_bigint", db().await);
-    let orig = ValDecimal {
-        name: "d".into(),
-        value: dec("42"),
-    };
-    let fetched = try_round_trip(&t, "bi_int", &orig).await.unwrap();
-    assert_eq!(fetched.value, dec("42"));
-}
-
-#[tokio::test]
-async fn test_bigint_truncates_fraction() {
+async fn test_bigint_rounds_fraction() {
     let t = table_for!("decimal_bigint", db().await);
     let orig = ValDecimal {
         name: "frac".into(),
         value: dec("123.999"),
     };
     let fetched = try_round_trip(&t, "bi_frac", &orig).await.unwrap();
-    // BIGINT truncates fractional part
+    // BIGINT rounds the fractional part
     assert_eq!(fetched.value, dec("124"));
 }

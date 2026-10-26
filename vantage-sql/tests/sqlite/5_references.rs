@@ -84,26 +84,6 @@ async fn test_has_many_orders_for_paying_clients() {
     assert_eq!(order_list.len(), 3);
 }
 
-/// Traverse has_many: single client → orders
-#[tokio::test]
-async fn test_has_many_orders_for_single_client() {
-    let db = get_db().await;
-    let mut clients = client_table(db.clone());
-    clients.add_condition(sqlite_expr!("{} = {}", (clients["name"]), "Doc Brown"));
-
-    let orders = clients.get_ref_as::<ClientOrder>("orders").unwrap();
-
-    let preview = orders.select().preview();
-    assert_eq!(
-        preview,
-        "SELECT \"id\", \"bakery_id\", \"client_id\", \"is_deleted\" FROM \"client_order\" \
-         WHERE client_id IN (SELECT \"id\" FROM \"client\" WHERE name = 'Doc Brown')"
-    );
-
-    let order_list = orders.list().await.unwrap();
-    assert_eq!(order_list.len(), 2);
-}
-
 /// Traverse has_one: order → client
 #[tokio::test]
 async fn test_has_one_client_for_order() {

@@ -145,19 +145,15 @@ async fn vista_capabilities_advertise_read_write() -> TestResult {
     let vista = db.vista_factory().from_table(table)?;
 
     let caps = vista.capabilities();
-    for capability in [
-        Capability::Insert,
-        Capability::Update,
-        Capability::Delete,
-        Capability::ConfineWrites,
-        Capability::Order,
-        Capability::Search,
-        Capability::FilterOps,
-        Capability::Window,
-        Capability::Traverse,
-    ] {
-        assert!(caps.has(capability), "postgres advertises {capability}");
-    }
+    assert!(caps.has(Capability::Insert));
+    assert!(caps.has(Capability::Update));
+    assert!(caps.has(Capability::Delete));
+    assert!(caps.has(Capability::ConfineWrites));
+    assert!(caps.has(Capability::Order));
+    assert!(caps.has(Capability::Search));
+    assert!(caps.has(Capability::FilterOps));
+    assert!(caps.has(Capability::Window));
+    assert!(caps.has(Capability::Traverse));
     assert!(!caps.has(Capability::Cursor));
     // Being writable says nothing about whether anyone installed the
     // `{table}_changed` trigger, so watchability is NOT inferred from it.

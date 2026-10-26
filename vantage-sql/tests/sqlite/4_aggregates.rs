@@ -39,11 +39,36 @@ impl Product {
     }
 }
 
+// prices: 120, 135, 220, 299, 199 → sum = 973
 #[tokio::test]
-async fn test_get_count() {
+async fn test_aggregates() {
     let db = get_db().await;
     let table = Product::sqlite_table(db);
     assert_eq!(table.get_count().await.unwrap(), 5);
+    assert_eq!(
+        table
+            .get_sum(&table["price"])
+            .await
+            .unwrap()
+            .try_get::<i64>(),
+        Some(973)
+    );
+    assert_eq!(
+        table
+            .get_max(&table["price"])
+            .await
+            .unwrap()
+            .try_get::<i64>(),
+        Some(299)
+    );
+    assert_eq!(
+        table
+            .get_min(&table["price"])
+            .await
+            .unwrap()
+            .try_get::<i64>(),
+        Some(120)
+    );
 }
 
 #[tokio::test]
@@ -52,29 +77,4 @@ async fn test_get_count_with_condition() {
     let mut table = Product::sqlite_table(db);
     table.add_condition(sqlite_expr!("{} > {}", (table["price"]), 150));
     assert_eq!(table.get_count().await.unwrap(), 3); // time_tart (220), sea_pie (299), hover_cookies (199)
-}
-
-// prices: 120, 135, 220, 299, 199 → sum = 973
-#[tokio::test]
-async fn test_get_sum() {
-    let db = get_db().await;
-    let table = Product::sqlite_table(db);
-    let result = table.get_sum(&table["price"]).await.unwrap();
-    assert_eq!(result.try_get::<i64>().unwrap(), 973);
-}
-
-#[tokio::test]
-async fn test_get_max() {
-    let db = get_db().await;
-    let table = Product::sqlite_table(db);
-    let result = table.get_max(&table["price"]).await.unwrap();
-    assert_eq!(result.try_get::<i64>().unwrap(), 299);
-}
-
-#[tokio::test]
-async fn test_get_min() {
-    let db = get_db().await;
-    let table = Product::sqlite_table(db);
-    let result = table.get_min(&table["price"]).await.unwrap();
-    assert_eq!(result.try_get::<i64>().unwrap(), 120);
 }

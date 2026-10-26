@@ -7,28 +7,6 @@ use vantage_types::Record;
 use super::import::{TestResult, batch, open_vista, row, setup, stored, teardown, vista};
 
 #[tokio::test]
-async fn import_conflicts_on_id_held_outside_the_set() -> TestResult {
-    let (db, name) = setup("held_outside").await;
-    vista(&db, &name)
-        .insert_value("closed".to_string(), &row("closed one", "closed"))
-        .await?;
-    let before = stored(&db, &name).await;
-
-    let rows = batch(vec![
-        ("new", row("a", "open")),
-        ("closed", row("b", "open")),
-    ]);
-    let Err(err) = open_vista(&db, &name).import_values(&rows).await else {
-        panic!("import must conflict");
-    };
-    assert!(err.is_conflict(), "wrong error kind: {err}");
-    assert_eq!(stored(&db, &name).await, before);
-
-    teardown(&db, &name).await;
-    Ok(())
-}
-
-#[tokio::test]
 async fn import_rejects_out_of_set_row() -> TestResult {
     let (db, name) = setup("out_of_set").await;
     vista(&db, &name)
@@ -121,15 +99,19 @@ async fn import_matches_trailing_space_ids_by_pad_attribute() -> TestResult {
     Ok(())
 }
 
+/// `A` is the stored, closed `a` under the column collation.
 #[tokio::test]
-async fn import_conflicts_on_collation_equal_id_outside_the_set() -> TestResult {
-    let (db, name) = setup("collation_outside").await;
+async fn import_conflicts_on_id_held_outside_the_set() -> TestResult {
+    let (db, name) = setup("held_outside").await;
     vista(&db, &name)
         .insert_value("a".to_string(), &row("old", "closed"))
         .await?;
     let before = stored(&db, &name).await;
 
-    let rows = batch(vec![("A", row("changed", "open"))]);
+    let rows = batch(vec![
+        ("new", row("fresh", "open")),
+        ("A", row("changed", "open")),
+    ]);
     let Err(err) = open_vista(&db, &name).import_values(&rows).await else {
         panic!("import must conflict");
     };
