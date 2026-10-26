@@ -41,17 +41,29 @@ jobs:
       - name: Stop apt's background jobs
         if: inputs.kind == 'ui' || inputs.kind == 'ui-example'
         run: sudo systemctl stop apt-daily.timer apt-daily-upgrade.timer unattended-upgrades 2>/dev/null || true
-      # Cached .debs: the runner's mirror can take minutes for webkit alone. Only
-      # the first run after a package list change downloads.
+      # apt's downloaded .debs, cached: the runner's mirror can take minutes for
+      # webkit alone. apt-get still resolves and installs as usual, it only
+      # skips the download. Bump the key's version when the package list changes.
+      - if: inputs.kind == 'ui' || inputs.kind == 'ui-example'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-debs
+          key: apt-debs-${{ runner.os }}-${{ runner.arch }}-v1
       - name: System libraries
         if: inputs.kind == 'ui' || inputs.kind == 'ui-example'
+        working-directory: .
         timeout-minutes: 15
-        uses: awalsh128/cache-apt-pkgs-action@553a35bb8ebd9fcabcb1c9451aa4c98e1b4ca8a9 # v1.6.3
-        with:
-          packages: >-
-            pkg-config build-essential libssl-dev libxcb-shape0-dev libxcb-xfixes0-dev
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          mkdir -p ~/apt-debs/partial
+          sudo apt-get -o DPKG::Lock::Timeout=180 update
+          sudo apt-get -o DPKG::Lock::Timeout=180 -o Dir::Cache::Archives="$HOME/apt-debs" \
+            install -y --no-install-recommends \
+            pkg-config build-essential libssl-dev libxcb-shape0-dev libxcb-xfixes0-dev \
             libxkbcommon-dev libxkbcommon-x11-dev libfontconfig-dev libwebkit2gtk-4.1-dev
-          version: "1"
+          # The cache saves what the runner user can read.
+          sudo rm -f ~/apt-debs/lock
+          sudo chown -R "$USER" ~/apt-debs
 
       - name: Start minikube
         if: inputs.kind == 'kubernetes'
