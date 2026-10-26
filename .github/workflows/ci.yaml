@@ -182,11 +182,15 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
-        with:
-          tool: actionlint
+      # install-action doesn't carry actionlint (it falls back to crates.io,
+      # where there's no such crate): the release binary, pinned.
       - name: actionlint
-        run: actionlint
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v1.7.12 -R rhysd/actionlint -p 'actionlint_1.7.12_linux_amd64.tar.gz' -O - \
+            | tar -xz -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint"
       # Known merges and what they must select: a crate-only change selects
       # just its crates, a lockfile bump of members stays narrow.
       - name: ci-changes on known merges
@@ -274,10 +278,13 @@ jobs:
           cargo run -p bakery_model3 --example cli-vista -- csv products
           cargo run -p bakery_model3 --example cli-vista -- csv clients
 
-  # RustSec advisories in the workspace lockfile. Advisories appear whatever a
-  # PR changes, so only the ones its lockfile change brings in fail it; the
-  # rest are listed in the summary for main to fix.
+  # RustSec advisories in the workspace lockfile, when the PR touches a
+  # manifest or the lockfile (nothing else can bring one in). Only advisories
+  # its lockfile change brings in fail it; the rest are listed in the summary
+  # for main to fix.
   audit:
+    needs: changes
+    if: needs.changes.outputs.manifests == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
