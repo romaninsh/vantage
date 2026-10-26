@@ -311,20 +311,19 @@ async fn locator_unknown_scheme_errors() {
 }
 
 #[tokio::test]
-async fn cbor_diag_output_round_trips_record() {
+async fn id_condition_renders_one_record_as_exact_cbor_diag() {
     let rec = Recorder::with_format(OutputFormat::CborDiag);
-    vista_cli::run(&TestFactory, &rec, &argv(&["users", "id=1"]))
+    vista_cli::run(&TestFactory, &rec, &argv(&["users", "id=2"]))
         .await
         .unwrap();
 
-    let records = rec.records();
-    // Strict equality on cbor-diag — this is the format third-party
-    // drivers must match byte-for-byte in their bakery example tests.
-    // `Record<CborValue>` preserves insertion order from the seed, so
-    // the field ordering is stable.
+    // `id=` switches to single mode: no list, one record. Bob is not the first
+    // row, so only a real narrowing renders him. cbor-diag is the byte-for-byte
+    // format drivers match in their bakery example tests.
+    assert!(rec.lists().is_empty());
     assert_eq!(
-        records[0],
-        "\"1\": {\"id\": \"1\", \"name\": \"Alice\", \"salary\": 900, \"vip_flag\": true}\n"
+        rec.records(),
+        vec!["\"2\": {\"id\": \"2\", \"name\": \"Bob\", \"salary\": 2500, \"vip_flag\": false}\n"]
     );
 }
 
@@ -355,19 +354,6 @@ async fn hash_typed_value_filters_like_the_column_typed_one() {
     assert!(lists[0].contains("\"Alice\""));
     assert!(lists[0].contains("\"Carol\""));
     assert!(!lists[0].contains("\"Bob\""));
-}
-
-#[tokio::test]
-async fn id_condition_narrows_to_single_record() {
-    let rec = Recorder::with_format(OutputFormat::CborDiag);
-    vista_cli::run(&TestFactory, &rec, &argv(&["users", "id=2"]))
-        .await
-        .unwrap();
-
-    assert!(rec.lists().is_empty());
-    let records = rec.records();
-    assert_eq!(records.len(), 1);
-    assert!(records[0].contains("\"Bob\""));
 }
 
 #[tokio::test]

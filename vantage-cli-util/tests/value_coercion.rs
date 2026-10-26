@@ -138,18 +138,12 @@ fn value_list_hash_prefix_rejects_non_arrays_and_bad_json() {
 // ─── Column-typed coercion ─────────────────────────────────────────────────
 
 #[test]
-fn string_column_keeps_bool_and_number_lookalikes_as_text() {
+fn string_column_keeps_lookalikes_as_text_whatever_the_module_path() {
     let v = typed_vista();
     assert_eq!(coerce_for_column(&v, "name", "true").unwrap(), text("true"));
-    assert_eq!(coerce_for_column(&v, "name", "42").unwrap(), text("42"));
-}
-
-#[test]
-fn module_path_in_type_name_is_ignored() {
-    let v = typed_vista();
     assert_eq!(
-        coerce_for_column(&v, "path_name", "true").unwrap(),
-        text("true")
+        coerce_for_column(&v, "path_name", "42").unwrap(),
+        text("42")
     );
 }
 
