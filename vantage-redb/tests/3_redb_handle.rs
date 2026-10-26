@@ -35,7 +35,7 @@ fn test_create_makes_the_file() {
 }
 
 #[tokio::test]
-async fn test_rows_survive_reopening_the_file() {
+async fn test_open_and_create_on_an_existing_file_keep_its_rows() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("keep.redb");
     {
@@ -43,28 +43,20 @@ async fn test_rows_survive_reopening_the_file() {
         table.insert_value("n1", &note("hello")).await.unwrap();
     }
 
-    let reopened = notes(Redb::open(&path).unwrap());
-
-    let row = reopened
+    // Each handle closes at the end of its statement: redb opens a file once.
+    let opened = notes(Redb::open(&path).unwrap())
         .get_value("n1")
         .await
         .unwrap()
-        .expect("n1 persisted");
-    assert_eq!(row["body"].try_get::<String>(), Some("hello".into()));
-}
+        .expect("open sees n1");
+    let created = notes(Redb::create(&path).unwrap())
+        .get_value("n1")
+        .await
+        .unwrap()
+        .expect("create keeps n1");
 
-#[tokio::test]
-async fn test_create_on_an_existing_file_opens_it() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("again.redb");
-    {
-        let table = notes(Redb::create(&path).unwrap());
-        table.insert_value("n1", &note("hello")).await.unwrap();
-    }
-
-    let again = notes(Redb::create(&path).unwrap());
-
-    assert_eq!(again.list_values().await.unwrap().len(), 1);
+    assert_eq!(opened["body"].try_get::<String>(), Some("hello".into()));
+    assert_eq!(created["body"].try_get::<String>(), Some("hello".into()));
 }
 
 #[tokio::test]

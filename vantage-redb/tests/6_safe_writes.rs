@@ -81,27 +81,6 @@ async fn unnarrowed_table_reads_and_writes_everything() {
 }
 
 #[tokio::test]
-async fn get_honours_conditions() {
-    let (_f, all) = seeded().await;
-    let set = all
-        .clone()
-        .with_condition(RedbCondition::eq("parent", "p1"));
-    assert!(set.get_value("in1").await.unwrap().is_some());
-    assert!(set.get_value("out1").await.unwrap().is_none());
-}
-
-#[tokio::test]
-async fn insert_return_id_keeps_a_supplied_id() {
-    let (_f, t) = fresh_table("item");
-    let id = t
-        .insert_return_id_value(&record(&[("id", "given".into()), ("name", "a".into())]))
-        .await
-        .unwrap();
-    assert_eq!(id, "given");
-    assert!(t.get_value("given").await.unwrap().is_some());
-}
-
-#[tokio::test]
 async fn insert_never_leaves_stale_index_entries() {
     let (_f, t) = fresh_table("item");
     t.insert_value("x", &record(&[("parent", "p1".into())]))

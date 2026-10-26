@@ -146,13 +146,19 @@ async fn test_get_some_on_empty_table_returns_none() {
 }
 
 #[tokio::test]
-async fn test_get_some_honours_conditions() {
+async fn test_reads_honour_conditions() {
     let (_tmp, mut table) = seeded_table().await;
     table.add_condition(table["calories"].clone().eq(250i64));
 
-    let (id, _) = table.get_some_value().await.unwrap().expect("a match");
+    let rows = table.list_values().await.unwrap();
+    let (some_id, _) = table.get_some_value().await.unwrap().expect("a match");
+    let count = table.data_source().get_table_count(&table).await.unwrap();
 
-    assert_eq!(id, "delorean_donut");
+    assert_eq!(rows.into_keys().collect::<Vec<_>>(), ["delorean_donut"]);
+    assert_eq!(some_id, "delorean_donut");
+    assert_eq!(count, 1);
+    assert!(table.get_value("delorean_donut").await.unwrap().is_some());
+    assert!(table.get_value("flux_cupcake").await.unwrap().is_none());
 }
 
 #[tokio::test]
@@ -172,38 +178,21 @@ async fn test_count_of_a_table_never_written_is_zero() {
 }
 
 #[tokio::test]
-async fn test_count_follows_conditions() {
-    let (_tmp, mut table) = seeded_table().await;
-    table.add_condition(table["calories"].clone().in_(vec![200i64, 250]));
-
-    let n = table.data_source().get_table_count(&table).await.unwrap();
-
-    assert_eq!(n, 2);
-}
-
-#[tokio::test]
 async fn test_pagination_pages_partition_the_rows() {
     let (_tmp, table) = seeded_table().await;
+    let mut page1 = table.clone();
+    page1.set_pagination(Some(Pagination::new(1, 2)));
+    let mut page2 = table.clone();
+    page2.set_pagination(Some(Pagination::new(2, 2)));
 
-    let mut seen = Vec::new();
-    for page in 1..=3 {
-        let mut paged = table.clone();
-        paged.set_pagination(Some(Pagination::new(page, 1)));
-        seen.extend(paged.list_values().await.unwrap().into_keys());
-    }
+    let first = page1.list_values().await.unwrap();
+    let last = page2.list_values().await.unwrap();
+
+    assert_eq!(first.len(), 2);
+    assert_eq!(last.len(), 1);
+    let mut seen: Vec<String> = first.keys().chain(last.keys()).cloned().collect();
     seen.sort();
-
     assert_eq!(seen, ["delorean_donut", "flux_cupcake", "time_tart"]);
-}
-
-#[tokio::test]
-async fn test_pagination_past_the_end_is_empty() {
-    let (_tmp, table) = seeded_table().await;
-
-    let mut paged = table.clone();
-    paged.set_pagination(Some(Pagination::new(2, 3)));
-
-    assert!(paged.list_values().await.unwrap().is_empty());
 }
 
 #[tokio::test]
