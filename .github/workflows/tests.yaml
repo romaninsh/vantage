@@ -40,8 +40,10 @@ env:
 jobs:
   # One instrumented build of every changed crate that has tests, packed into
   # one archive per database group (a filterset over the same build, so no
-  # recompile), so each suite downloads only its own binaries.
+  # recompile), so each suite downloads only its own binaries. With `one_job`
+  # (a single group) the suite builds and tests in place instead: no archive.
   build:
+    if: fromJSON(inputs.run).one_job != 'true'
     runs-on: ${{ fromJSON(fromJSON(inputs.run).build_runner) }}
     permissions:
       contents: read
@@ -145,8 +147,12 @@ jobs:
   # (pr mode) checks the PR's new tests for duplicates.
   suite:
     needs: [build, matrix-rs]
+    # build is skipped with `one_job`: this job builds then.
+    if: >-
+      !cancelled() && needs.matrix-rs.result == 'success'
+      && (needs.build.result == 'success' || needs.build.result == 'skipped')
     name: suite (${{ matrix.group.name }})
-    runs-on: ${{ fromJSON(fromJSON(inputs.run).runner) }}
+    runs-on: ${{ fromJSON(fromJSON(inputs.run).one_job == 'true' && fromJSON(inputs.run).build_runner || fromJSON(inputs.run).runner) }}
     permissions:
       contents: read
     timeout-minutes: 40
@@ -172,8 +178,10 @@ jobs:
           ssh-keys: ${{ secrets.CI_SSH_KEYS }}
           profile: instrumented
           tools: cargo-llvm-cov,cargo-nextest
-          cache: "false"
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+          # Only a job that builds needs the build cache.
+          cache: ${{ fromJSON(inputs.run).one_job == 'true' && 'true' || 'false' }}
+      - if: fromJSON(inputs.run).one_job != 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ci-tests-${{ matrix.group.slot }}
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -190,6 +198,8 @@ jobs:
           NEXTEST_PROFILE: ci
           # Tests the repo runs elsewhere (an archive can only leave out whole binaries).
           EXCLUDE: ${{ fromJSON(fromJSON(inputs.run).suite_exclude || '""') }}
+          ONE_JOB: ${{ fromJSON(inputs.run).one_job }}
+          CRATES: ${{ toJSON(matrix.group.crates) }}
         run: |
           git ls-files --error-unmatch .config/nextest.toml > /dev/null 2>&1 \
             || { mkdir -p .config && cp .ci/.config/nextest.toml.example .config/nextest.toml; }
@@ -197,13 +207,24 @@ jobs:
           mkdir -p target/llvm-cov-target
           filter=()
           [ -n "$EXCLUDE" ] && filter=(-E "not ($EXCLUDE)")
-          cargo llvm-cov nextest --archive-file "$ARCHIVE" --no-report --no-fail-fast "${filter[@]}"
+          if [ "$ONE_JOB" = true ]; then
+            # Build and test in place; CI_TIME=1 (the repo's env) reports peak memory.
+            mapfile -t pkgs < <(jq -r '.[] | "-p", .' <<<"$CRATES")
+            time=()
+            [ "${CI_TIME:-}" = 1 ] && time=(/usr/bin/time -v)
+            "${time[@]}" cargo llvm-cov nextest --all-features "${pkgs[@]}" --no-report --no-fail-fast "${filter[@]}"
+          else
+            cargo llvm-cov nextest --archive-file "$ARCHIVE" --no-report --no-fail-fast "${filter[@]}"
+          fi
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: junit-${{ matrix.group.name }}
-          # An archive run keeps nextest's store in the workspace target dir.
-          path: target/nextest/ci/junit.xml
+          # An archive run keeps nextest's store in the workspace target dir, a
+          # build in place in llvm-cov's.
+          path: |
+            target/nextest/ci/junit.xml
+            target/llvm-cov-target/nextest/ci/junit.xml
           if-no-files-found: ignore
           retention-days: 1
       - name: Coverage for this group
@@ -211,7 +232,13 @@ jobs:
         env:
           ARCHIVE: ci-${{ matrix.group.slot }}.tar.zst
           NAME: ${{ matrix.group.name }}
-        run: cargo llvm-cov report --nextest-archive-file "$ARCHIVE" --lcov --output-path "lcov-$NAME.info"
+          ONE_JOB: ${{ fromJSON(inputs.run).one_job }}
+        run: |
+          if [ "$ONE_JOB" = true ]; then
+            cargo llvm-cov report --lcov --output-path "lcov-$NAME.info"
+          else
+            cargo llvm-cov report --nextest-archive-file "$ARCHIVE" --lcov --output-path "lcov-$NAME.info"
+          fi
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -224,7 +251,8 @@ jobs:
       - name: Coverage matrix
         id: matrix
         env:
-          ARCHIVE: ci-${{ matrix.group.slot }}.tar.zst
+          # Built in place (one_job): the matrix lists the same build, no archive.
+          ARCHIVE: ${{ fromJSON(inputs.run).one_job != 'true' && format('ci-{0}.tar.zst', matrix.group.slot) || '' }}
           CRATES: ${{ toJSON(matrix.group.crates) }}
           MATRIX_SKIP: ${{ fromJSON(fromJSON(inputs.run).suite_exclude || '""') }}
         run: |
