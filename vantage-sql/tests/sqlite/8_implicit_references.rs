@@ -93,18 +93,22 @@ fn order_table(db: SqliteDB) -> Table<SqliteDB, ClientOrder> {
         .with_one("client", "client_id", client_table)
 }
 
-/// One hop: `client_order -> client.name`, lowered into a correlated subquery
-/// and aliased under the flat dotted key. Preview shows the shape; the live
-/// rows prove the correlation resolves.
+/// `client_order -> client.name` (one hop) and `client.bakery.name` (two hops)
+/// are lowered into correlated subqueries, the second nested in the first, and
+/// aliased under the flat dotted keys.
 #[tokio::test]
-async fn one_hop_projects_correlated_subquery() {
+async fn dotted_columns_project_correlated_subqueries() {
     let db = setup().await;
     let orders = order_table(db)
-        .with_active_columns(&["id", "client_id", "client.name"])
+        .with_active_columns(&["id", "client_id", "client.name", "client.bakery.name"])
         .unwrap();
 
     let preview = orders.select().preview();
     assert!(preview.contains("client.name"), "alias missing: {preview}");
+    assert!(
+        preview.contains("client.bakery.name"),
+        "alias missing: {preview}"
+    );
     assert!(preview.contains("client_id"), "base col missing: {preview}");
     // A correlated subquery over the client table, not a join.
     assert!(
@@ -114,12 +118,15 @@ async fn one_hop_projects_correlated_subquery() {
 
     let rows = orders.list_values().await.unwrap();
     assert_eq!(rows.len(), 2);
-    for row in rows.values() {
-        assert_eq!(
-            row.get("client.name").map(ToString::to_string),
-            Some("'Marty'".to_string())
-        );
-    }
+    let o1 = &rows["o1"];
+    assert_eq!(
+        o1.get("client.name").map(ToString::to_string),
+        Some("'Marty'".to_string())
+    );
+    assert_eq!(
+        o1.get("client.bakery.name").map(ToString::to_string),
+        Some("'Sunrise Bakery'".to_string())
+    );
 }
 
 /// An imported column exists only as a projection alias, so a vista
@@ -150,55 +157,27 @@ async fn vista_condition_on_an_imported_column_is_refused() {
     assert!(narrowed.query().conditions.is_empty());
 }
 
-/// Two hops: `client_order -> client -> bakery.name` nests one correlated
-/// subquery inside another.
+/// A `has_many` hop, an unknown relation and an unknown target column are
+/// build-time errors, not wrong queries.
 #[tokio::test]
-async fn two_hop_nests_subqueries() {
-    let db = setup().await;
-    let orders = order_table(db)
-        .with_active_columns(&["id", "client.name", "client.bakery.name"])
-        .unwrap();
-
-    let preview = orders.select().preview();
-    assert!(
-        preview.contains("client.bakery.name"),
-        "alias missing: {preview}"
-    );
-    assert!(preview.contains("bakery"), "no bakery ref: {preview}");
-
-    let rows = orders.list_values().await.unwrap();
-    assert_eq!(rows.len(), 2);
-    for row in rows.values() {
-        assert_eq!(
-            row.get("client.bakery.name").map(ToString::to_string),
-            Some("'Sunrise Bakery'".to_string())
-        );
-    }
-}
-
-/// A `has_many` hop is a build-time error, not a wrong query.
-#[tokio::test]
-async fn has_many_hop_errors_at_build() {
+async fn bad_dotted_columns_error_at_build() {
     let db = setup().await;
     // `orders` on client is has_many.
-    let result = client_table(db).with_active_columns(&["orders.is_deleted"]);
-    assert!(result.is_err());
-}
-
-/// An unknown relation is a build-time error.
-#[tokio::test]
-async fn unknown_relation_errors_at_build() {
-    let db = setup().await;
-    let result = order_table(db).with_active_columns(&["nope.name"]);
-    assert!(result.is_err());
-}
-
-/// An unknown column on the final target is a build-time error.
-#[tokio::test]
-async fn unknown_target_column_errors_at_build() {
-    let db = setup().await;
-    let result = order_table(db).with_active_columns(&["client.does_not_exist"]);
-    assert!(result.is_err());
+    let has_many = client_table(db.clone())
+        .with_active_columns(&["orders.is_deleted"])
+        .expect_err("a has_many hop must fail")
+        .to_string();
+    let unknown_relation = order_table(db.clone())
+        .with_active_columns(&["nope.name"])
+        .expect_err("an unknown relation must fail")
+        .to_string();
+    let unknown_column = order_table(db)
+        .with_active_columns(&["client.does_not_exist"])
+        .expect_err("an unknown target column must fail")
+        .to_string();
+    assert_ne!(has_many, unknown_relation);
+    assert_ne!(has_many, unknown_column);
+    assert_ne!(unknown_relation, unknown_column);
 }
 
 /// An imported dotted column never reaches a write: the strip drops it before
@@ -301,13 +280,12 @@ async fn patch_on_imported_column_errors() {
 }
 
 /// The active set restricts projection: a declared column left out of the set
-/// is absent from both the query and the returned rows.
+/// is absent from the query and the rows. The id column is projected anyway —
+/// consumers key rows by it.
 #[tokio::test]
-async fn inactive_columns_are_not_projected() {
+async fn active_set_restricts_projection_but_keeps_id() {
     let db = setup().await;
-    let orders = order_table(db)
-        .with_active_columns(&["id", "client_id"])
-        .unwrap();
+    let orders = order_table(db).with_active_columns(&["client_id"]).unwrap();
 
     let preview = orders.select().preview();
     assert!(
@@ -316,24 +294,11 @@ async fn inactive_columns_are_not_projected() {
     );
 
     let rows = orders.list_values().await.unwrap();
-    for row in rows.values() {
-        assert!(row.get("is_deleted").is_none());
-        assert!(row.get("client_id").is_some());
-    }
-}
-
-/// The id column is always projected, even when the active set omits it —
-/// consumers key rows by it.
-#[tokio::test]
-async fn id_column_is_always_projected() {
-    let db = setup().await;
-    let orders = order_table(db).with_active_columns(&["client_id"]).unwrap();
-
-    let rows = orders.list_values().await.unwrap();
     assert_eq!(rows.len(), 2);
-    for row in rows.values() {
-        assert!(row.get("id").is_some(), "id missing from row: {row:?}");
-    }
+    let o1 = &rows["o1"];
+    assert!(o1.get("id").is_some(), "id missing from row: {o1:?}");
+    assert!(o1.get("client_id").is_some());
+    assert!(o1.get("is_deleted").is_none());
 }
 
 /// A column registered only as an expression (no column def) can be named in

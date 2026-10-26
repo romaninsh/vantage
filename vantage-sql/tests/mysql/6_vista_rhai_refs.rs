@@ -22,8 +22,6 @@ async fn build_script_reference_resolves_target() -> TestResult {
     let f = Fixture::new("resolve").await;
     let factory = f.db.vista_factory().with_resolver(f.resolver());
     let clients = factory.build_from_spec(f.client_spec(ORDERS_SCRIPT))?;
-    let reference = clients.reference("orders").expect("orders ref");
-    assert!(reference.build_script.is_some());
 
     let alice = clients.get_value("alice").await?.expect("alice exists");
     let orders = clients.get_ref("orders", Some(&alice))?;

@@ -49,12 +49,17 @@ async fn test_list_products() {
 
     let products = table.list().await.unwrap();
     assert_eq!(products.len(), 5);
-
-    let cupcake = &products["flux_cupcake"];
-    assert_eq!(cupcake.name, "Flux Capacitor Cupcake");
-    assert_eq!(cupcake.price, 120);
-    assert_eq!(cupcake.calories, 300);
-    assert!(!cupcake.is_deleted);
+    assert_eq!(
+        products["flux_cupcake"],
+        Product {
+            name: "Flux Capacitor Cupcake".into(),
+            calories: 300,
+            price: 120,
+            bakery_id: "hill_valley".into(),
+            is_deleted: false,
+            inventory_stock: 50,
+        }
+    );
 }
 
 #[tokio::test]
@@ -67,9 +72,17 @@ async fn test_get_product() {
         .await
         .unwrap()
         .expect("delorean_donut exists");
-    assert_eq!(product.name, "DeLorean Doughnut");
-    assert_eq!(product.price, 135);
-    assert_eq!(product.calories, 250);
+    assert_eq!(
+        product,
+        Product {
+            name: "DeLorean Doughnut".into(),
+            calories: 250,
+            price: 135,
+            bakery_id: "hill_valley".into(),
+            is_deleted: false,
+            inventory_stock: 30,
+        }
+    );
 }
 
 #[tokio::test]

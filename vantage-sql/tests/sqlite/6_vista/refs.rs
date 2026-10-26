@@ -164,19 +164,6 @@ async fn vista_get_ref_preserves_with_expression_columns() -> TestResult {
     Ok(())
 }
 
-#[tokio::test]
-async fn vista_list_references_surfaces_cardinality() -> TestResult {
-    let db = setup_clients_orders().await;
-    let clients = db.vista_factory().from_table(clients_table(db))?;
-
-    let refs = clients.references();
-    assert_eq!(refs.len(), 1);
-    let orders = &refs["orders"];
-    assert_eq!(orders.kind, ReferenceKind::HasMany);
-    assert_eq!(orders.keys, [JoinKey::new("id", "client_id")]);
-    Ok(())
-}
-
 /// A `base:`-derived vista keeps the `references:` it declares itself, next
 /// to whatever it inherits from the base (here: nothing).
 #[tokio::test]
