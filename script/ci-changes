@@ -31,6 +31,7 @@ Prints key=json lines (and appends them to $GITHUB_OUTPUT when set):
 
 The repo's own settings, from .github/ci-crates.yaml (defaults suit vantage):
   runner, build_runner, small_runner  runner labels (ubuntu-26.04)
+  summary_runner  the summary's runner (small_runner); no cargo there, so ubuntu-slim works
   env       extra env for every cargo job ({})
   setup     .github/ci-setup.sh exists: shared cargo jobs run it (apt packages)
   cache     rust-cache | warpbuild (rust-cache)
@@ -348,6 +349,8 @@ def main():
     out["runner"] = runner
     out["build_runner"] = config.get("build_runner", runner)
     out["small_runner"] = config.get("small_runner", "ubuntu-26.04")
+    # The summary runs no cargo (python, gh, jq): it can go smaller than audit.
+    out["summary_runner"] = config.get("summary_runner", out["small_runner"])
     out["env"] = config.get("env") or {}
     out["setup"] = os.path.isfile(os.path.join(ROOT, ".github", "ci-setup.sh"))
     out["cache"] = config.get("cache", "rust-cache")

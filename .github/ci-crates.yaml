@@ -3,6 +3,7 @@
 # Other repos running the shared pipeline add their own keys; vantage keeps
 # every default:
 #   runner / build_runner / small_runner   runner labels (ubuntu-26.04)
+#   summary_runner                         the summary's (small_runner); it runs no cargo
 #   env: {VAR: value}                      extra env for every cargo job
 #   dependents: true                       also test members depending on a changed one
 #   cache: warpbuild                       WarpBuild's cache instead of rust-cache
@@ -15,6 +16,9 @@
 #   versioning: {mode: app, crate, changelog, heading, plist, skip_label}
 #                                          one app version instead of per-crate versions
 # A script at .github/ci-setup.sh runs in every shared cargo job (apt packages).
+
+# The summary only runs python, gh and jq: GitHub's one-CPU runner.
+summary_runner: ubuntu-slim
 
 # Databases a crate's tests need. `sqlite` is a seeded file, not a container.
 services:
