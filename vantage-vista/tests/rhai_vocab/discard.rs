@@ -22,6 +22,7 @@ fn a_dropped_narrowing_is_refused_on_any_receiver() {
         r#"sort("n")"#,
         r#"search("x")"#,
         r#"limit(2)"#,
+        r#"offset(2)"#,
         r#"ref("orders")"#,
         r#"with_condition("a", 1)"#,
     ] {

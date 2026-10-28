@@ -4,6 +4,7 @@ use ciborium::Value as CborValue;
 use vantage_core::{Result, error};
 
 use super::bridge::block_on;
+use super::handle::RowWindow;
 use super::no_rows::NoRowsShell;
 use super::read::fetch_rows;
 use crate::{FilterOp, unknown_relation, vista::Vista};
@@ -11,14 +12,12 @@ use crate::{FilterOp, unknown_relation, vista::Vista};
 /// Most rows a multi-row `ref` step will collect keys from.
 const REF_ROW_CAP: usize = 1000;
 
-/// Follow `rel` from the rows of `vista`, at most `limit` of them. One row
-/// goes through [`Vista::get_ref`], keeping backend-specific traversal;
-/// several rows narrow the bare target with an `in` condition on the join
-/// key; no rows give the target as an empty set. Several rows need a join
-/// on one key.
-pub(crate) fn traverse(vista: &Vista, rel: &str, limit: Option<usize>) -> Result<Vista> {
-    let cap = limit.map_or(REF_ROW_CAP + 1, |n| n.min(REF_ROW_CAP + 1));
-    let rows = block_on(fetch_rows(vista, Some(cap)))??;
+/// Follow `rel` from the rows of `vista` in `window`. One row goes through
+/// [`Vista::get_ref`], keeping backend-specific traversal; several rows
+/// narrow the bare target with an `in` condition on the join key; no rows
+/// give the target as an empty set. Several rows need a join on one key.
+pub(crate) fn traverse(vista: &Vista, rel: &str, window: RowWindow) -> Result<Vista> {
+    let rows = block_on(fetch_rows(vista, window.capped(Some(REF_ROW_CAP + 1))))??;
     if rows.len() > REF_ROW_CAP {
         return Err(error!("ref over too many rows", limit = REF_ROW_CAP));
     }

@@ -154,7 +154,7 @@ let due = table("order").where("status", "due");
 due.ref("client").list()
 ```
 
-`table(name)` returns a handle that narrows (`where`, `sort`, `search`, `limit`, `ref`) and then
+`table(name)` returns a handle that narrows (`where`, `sort`, `search`, `limit`, `offset`, `ref`) and then
 reads (`list`, `get`, `first`, `count`, `ids`), writes (`insert`, `upsert`, `patch`, `delete`,
 `import_from`) or opens a `record` draft. A host picks the tables behind `table(name)` and which
 verbs exist. The full guide is [Scripting with Rhai](https://vantage-ui.com/book/rhai.html) in the

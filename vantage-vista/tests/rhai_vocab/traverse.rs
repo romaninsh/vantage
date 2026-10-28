@@ -1,4 +1,4 @@
-//! `ref` traversal: `limit(n)` caps the parent rows followed, and an empty
+//! `ref` traversal: `limit(n)` and `offset(n)` pick the parent rows followed, and an empty
 //! parent set gives an empty target without an `in ()` condition.
 
 use std::sync::Arc;
@@ -68,22 +68,19 @@ fn shop_host(resolver: Arc<dyn VistaResolver>) -> Host {
 }
 
 #[test]
-fn ref_follows_only_the_limited_parent_rows() {
+fn ref_follows_only_the_parent_rows_in_its_window() {
     let host = shop_host(shop());
-    assert_eq!(
-        json(
-            &host,
-            r#"table("client").sort("name", "desc").limit(2).ref("orders").ids()"#
-        ),
-        json!(["o3", "o4"])
-    );
-    assert_eq!(
-        json(
-            &host,
-            r#"table("client").sort("name", "desc").limit(1).ref("orders").ids()"#
-        ),
-        json!(["o4"])
-    );
+    // Sorted by name, descending: Cy (o4), Ben (o3), Ada (o1, o2).
+    for (window, orders) in [
+        ("limit(2)", json!(["o3", "o4"])),
+        ("limit(1)", json!(["o4"])),
+        ("offset(1).limit(1)", json!(["o3"])),
+        ("offset(2)", json!(["o1", "o2"])),
+    ] {
+        let script =
+            format!(r#"table("client").sort("name", "desc").{window}.ref("orders").ids()"#);
+        assert_eq!(json(&host, &script), orders, "{script}");
+    }
 }
 
 #[test]
@@ -139,11 +136,13 @@ fn ref_over_no_rows_sends_no_condition() {
 }
 
 #[test]
-fn import_from_reads_only_the_limited_source_rows() {
+fn import_from_reads_only_the_source_rows_in_its_window() {
     let host = read_write(&store());
     assert_eq!(
         json(&host, r#"table("copy").import_from(table("t").limit(2))"#),
         json!({"inserted": 2, "skipped": 0, "rejected": 0, "cancelled": false})
     );
     assert_eq!(json(&host, r#"table("copy").count()"#), json!(2));
+    json(&host, r#"table("tail").import_from(table("t").offset(1))"#);
+    assert_eq!(json(&host, r#"table("tail").ids()"#), json!(["r2", "r3"]));
 }

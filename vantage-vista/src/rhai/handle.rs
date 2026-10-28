@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 use vantage_core::{Context, Result, error};
 
-pub(crate) use step::Step;
+pub(crate) use step::{RowWindow, Step};
 
 use crate::{NativeCondition, VistaResolver, vista::Vista};
 
@@ -92,27 +92,27 @@ impl Handle {
     /// `resolver`, else the one `table(name)` was given.
     pub fn resolve(&self, resolver: Option<&dyn VistaResolver>) -> Result<Vista> {
         let mut vista = self.resolve_base(resolver)?;
-        let mut ref_cap = None;
+        let mut ref_window = RowWindow::default();
         for step in self.steps.iter() {
             vista = step
-                .apply(vista, ref_cap)
+                .apply(vista, ref_window)
                 .with_context(|| error!("Step can't be applied", step = step))?;
-            ref_cap = step.ref_cap_after(ref_cap);
+            ref_window = step.ref_window_after(ref_window);
         }
         Ok(vista)
     }
 
     /// The Vista writes go to: the whole narrowed handle — `where`, `search`
     /// and `ref` all define the set, so a write only touches rows in it.
-    /// `sort` doesn't change membership and is skipped. `limit` defines rows
-    /// by position, not by condition, so a handle with one can't be written
-    /// through.
+    /// `sort` doesn't change membership and is skipped. `limit` and `offset`
+    /// define rows by position, not by condition, so a handle with either
+    /// can't be written through.
     pub(crate) fn write_target(&self, resolver: Option<&dyn VistaResolver>) -> Result<Vista> {
-        if self.steps.iter().any(|s| matches!(s, Step::Limit(_))) {
-            return Err(
-                error!("writes need a set defined by conditions; drop limit(n)")
-                    .mark_incorrect_usage(),
-            );
+        if let Some(verb) = self.steps.iter().find_map(Step::positional_verb) {
+            return Err(error!(format!(
+                "writes need a set defined by conditions; drop {verb}(n)"
+            ))
+            .mark_incorrect_usage());
         }
         let mut vista = self.resolve_base(resolver)?;
         for step in self.steps.iter() {
@@ -120,23 +120,20 @@ impl Handle {
                 continue;
             }
             vista = step
-                .apply(vista, None)
+                .apply(vista, RowWindow::default())
                 .with_context(|| error!("Step can't be applied", step = step))?;
         }
         Ok(vista)
     }
 
-    /// The smallest `limit(n)` applied after the last `ref` step.
-    pub(crate) fn row_limit(&self) -> Option<usize> {
+    /// The `limit` and `offset` steps after the last `ref` step, folded into
+    /// one window.
+    pub(crate) fn row_window(&self) -> RowWindow {
         self.steps
             .iter()
             .rev()
             .take_while(|s| !matches!(s, Step::Ref(_)))
-            .filter_map(|s| match s {
-                Step::Limit(n) => Some(*n),
-                _ => None,
-            })
-            .min()
+            .fold(RowWindow::default(), RowWindow::fold)
     }
 
     /// A handle whose Vista base is a copy narrowed by `condition`, keeping

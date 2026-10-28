@@ -200,7 +200,7 @@ Rhai data scripts (the `vantage-vista` rhai feature) traverse with `ref(relation
 handle, which follows the relation from every row of a set. A one-row set goes through `get_ref`,
 so it follows the same metadata and backend traversal described here. Several rows become an `in`
 condition on the bare target's join column (which needs a relation joined on one key), a
-`limit(n)` before the `ref` caps the rows it follows, and an empty set gives an empty target
+`limit(n)` or `offset(n)` before the `ref` picks the rows it follows, and an empty set gives an empty target
 without a query. See [The Table Handle](../rhai/tables.md#following-relations).
 
 A relation's foreign key may be a [computed column](../rhai/computed.md) (a `lazy:` column). A

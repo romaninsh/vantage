@@ -98,9 +98,9 @@ registered at all, and scripts can only work with handles the host gives them (`
 | `Describe` | none: the script returns a handle and the host reads its description | `modify:`, reference build scripts, query preview |
 | `ReadWrite { limit, writes }` | reads, writes, and records; under `Writes::Denied` every write throws | agent scripts, action bodies, form and wizard scripts, faker sims; with writes denied, form `options:` and action predicates |
 
-`limit` caps every `list()` and `ids()`. A script's own `limit(n)` still applies below it. `None`
-means no cap. `count()` isn't capped by the host's limit: it counts the whole set, or at most `n`
-when the script narrowed with `limit(n)`. `Terminals::ReadWrite { limit: None, writes:
+`limit` caps every `list()` and `ids()`, counting after any `offset(n)`. A script's own
+`limit(n)` still applies below it. `None` means no cap. `count()` isn't capped by the host's
+limit: it counts the whole set, or the rows the script's `limit(n)` and `offset(n)` leave. `Terminals::ReadWrite { limit: None, writes:
 Writes::Allowed }` is uncapped with writes allowed.
 
 `writes` is `Writes::Allowed` or `Writes::Denied(message)`. A denied host still registers every
