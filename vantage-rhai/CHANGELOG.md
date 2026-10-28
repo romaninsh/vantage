@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0 — 2026-10-28
+
+- `Compiled<Block>::eval_raw(&env)`: `eval` with rhai's own `EvalAltResult`, before it becomes a
+  `RhaiError`. A `throw` keeps its thrown `Dynamic` and the position of its `throw` in `ast()`, so
+  a host can tell a script's `throw` from a library's error, which is an `ErrorRuntime` too but
+  sits at the call that raised it.
+
 ## 1.1.3 — 2026-10-26
 
 - Tests of one behaviour are folded into one test each (template rendering, operation ceilings,

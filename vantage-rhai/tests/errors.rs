@@ -1,4 +1,4 @@
-use vantage_rhai::rhai::{Dynamic, Engine, Position};
+use vantage_rhai::rhai::{Dynamic, Engine, EvalAltResult, Position};
 use vantage_rhai::{Located, RhaiError};
 
 fn located(src: &str, line: usize, column: usize, message: &str) -> Located {
@@ -288,4 +288,27 @@ fn every_variant_reports_its_slot_source() {
 fn rhai_error_is_a_std_error() {
     fn takes_error(_: &dyn std::error::Error) {}
     takes_error(&RhaiError::Runtime(located("a", 0, 0, "m")));
+}
+
+#[test]
+fn eval_raw_keeps_the_thrown_value_and_its_position() {
+    let script = vantage_rhai::ui_host()
+        .compile_uncached(&vantage_rhai::Block::from(
+            "let n = 7;\nif n > 1 {\n    throw #{ code: n };\n}",
+        ))
+        .unwrap();
+    let env = vantage_rhai::Env::new();
+    match *script.eval_raw(&env).unwrap_err() {
+        EvalAltResult::ErrorRuntime(value, pos) => {
+            let map = value.try_cast::<vantage_rhai::rhai::Map>().unwrap();
+            assert_eq!(map["code"].as_int(), Ok(7));
+            assert_eq!(pos, Position::new(3, 5));
+        }
+        other => panic!("{other}"),
+    }
+    // A value comes back as `eval` returns it.
+    let ok = vantage_rhai::ui_host()
+        .compile_uncached(&vantage_rhai::Block::from("40 + 2"))
+        .unwrap();
+    assert_eq!(ok.eval_raw(&env).unwrap().as_int(), Ok(42));
 }
