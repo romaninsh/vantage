@@ -47,6 +47,13 @@ impl TokenBucket {
         ))
     }
 
+    /// Give one token back, as if it had never been taken; the bucket never
+    /// holds more than `burst`.
+    pub fn refund(&self) {
+        let mut level = self.level.lock().unwrap();
+        level.tokens = (level.tokens + 1.0).min(self.burst);
+    }
+
     pub(crate) async fn acquire(&self) {
         while let Some(wait) = self.try_take() {
             tokio::time::sleep(wait).await;

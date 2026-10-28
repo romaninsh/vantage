@@ -4,6 +4,8 @@
 
 - `TokenBucket` is public (`new`, `try_take`) so a server can answer 429 with the wait as
   `Retry-After`. `ResilientClient` behaves as before.
+- `TokenBucket::refund` gives a taken token back, capped at the burst: a server can charge an
+  attempt up front and return the token when it turns out free.
 
 ## 1.0.2 — 2026-10-14
 

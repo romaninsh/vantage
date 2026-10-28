@@ -22,6 +22,24 @@ fn try_take_reports_the_wait_once_the_burst_is_spent() {
     );
 }
 
+#[test]
+fn refund_gives_a_token_back_up_to_the_burst() {
+    let bucket = TokenBucket::new(0.001, 2);
+    assert_eq!(bucket.try_take(), None);
+    assert_eq!(bucket.try_take(), None);
+    assert!(bucket.try_take().is_some(), "burst is spent");
+    bucket.refund();
+    assert_eq!(bucket.try_take(), None, "the refunded token");
+    assert!(bucket.try_take().is_some());
+    // Refunds past the burst are dropped: two tokens at most.
+    for _ in 0..5 {
+        bucket.refund();
+    }
+    assert_eq!(bucket.try_take(), None);
+    assert_eq!(bucket.try_take(), None);
+    assert!(bucket.try_take().is_some());
+}
+
 #[tokio::test]
 async fn observer_ms_excludes_the_rate_wait() {
     let server = MockServer::start().await;
