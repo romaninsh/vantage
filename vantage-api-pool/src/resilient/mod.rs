@@ -21,6 +21,7 @@ pub use builder::ResilientClientBuilder;
 pub use error::{ClientError, ErrorKind};
 pub use observer::{TransportEvent, TransportObserver};
 pub use policy::{BreakerMode, CallPolicy, RetryMode, RetryPolicy};
+pub use rate::TokenBucket;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};

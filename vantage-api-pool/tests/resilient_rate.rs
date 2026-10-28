@@ -7,7 +7,38 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use support::{Recorder, local_client, mount_status};
+use vantage_api_pool::TokenBucket;
 use wiremock::MockServer;
+
+#[test]
+fn try_take_reports_the_wait_once_the_burst_is_spent() {
+    let bucket = TokenBucket::new(2.0, 2);
+    assert_eq!(bucket.try_take(), None);
+    assert_eq!(bucket.try_take(), None);
+    let wait = bucket.try_take().expect("burst is spent");
+    assert!(
+        wait > Duration::from_millis(400) && wait <= Duration::from_millis(500),
+        "wait was {wait:?}"
+    );
+}
+
+#[test]
+fn refund_gives_a_token_back_up_to_the_burst() {
+    let bucket = TokenBucket::new(0.001, 2);
+    assert_eq!(bucket.try_take(), None);
+    assert_eq!(bucket.try_take(), None);
+    assert!(bucket.try_take().is_some(), "burst is spent");
+    bucket.refund();
+    assert_eq!(bucket.try_take(), None, "the refunded token");
+    assert!(bucket.try_take().is_some());
+    // Refunds past the burst are dropped: two tokens at most.
+    for _ in 0..5 {
+        bucket.refund();
+    }
+    assert_eq!(bucket.try_take(), None);
+    assert_eq!(bucket.try_take(), None);
+    assert!(bucket.try_take().is_some());
+}
 
 #[tokio::test]
 async fn observer_ms_excludes_the_rate_wait() {

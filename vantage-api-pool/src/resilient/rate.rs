@@ -9,7 +9,8 @@ struct Level {
     refilled_at: Instant,
 }
 
-pub(crate) struct TokenBucket {
+/// A token bucket for non-blocking limits: [`try_take`](Self::try_take) never waits.
+pub struct TokenBucket {
     per_second: f64,
     burst: f64,
     level: Mutex<Level>,
@@ -18,7 +19,7 @@ pub(crate) struct TokenBucket {
 impl TokenBucket {
     /// A `per_second` at or below zero is clamped to 0.001; a `burst` below
     /// 1 is clamped to 1.
-    pub(crate) fn new(per_second: f64, burst: usize) -> Self {
+    pub fn new(per_second: f64, burst: usize) -> Self {
         let burst = burst.max(1) as f64;
         Self {
             per_second: per_second.max(0.001),
@@ -30,8 +31,8 @@ impl TokenBucket {
         }
     }
 
-    /// Take one token, or return how long until one is available.
-    fn try_take(&self) -> Option<Duration> {
+    /// Take one token and return `None`, or return how long until one is available.
+    pub fn try_take(&self) -> Option<Duration> {
         let mut level = self.level.lock().unwrap();
         let now = Instant::now();
         let refill = now.duration_since(level.refilled_at).as_secs_f64() * self.per_second;
@@ -44,6 +45,13 @@ impl TokenBucket {
         Some(Duration::from_secs_f64(
             (1.0 - level.tokens) / self.per_second,
         ))
+    }
+
+    /// Give one token back, as if it had never been taken; the bucket never
+    /// holds more than `burst`.
+    pub fn refund(&self) {
+        let mut level = self.level.lock().unwrap();
+        level.tokens = (level.tokens + 1.0).min(self.burst);
     }
 
     pub(crate) async fn acquire(&self) {

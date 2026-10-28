@@ -7,6 +7,6 @@
 pub mod resilient;
 pub use resilient::{
     AuthFuture, AuthRefresher, BreakerMode, BreakerState, CallPolicy, ClientError, ErrorKind,
-    ResilientClient, ResilientClientBuilder, RetryMode, RetryPolicy, TransportEvent,
+    ResilientClient, ResilientClientBuilder, RetryMode, RetryPolicy, TokenBucket, TransportEvent,
     TransportObserver,
 };
