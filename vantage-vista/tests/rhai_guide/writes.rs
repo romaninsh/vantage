@@ -86,14 +86,18 @@ fn writes_stay_in_the_set() {
 }
 
 #[test]
-fn limit_refuses_writes() {
+fn limit_and_offset_refuse_writes() {
     let host = read_write(&shop());
-    let err = run(
-        &host,
-        r#"table("order").sort("total").limit(1).delete("o1")"#,
-    )
-    .unwrap_err();
-    assert!(err.contains("drop limit(n)"), "{err}");
+    for verb in ["limit", "offset"] {
+        let script = format!(r#"table("order").sort("total").{verb}(1).delete("o1")"#);
+        let err = run(&host, &script).unwrap_err();
+        assert!(err.contains(&format!("drop {verb}(n)")), "{err}");
+    }
+    assert_eq!(
+        json(&host, r#"table("order").ids()"#),
+        json!(["o1", "o2", "o3", "o4"]),
+        "nothing was deleted"
+    );
 }
 
 #[test]

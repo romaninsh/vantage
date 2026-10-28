@@ -122,13 +122,16 @@ async fn the_query_reapplied_matches_the_resolved_handle() {
 }
 
 #[test]
-fn ref_and_limit_have_no_query_form_and_the_error_names_the_verb() {
-    let err = handle(r#"table("t").ref("orders")"#).query().unwrap_err();
-    assert!(err.is_incorrect_usage(), "{err:?}");
-    assert!(format!("{err:?} {err}").contains("ref"));
-    let err = handle(r#"table("t").limit(2)"#).query().unwrap_err();
-    assert!(err.is_incorrect_usage(), "{err:?}");
-    assert!(format!("{err:?} {err}").contains("limit"));
+fn ref_limit_and_offset_have_no_query_form_and_the_error_names_the_verb() {
+    for (script, verb) in [
+        (r#"table("t").ref("orders")"#, "ref"),
+        (r#"table("t").limit(2)"#, "limit"),
+        (r#"table("t").offset(2)"#, "offset"),
+    ] {
+        let err = handle(script).query().unwrap_err();
+        assert!(err.is_incorrect_usage(), "{err:?}");
+        assert!(format!("{err:?} {err}").contains(verb), "{err:?}");
+    }
 }
 
 #[test]

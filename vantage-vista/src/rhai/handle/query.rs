@@ -13,8 +13,8 @@ impl Handle {
     /// `search` and the last `sort`, as resolving the handle would apply them.
     ///
     /// Steps with no query form are an incorrect-usage error naming the verb:
-    /// `ref` moves to another table, `limit` caps a read rather than
-    /// narrowing the set, and an extension verb's native condition has no
+    /// `ref` moves to another table, `limit` and `offset` pick rows by
+    /// position rather than narrowing the set by condition, and an extension verb's native condition has no
     /// form a consumer could re-apply. The handle's base is not included.
     pub fn query(&self) -> Result<VistaQuery> {
         if let Some(verb) = &self.native_verb {
@@ -29,6 +29,7 @@ impl Handle {
                 Step::Search(text) => query = query.with_search(text.as_str()),
                 Step::Sort { col, dir } => query = query.with_order(col.as_str(), *dir),
                 Step::Limit(_) => return Err(no_query_form("limit")),
+                Step::Offset(_) => return Err(no_query_form("offset")),
                 Step::Ref(_) => return Err(no_query_form("ref")),
             }
         }

@@ -1,5 +1,5 @@
 //! Narrowing verbs on the `Table` handle: `table`, `where`, `sort`, `search`,
-//! `limit`, `ref`. Each returns a new handle and never touches a backend.
+//! `limit`, `offset`, `ref`. Each returns a new handle and never touches a backend.
 
 use std::sync::Arc;
 
@@ -64,6 +64,13 @@ pub(crate) fn register_narrowing(engine: &mut Engine, resolver: Option<Arc<dyn V
             return Err("limit must be greater than 0".into());
         }
         Ok(h.push(Step::Limit(n as usize)))
+    });
+
+    engine.register_fn("offset", |h: &mut Handle, n: i64| -> RhaiResult<Handle> {
+        if n < 0 {
+            return Err("offset can't be negative".into());
+        }
+        Ok(h.push(Step::Offset(n as usize)))
     });
 
     engine.register_fn("ref", |h: &mut Handle, rel: &str| {

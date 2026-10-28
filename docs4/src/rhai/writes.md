@@ -79,8 +79,8 @@ Use `upsert` when a script owns stable ids and may run more than once.
 
 `where`, `search` and `ref` define the set; a write only touches rows in it, an insert fills the
 set's equality conditions (including a `ref`'s foreign key), and a write that would leave the set
-throws. `sort` doesn't change membership. A handle with `limit(n)` can't be written through: drop
-the limit.
+throws. `sort` doesn't change membership. A handle with `limit(n)` or `offset(n)` picks rows by
+position, not by condition, so it can't be written through: drop the limit or offset.
 
 <!-- tested: rhai_guide::writes::writes_stay_in_the_set -->
 ```rhai
@@ -128,7 +128,8 @@ unless the "Allow MCP agents to write data" setting is on.
 
 `import_from(source)` copies every row of another handle into this table. `source` is read through
 its narrowing, so it can be any set: a filtered table, the target of a `ref`, a table on another
-datasource. A `limit(n)` on the source copies only its first `n` rows:
+datasource. A `limit(n)` on the source copies only its first `n` rows, and an `offset(n)` skips
+the first `n`:
 
 <!-- tested: rhai_guide::writes::import_limited -->
 ```rhai

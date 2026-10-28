@@ -59,7 +59,7 @@ pub(crate) fn import_rows_mapped(
 
 fn source_rows(source: &Handle, resolver: Option<&dyn VistaResolver>) -> RhaiResult<Rows> {
     let vista = source.resolve(resolver).map_err(rhai_err)?;
-    let rows = run(fetch_rows(&vista, source.row_limit()))?;
+    let rows = run(fetch_rows(&vista, source.row_window()))?;
     Ok(rows.into_iter().collect())
 }
 

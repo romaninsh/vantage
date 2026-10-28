@@ -33,16 +33,22 @@ keep a base handle in a variable and branch from it as often as you like.
 | `sort(col)`, `sort(col, "asc" \| "desc")` | order by `col`; the column must be flagged orderable |
 | `search(text)` | the backend's quicksearch |
 | `limit(n)` | at most `n` rows, the first `n` in sort order; `n` must be above 0 |
+| `offset(n)` | the rows after the first `n` in sort order, as SQL's `OFFSET`; `n` can't be negative |
 | `ref(relation)` | the related rows of every row in the set |
 
 Conditions add up: every `where` narrows further. Sorting keeps one column. A later `sort`
-replaces an earlier one, as `Vista::set_order` does. Several `limit` steps keep the smallest.
+replaces an earlier one, as `Vista::set_order` does. Several `limit` steps keep the smallest, and
+several `offset` steps add up, so a later step never widens the set.
 
-`limit(n)` limits the set itself, not just one read: `list()`, `ids()` and `count()` all see at
-most `n` rows, a `ref` after it follows only those `n` rows, and `import_from` copies only those
-`n` (see [Following relations](#following-relations)). A `limit` before a `ref` doesn't carry over
-to the target; limit the target again if you need to. A handle with `limit` reads; it can't be
-written through ([Writes](./writes.md#writes-stay-in-the-set)).
+`offset` and `limit` combine as in SQL, whatever order you call them in: `offset(20).limit(10)`
+and `limit(10).offset(20)` are both rows 20 to 29. The offset is skipped first and the limit counts
+from there.
+
+`limit(n)` and `offset(n)` pick from the set itself, not just one read: `list()`, `ids()` and
+`count()` all see the same rows, a `ref` after them follows only those rows, and `import_from`
+copies only those (see [Following relations](#following-relations)). They don't carry over to the
+target of a `ref`; limit or offset the target again if you need to. A handle with `limit` or
+`offset` reads; it can't be written through ([Writes](./writes.md#writes-stay-in-the-set)).
 
 The column in `where` and `sort` must be one the backend stores. A
 [computed column](./computed.md) is refused with an error naming it.
@@ -76,10 +82,10 @@ let ghost = clients.get("c9");
 
 | Verb | Returns |
 |---|---|
-| `list()` | an array of row maps, capped by the host's limit and any `limit(n)` |
+| `list()` | an array of row maps, capped by the host's limit and any `limit(n)`, after any `offset(n)` |
 | `get(id)` | the row map, or `()` when no row has that id |
-| `first()` | the first row map in sort order, or `()` for an empty set |
-| `count()` | the number of rows, as an integer, at most `n` after `limit(n)` |
+| `first()` | the first row map in sort order (after `offset(n)`, the row at position `n`), or `()` for an empty set |
+| `count()` | the number of rows `list()` would return without the host's limit, as an integer: at most `n` after `limit(n)`, `n` fewer (never below 0) after `offset(n)` |
 | `ids()` | an array of id strings, in sort order (insertion order when unsorted) |
 
 Row maps always include the id column, filled from the row's key when the backend doesn't return
@@ -93,6 +99,12 @@ A capped read (the host's limit or a `limit(n)`) reads the set's leading window,
 `fetch_window(0, n)`, which every backend that lists answers, so it fetches only the rows it
 returns. A backend that refuses the leading window makes the read throw; it never falls back to
 listing the whole set.
+
+With an `offset(n)` too, a backend advertising `window` reads `fetch_window(n, limit)`, so the
+skipped rows never leave it. Any other backend reads the leading window `fetch_window(0, n +
+limit)` and drops the first `n` rows. An offset with no cap at all (no `limit` and no host limit)
+lists the whole set and drops the first `n` rows, since there is no window to ask for. An offset
+past the end reads nothing: `list()` is empty, `first()` is `()` and `count()` is 0.
 
 ## Following relations
 
@@ -124,8 +136,9 @@ Relations come from the Vista's metadata: the YAML `references:` block, or the t
 - When it has none, or none of the rows has a has-one key, the target is an empty set. Nothing is
   queried: reads return nothing, `count()` is 0, and a preview reports `"query": null`. The target
   keeps its columns, and an insert into it throws: no row can belong to an empty set.
-- A `limit(n)` before the `ref` caps the rows it follows. Without one, a `ref` over more than
-  1,000 rows is an error. Narrow first.
+- A `limit(n)` before the `ref` caps the rows it follows, and an `offset(n)` skips the first `n`
+  of them. Without a limit, a `ref` over more than 1,000 rows (after the offset) is an error.
+  Narrow first.
 
 <!-- tested: rhai_guide::tables::limit_and_ref -->
 ```rhai

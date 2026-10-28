@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.3.0 — 2026-10-28
+
+- The Rhai table handle has `offset(n)`: it skips the first `n` rows of the narrowed, sorted set,
+  as SQL's `OFFSET`. With `limit(m)` it picks rows `n` to `n + m - 1`, in whichever order the two
+  are called. Several `offset` steps after the last `ref` add up (several `limit` steps still keep
+  the smallest), so a later step never widens the set. A negative `n` throws "offset can't be
+  negative".
+- Reads with an offset: a shell advertising `Window` reads `fetch_window(offset, limit)`; any
+  other reads the leading window `fetch_window(0, offset + limit)` and drops the first `offset`
+  rows. With no limit and no host cap the set is listed and the first `offset` rows dropped.
+  `first()` returns the row at the offset, `count()` counts what `list()` would return (the total
+  minus the offset, never below 0, then capped by the limit), and an offset past the end reads
+  nothing.
+- An offset before a `ref` picks the parent rows it follows, as a limit does, and `import_from`
+  copies only the source rows in its window. A handle with an offset can't be written through
+  ("writes need a set defined by conditions; drop offset(n)"), `Handle::query()` refuses it like
+  `limit`, and dropping an `offset(..)` result is the same discarded-narrowing error as any other
+  narrowing verb.
+
 ## 2.2.2 — 2026-10-26
 
 - Two catalog tests are folded into one (re-registering a model replaces its loader, seen through a

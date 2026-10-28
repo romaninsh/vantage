@@ -21,10 +21,18 @@ use vantage_rhai::rhai::{AST, Expr, FnPtr, Stmt};
 
 /// The verbs that return a narrowed copy of the handle they are called on,
 /// the backend extension `with_condition` included.
-const NARROWING_VERBS: [&str; 6] = ["where", "sort", "search", "limit", "ref", "with_condition"];
+const NARROWING_VERBS: [&str; 7] = [
+    "where",
+    "sort",
+    "search",
+    "limit",
+    "offset",
+    "ref",
+    "with_condition",
+];
 
 /// Refuse `ast` when a statement outside value position ends on a narrowing
-/// verb (`where`, `sort`, `search`, `limit`, `ref`, `with_condition`) and so
+/// verb (`where`, `sort`, `search`, `limit`, `offset`, `ref`, `with_condition`) and so
 /// drops the handle it returns, as in `let open = table();
 /// open.where("status", "open");`. `has_value` says whether the script's
 /// value is used: when it is, the statement giving the script its value may

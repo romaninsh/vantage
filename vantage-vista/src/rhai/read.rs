@@ -11,14 +11,15 @@ use vantage_types::Record;
 
 use super::bridge::block_on;
 use super::convert::record_to_dynamic;
-use super::handle::Handle;
+use super::handle::{Handle, RowWindow};
 use super::introspect::{capabilities_map, columns_array, references_array};
-use crate::{VistaResolver, vista::Vista};
+use crate::{Capability, VistaResolver, vista::Vista};
 
 pub(crate) type RhaiResult<T> = std::result::Result<T, Box<EvalAltResult>>;
 
 /// Register the read terminals. `cap` bounds every `list()` and `ids()`; a
-/// `limit(n)` step below it applies as well.
+/// `limit(n)` step below it applies as well, and an `offset(n)` step skips
+/// rows before either.
 pub(crate) fn register_reads(
     engine: &mut Engine,
     resolver: Option<Arc<dyn VistaResolver>>,
@@ -63,9 +64,9 @@ pub(crate) fn register_reads(
     let r = resolver.clone();
     engine.register_fn("count", move |h: &mut Handle| -> RhaiResult<i64> {
         let vista = h.resolve(r.as_deref()).map_err(rhai_err)?;
-        let count = run(vista.count())?;
-        // A `limit(n)` caps the rows `list` would return; count agrees.
-        Ok(h.row_limit().map_or(count, |n| count.min(n as i64)))
+        // `offset(n)` and `limit(n)` pick the rows `list` would return;
+        // count agrees.
+        Ok(h.row_window().count(run(vista.count())?))
     });
 
     let r = resolver.clone();
@@ -93,28 +94,40 @@ pub(crate) fn register_reads(
 
 type Rows = Vec<(String, Record<CborValue>)>;
 
-/// Resolve `h` and read at most the smaller of `cap` and its own `limit(n)`.
+/// Resolve `h` and read its row window, taking at most `cap` rows.
 fn rows(
     h: &Handle,
     resolver: Option<&dyn VistaResolver>,
     cap: Option<usize>,
 ) -> RhaiResult<(Vista, Rows)> {
     let vista = h.resolve(resolver).map_err(rhai_err)?;
-    let limit = match (cap, h.row_limit()) {
-        (Some(a), Some(b)) => Some(a.min(b)),
-        (a, b) => a.or(b),
-    };
-    let rows = run(fetch_rows(&vista, limit))?;
+    let rows = run(fetch_rows(&vista, h.row_window().capped(cap)))?;
     Ok((vista, rows))
 }
 
-/// Every row of `vista`, or with a `limit` at most that many: its leading
-/// window `fetch_window(0, limit)`, which every shell that lists answers.
-pub(crate) async fn fetch_rows(vista: &Vista, limit: Option<usize>) -> Result<Rows> {
+/// The rows of `vista` in `window`.
+///
+/// With a limit, a shell advertising [`Window`](Capability::Window) reads
+/// `fetch_window(offset, limit)`; any other reads the leading window
+/// `fetch_window(0, offset + limit)`, which every shell that lists answers,
+/// and drops the first `offset` rows. Without a limit there is no window to
+/// ask for, so the set is listed and the first `offset` rows dropped.
+pub(crate) async fn fetch_rows(vista: &Vista, window: RowWindow) -> Result<Rows> {
+    let RowWindow { offset, limit } = window;
     let Some(limit) = limit else {
-        return Ok(vista.list_values().await?.into_iter().collect());
+        let rows = vista.list_values().await?;
+        return Ok(rows.into_iter().skip(offset).collect());
     };
-    let mut rows = vista.fetch_window(0, limit).await?.rows;
+    let mut rows = if offset == 0 || vista.capabilities().has(Capability::Window) {
+        vista.fetch_window(offset, limit).await?.rows
+    } else {
+        let mut rows = vista
+            .fetch_window(0, offset.saturating_add(limit))
+            .await?
+            .rows;
+        rows.drain(..offset.min(rows.len()));
+        rows
+    };
     rows.truncate(limit);
     Ok(rows)
 }
