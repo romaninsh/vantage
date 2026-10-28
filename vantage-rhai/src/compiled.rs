@@ -366,4 +366,15 @@ impl Compiled<Block> {
     pub fn run(&self, env: &Env) -> Result<()> {
         self.eval_dynamic(env).map(|_| ())
     }
+
+    /// [`eval`](Self::eval) with the error as rhai raised it, before it is a
+    /// [`RhaiError`]: a `throw`'s value is still the `Dynamic` thrown, at
+    /// the position of its `throw` in [`ast`](Self::ast).
+    pub fn eval_raw(&self, env: &Env) -> std::result::Result<Dynamic, Box<rhai::EvalAltResult>> {
+        let Pieces::One(ast) = &self.pieces else {
+            unreachable!("a block compiles to one AST")
+        };
+        let mut scope = env.scope(env.resolver.clone());
+        self.engine.eval_ast_with_scope::<Dynamic>(&mut scope, ast)
+    }
 }
