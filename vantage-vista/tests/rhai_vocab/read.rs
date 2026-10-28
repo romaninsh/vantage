@@ -61,11 +61,14 @@ fn first_follows_sort() {
     assert_eq!(row["id"], json!("r2"));
 }
 
+/// The `(offset, limit)` of every window the shell was asked for.
+type Windows = Arc<Mutex<Vec<(usize, usize)>>>;
+
 /// Records every window the shell is asked for.
 #[derive(Clone)]
 struct WindowSpy {
     inner: Box<dyn TableShell>,
-    windows: Arc<Mutex<Vec<(usize, usize)>>>,
+    windows: Windows,
 }
 
 forward_table_shell!(WindowSpy, inner, {
@@ -78,7 +81,7 @@ forward_table_shell!(WindowSpy, inner, {
 /// Table `m` over a mock holding r1..r5, uncapped; `windowed` keeps the
 /// mock's `Window`, otherwise it advertises nothing. Returns the windows
 /// asked for too.
-fn mock_host(windowed: bool) -> (vantage_rhai::Host, Arc<Mutex<Vec<(usize, usize)>>>) {
+fn mock_host(windowed: bool) -> (vantage_rhai::Host, Windows) {
     let mut mock = MockShell::new();
     if !windowed {
         mock = mock.with_capabilities(VistaCapabilities::new());
