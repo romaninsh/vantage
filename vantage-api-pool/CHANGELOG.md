@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.0 — 2026-10-28
+
+- `TokenBucket` is public (`new`, `try_take`) so a server can answer 429 with the wait as
+  `Retry-After`. `ResilientClient` behaves as before.
+
 ## 1.0.2 — 2026-10-14
 
 - The in-crate unit tests move to the blackbox suite under `tests/`; comments trimmed. No API or

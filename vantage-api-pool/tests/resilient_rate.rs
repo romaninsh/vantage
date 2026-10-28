@@ -7,7 +7,20 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use support::{Recorder, local_client, mount_status};
+use vantage_api_pool::TokenBucket;
 use wiremock::MockServer;
+
+#[test]
+fn try_take_reports_the_wait_once_the_burst_is_spent() {
+    let bucket = TokenBucket::new(2.0, 2);
+    assert_eq!(bucket.try_take(), None);
+    assert_eq!(bucket.try_take(), None);
+    let wait = bucket.try_take().expect("burst is spent");
+    assert!(
+        wait > Duration::from_millis(400) && wait <= Duration::from_millis(500),
+        "wait was {wait:?}"
+    );
+}
 
 #[tokio::test]
 async fn observer_ms_excludes_the_rate_wait() {
