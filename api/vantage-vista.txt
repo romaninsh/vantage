@@ -1,8 +1,10 @@
 pub mod vantage_vista
 pub mod vantage_vista::contract
-pub struct vantage_vista::contract::TxTables
+#[non_exhaustive] pub struct vantage_vista::contract::TxTables
 pub vantage_vista::contract::TxTables::a: vantage_vista::Vista
 pub vantage_vista::contract::TxTables::b: vantage_vista::Vista
+impl vantage_vista::contract::TxTables
+pub fn vantage_vista::contract::TxTables::new(vantage_vista::Vista, vantage_vista::Vista) -> Self
 impl core::marker::Freeze for vantage_vista::contract::TxTables
 impl core::marker::Send for vantage_vista::contract::TxTables
 impl core::marker::Sync for vantage_vista::contract::TxTables

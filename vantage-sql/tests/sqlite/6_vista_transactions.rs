@@ -53,10 +53,10 @@ impl SqliteTx {
 
 fn tables(db: SqliteDB) -> TxTables {
     let factory = db.vista_factory();
-    TxTables {
-        a: factory.from_table(table_a(db.clone())).unwrap(),
-        b: factory.from_table(table_b(db)).unwrap(),
-    }
+    TxTables::new(
+        factory.from_table(table_a(db.clone())).unwrap(),
+        factory.from_table(table_b(db)).unwrap(),
+    )
 }
 
 fn table_a(db: SqliteDB) -> Table<SqliteDB, EmptyEntity> {

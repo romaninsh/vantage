@@ -32,9 +32,16 @@ const LOCK_NEEDS_TX: &str = "lock() needs a transaction";
 ///   b(id text pk, a_id text, n int NOT NULL CHECK (n >= 0))
 /// with relation "b" on a (b.a_id = a.id). The check constraint gives
 /// `failed_statement_fails_commit` a statement that must fail.
+#[non_exhaustive]
 pub struct TxTables {
     pub a: Vista,
     pub b: Vista,
+}
+
+impl TxTables {
+    pub fn new(a: Vista, b: Vista) -> Self {
+        Self { a, b }
+    }
 }
 
 #[async_trait]

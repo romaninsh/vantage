@@ -67,10 +67,10 @@ async fn pool_of_one() -> MysqlDB {
 
 fn tables(db: MysqlDB, (a, b): (String, String)) -> TxTables {
     let factory = db.vista_factory();
-    TxTables {
-        a: factory.from_table(table_a(db.clone(), &a, &b)).unwrap(),
-        b: factory.from_table(table_b(db, &b)).unwrap(),
-    }
+    TxTables::new(
+        factory.from_table(table_a(db.clone(), &a, &b)).unwrap(),
+        factory.from_table(table_b(db, &b)).unwrap(),
+    )
 }
 
 fn table_a(db: MysqlDB, a: &str, b: &str) -> Table<MysqlDB, EmptyEntity> {
