@@ -3,10 +3,11 @@
 
 mod support;
 
+use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use serde_json::{Value, json};
 use vantage_api_client::{GraphqlApi, GraphqlApiVistaFactory};
-use vantage_vista::contract;
+use vantage_vista::contract::{self, TxFixture, TxTables};
 use wiremock::matchers::{body_string_contains, method};
 use wiremock::{Mock, MockServer, Request, ResponseTemplate};
 
@@ -125,4 +126,41 @@ async fn graphql_contract_clone() {
     let server = serve().await;
     let orders = factory(&server).build("order").unwrap();
     contract::check_clone(&orders, "client_id", CborValue::Text("c1".into())).await;
+}
+
+/// A GraphQL API has no transactions, and the backend takes no writes.
+struct Api(MockServer);
+
+#[async_trait]
+impl TxFixture for Api {
+    async fn fresh(&self) -> TxTables {
+        let factory = factory(&self.0);
+        TxTables::new(
+            factory.build("client").unwrap(),
+            factory.build("order").unwrap(),
+        )
+    }
+
+    async fn fresh_pool_of_one(&self) -> TxTables {
+        self.fresh().await
+    }
+
+    fn detects_deadlocks(&self) -> bool {
+        false
+    }
+
+    fn supports_transactions(&self) -> bool {
+        false
+    }
+}
+
+#[tokio::test]
+async fn graphql_transactions_hold_the_contract() {
+    contract::check_transactions(&Api(serve().await)).await
+}
+
+#[cfg(feature = "rhai")]
+#[tokio::test]
+async fn graphql_atomic_holds_the_contract() {
+    contract::check_atomic_rhai(&Api(serve().await)).await
 }

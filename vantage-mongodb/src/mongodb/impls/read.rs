@@ -6,6 +6,7 @@ use futures_util::TryStreamExt;
 use vantage_core::{Result, error};
 
 use crate::mongodb::MongoDB;
+use crate::mongodb::tx::{collect_in_session, in_session};
 use crate::select::MongoSelect;
 
 impl MongoDB {
@@ -29,13 +30,9 @@ impl MongoDB {
         select: &MongoSelect,
         pipeline: Vec<Document>,
     ) -> Result<Vec<Document>> {
-        self.select_collection(select)?
-            .aggregate(pipeline)
-            .await
-            .map_err(|e| error!("MongoDB aggregate failed", details = e.to_string()))?
-            .try_collect()
-            .await
-            .map_err(|e| error!("MongoDB aggregate cursor failed", details = e.to_string()))
+        let coll = self.select_collection(select)?;
+        collect_in_session!(self, coll.aggregate(pipeline))
+            .map_err(|e| error!("MongoDB aggregate failed", details = e.to_string()))
     }
 
     /// The documents `select` reads, filtered, sorted and paged.
@@ -45,14 +42,10 @@ impl MongoDB {
             return self.aggregate_docs(select, pipeline).await;
         }
         let filter = select.build_filter().await?;
-        self.select_collection(select)?
-            .find(filter)
-            .with_options(select.build_find_options())
-            .await
-            .map_err(|e| error!("MongoDB find failed", details = e.to_string()))?
-            .try_collect()
-            .await
-            .map_err(|e| error!("MongoDB cursor failed", details = e.to_string()))
+        let coll = self.select_collection(select)?;
+        let options = select.build_find_options();
+        collect_in_session!(self, coll.find(filter).with_options(options))
+            .map_err(|e| error!("MongoDB find failed", details = e.to_string()))
     }
 
     /// `func` (`$sum`, `$max`, `$min`) over `field` across the documents
@@ -85,10 +78,8 @@ impl MongoDB {
             });
         }
         let filter = select.build_filter().await?;
-        let count = self
-            .select_collection(select)?
-            .count_documents(filter)
-            .await
+        let coll = self.select_collection(select)?;
+        let count = in_session!(self, coll.count_documents(filter))
             .map_err(|e| error!("MongoDB count_documents failed", details = e.to_string()))?;
         Ok(count as i64)
     }

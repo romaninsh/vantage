@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.2.0 — 2026-10-31
+
+Requires vantage-vista 2.6.0, vantage-table 3.2.0 and surreal-client 1.1.0.
+
+- SurrealDB 3+ takes part in a `Transaction`, through the shared `TxSlot`. Each transaction runs on
+  its own connection, so it doesn't hold up other queries.
+
 ## 2.1.2 — 2026-10-26
 
 - Tests of one behaviour are folded into one test each (vista reference traversal, update hooks on

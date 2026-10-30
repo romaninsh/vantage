@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.1 — 2026-10-31
+
+Requires vantage-vista 2.6.0.
+
+- Inside an `atomic` block the AWS vista writes directly and is reported as having no
+  transactions.
+
 ## 0.9.0 — 2026-10-26
 
 - S3 (REST-XML) and IAM (Query) requests honour `with_endpoint` and `AWS_ENDPOINT_URL`, as the

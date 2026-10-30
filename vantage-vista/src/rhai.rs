@@ -49,7 +49,8 @@ mod vocab;
 mod write;
 
 pub use atomic::{
-    ATOMIC_ARM_TIMEOUT, ATOMIC_BLOCK_TIMEOUT, AtomicClock, AtomicScope, AtomicVocab, OnCommit, Stop,
+    ATOMIC_ARM_TIMEOUT, ATOMIC_BLOCK_TIMEOUT, AtomicClock, AtomicScope, AtomicVocab, OnCommit,
+    OnCommittedBeforeFailure, OnUnprotected, Stop, unprotected_warning,
 };
 pub use bridge::block_on;
 pub use cell::{CellGuard, ResolverCell};

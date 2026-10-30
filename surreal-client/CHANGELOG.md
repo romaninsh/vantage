@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.0 — 2026-10-31
+
+- Interactive transactions over the WebSocket CBOR engine: `begin`, `commit`, `cancel` and
+  `query_cbor_in`, plus `supports_transactions` and `reconnect` (a fresh connection for a
+  transaction of its own). Other engines refuse with "transactions are not supported by this
+  engine".
+
 ## 1.0.2 — 2026-10-26
 
 - Tests of one behaviour are folded into one test each (live stream frames, `escape_identifier`,

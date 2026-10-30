@@ -19,8 +19,8 @@ use vantage_table::pagination::Pagination;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Entity, Record};
 use vantage_vista::{
-    Condition, NativeCondition, Page, Preview, SortDirection, TableShell, Vista, VistaCapabilities,
-    VistaChangeStream, VistaMetadata,
+    Condition, NativeCondition, Page, Preview, SortDirection, TableShell, Transaction, Vista,
+    VistaCapabilities, VistaChangeStream, VistaMetadata, direct,
 };
 
 use crate::surrealdb::SurrealDB;
@@ -218,6 +218,21 @@ where
 
     fn get_ref(&self, relation: &str, row: Option<&Record<CborValue>>) -> Result<Vista> {
         self.ref_target(relation, row)
+    }
+
+    /// The table keeps its hooks, conditions and references; only its
+    /// datasource runs in the transaction. A datasource without interactive
+    /// transactions writes directly.
+    fn rebind(&self, tx: &Transaction) -> Result<Box<dyn TableShell>> {
+        let source = self.table.data_source();
+        if !source.supports_transactions() {
+            return Ok(direct(Box::new(self.clone())));
+        }
+        let source = source.in_transaction(tx)?;
+        Ok(Box::new(Self {
+            table: self.table.with_data_source(source),
+            ..self.clone()
+        }))
     }
 
     /// SurrealDB's expression vocabulary under `surreal::` (with the

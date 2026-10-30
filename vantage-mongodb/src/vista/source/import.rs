@@ -16,6 +16,10 @@
 //! writer racing the same id fails the import as a whole. Transactions need a
 //! replica set or sharded cluster, the same deployments that serve change
 //! streams.
+//!
+//! Inside a block's transaction the import opens none of its own: it runs in
+//! the block's session, lands when the block commits, and a failed write
+//! fails the block.
 
 use std::collections::HashSet;
 
@@ -23,12 +27,14 @@ use bson::{Bson, Document, doc};
 use ciborium::Value as CborValue;
 use futures_util::TryStreamExt;
 use indexmap::IndexMap;
+use mongodb::action::Find;
 use mongodb::{ClientSession, Collection};
 use vantage_core::{Result, VantageError, error};
 use vantage_types::Record;
 
 use super::MongoTableShell;
 use crate::id::MongoId;
+use crate::mongodb::tx::MongoTx;
 use crate::mongodb::view::undeclared_view;
 use crate::types::AnyMongoType;
 
@@ -58,16 +64,29 @@ pub(super) async fn import(
     }
     let prepared = prepare(shell, records).await?;
 
-    let mut session = shell
-        .table
-        .data_source()
-        .client()
-        .start_session()
-        .await
-        .map_err(failed)?;
+    // Inside a block's transaction the import is part of it: it runs in the
+    // block's session and commits or rolls back with the block, which also
+    // holds the after hooks until then.
+    let written = match shell.table.data_source().tx() {
+        Some(tx) => write_new(shell, &mut Session::Block(tx), prepared).await?,
+        None => in_own_transaction(shell, prepared).await?,
+    };
+
+    for item in &written {
+        shell.table.finish_insert(&item.id, &item.record).await?;
+    }
+    Ok(written.len())
+}
+
+async fn in_own_transaction(
+    shell: &MongoTableShell,
+    prepared: Vec<Prepared>,
+) -> Result<Vec<Prepared>> {
+    let client = shell.table.data_source().client();
+    let mut session = client.start_session().await.map_err(failed)?;
     session.start_transaction().await.map_err(failed)?;
 
-    let written = match write_new(shell, &mut session, prepared).await {
+    let written = match write_new(shell, &mut Session::Own(&mut session), prepared).await {
         Ok(written) => written,
         Err(e) => {
             // The original error is the useful one; a failed abort leaves the
@@ -77,11 +96,7 @@ pub(super) async fn import(
         }
     };
     session.commit_transaction().await.map_err(failed)?;
-
-    for item in &written {
-        shell.table.finish_insert(&item.id, &item.record).await?;
-    }
-    Ok(written.len())
+    Ok(written)
 }
 
 async fn prepare(
@@ -104,30 +119,48 @@ async fn prepare(
     Ok(prepared)
 }
 
+/// Where the import's operations run: in its own session's transaction, or
+/// in the block's. The block's session is locked for one operation at a
+/// time, not the whole import, so the set's deferred conditions can read
+/// through it in between.
+enum Session<'a> {
+    Own(&'a mut ClientSession),
+    Block(&'a MongoTx),
+}
+
+async fn collect(
+    find: Find<'_, Document>,
+    session: &mut ClientSession,
+) -> mongodb::error::Result<Vec<Document>> {
+    let mut cursor = find.session(&mut *session).await?;
+    cursor.stream(session).try_collect().await
+}
+
 /// The ids of the documents `filter` selects from the collection.
 async fn held_ids(
     coll: &Collection<Document>,
-    session: &mut ClientSession,
+    session: &mut Session<'_>,
     filter: Document,
 ) -> Result<HashSet<MongoId>> {
-    let mut cursor = coll
-        .find(filter)
-        .projection(doc! { "_id": 1 })
-        .session(&mut *session)
-        .await
-        .map_err(failed)?;
-    let mut stream = cursor.stream(&mut *session);
-    let mut held = HashSet::new();
-    while let Some(found) = stream.try_next().await.map_err(failed)? {
-        held.extend(found.get("_id").and_then(MongoId::from_bson));
+    let find = coll.find(filter).projection(doc! { "_id": 1 });
+    let found = match session {
+        Session::Own(session) => collect(find, session).await,
+        Session::Block(tx) => {
+            let mut session = tx.open().await?;
+            tx.watch(collect(find, &mut session)).await
+        }
     }
-    Ok(held)
+    .map_err(failed)?;
+    Ok(found
+        .iter()
+        .filter_map(|d| d.get("_id").and_then(MongoId::from_bson))
+        .collect())
 }
 
 /// Insert the records the collection does not hold yet; returns those.
 async fn write_new(
     shell: &MongoTableShell,
-    session: &mut ClientSession,
+    session: &mut Session<'_>,
     prepared: Vec<Prepared>,
 ) -> Result<Vec<Prepared>> {
     let source = shell.table.data_source();
@@ -178,9 +211,14 @@ async fn write_new(
         }
     }
 
-    coll.insert_many(new.iter().map(|p| &p.doc))
-        .session(&mut *session)
-        .await
-        .map_err(|e| undeclared_view(&e, shell.table.table_name()).unwrap_or_else(|| failed(e)))?;
+    let insert = coll.insert_many(new.iter().map(|p| &p.doc));
+    match session {
+        Session::Own(session) => insert.session(&mut **session).await,
+        Session::Block(tx) => {
+            let mut session = tx.open().await?;
+            tx.watch(insert.session(&mut *session)).await
+        }
+    }
+    .map_err(|e| undeclared_view(&e, shell.table.table_name()).unwrap_or_else(|| failed(e)))?;
     Ok(new)
 }

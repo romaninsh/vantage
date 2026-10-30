@@ -2,6 +2,11 @@
 
 All notable changes to `vantage-spacetimedb` are documented here.
 
+## 0.7.1 — 2026-10-31
+
+- Requires vantage-vista 2.6.0. Inside an `atomic` block the SpacetimeDB vista writes directly and
+  is reported as having no transactions.
+
 ## 0.7.0 — unreleased
 
 ### Breaking changes

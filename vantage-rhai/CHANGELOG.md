@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.0 — 2026-10-31
+
+- `atomic { BODY } rollback (e, committed) { ARM }`: a second name in the rollback arm binds the
+  tables that had already committed when a later database failed. `register_atomic_syntax` takes
+  both forms.
+
 ## 1.3.0 — 2026-10-30
 
 - `register_atomic_syntax(engine, eval)`: the grammar of `atomic { BODY }` and

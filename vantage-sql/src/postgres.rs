@@ -15,7 +15,7 @@ use sqlx::Connection as _;
 use sqlx::postgres::{PgConnection, PgPool, PgPoolOptions};
 use vantage_vista::{Transaction, TxKey};
 
-use crate::sql_tx::SqlTx;
+use crate::sql_tx::{SqlBegin, SqlTx};
 
 pub use types::{AnyPostgresType, PostgresType};
 
@@ -61,8 +61,9 @@ impl PostgresDB {
     /// This datasource running its statements on `tx`.
     pub fn in_transaction(&self, tx: &Transaction) -> vantage_core::Result<Self> {
         tx.check_open()?;
-        let joined =
-            tx.participant(self.tx_key(), || SqlTx::new(self.pool.clone(), "BEGIN", tx))?;
+        let joined = tx.participant(self.tx_key(), || {
+            SqlTx::new(SqlBegin::new(self.pool.clone(), "BEGIN"), tx)
+        })?;
         Ok(Self {
             tx: Some(joined),
             ..self.clone()

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.5 — 2026-10-31
+
+Requires vantage-vista 2.6.0.
+
+- Inside an `atomic` block the CSV vista writes directly and is reported as having no transactions.
+
 ## 0.7.4 — 2026-10-26
 
 - Tests of one behaviour are folded into one test each (tables without columns, id columns, counts

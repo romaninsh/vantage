@@ -36,7 +36,8 @@ runs:
             start --user root --pass root memory
         fi
         if has mongo; then
-          docker run -d --name mongo-vantage -p 27017:27017 mongo:7 --replSet rs0 --bind_ip_all
+          docker run -d --name mongo-vantage -p 27017:27017 --ulimit nofile=64000:64000 \
+            mongo:7 --replSet rs0 --bind_ip_all
         fi
 
     - name: Seed

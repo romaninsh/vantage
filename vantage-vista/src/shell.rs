@@ -219,7 +219,10 @@ pub trait TableShell: CloneTableShell + Send + Sync + 'static {
     /// This shell rebuilt to read and write through `tx`
     /// ([`Transaction::wrap`] calls it). A forwarding shell rebinds its inner
     /// shell and wraps the result in a copy of itself; a shell over a
-    /// datasource without transactions returns a clone of itself. The
+    /// datasource without transactions returns
+    /// [`direct`](crate::direct)`(clone)`. A shell joins its participant
+    /// here ([`Transaction::participant`]), not at its first statement, so
+    /// the transaction knows which tables each participant wrote. The
     /// default refuses, and the wrapped Vista then errors at first use with
     /// [`cant_take_part`](crate::cant_take_part).
     fn rebind(&self, _tx: &Transaction) -> Result<Box<dyn TableShell>> {

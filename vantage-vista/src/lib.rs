@@ -53,7 +53,8 @@ pub use spec::{
     resolve_base_spec,
 };
 pub use transaction::{
-    Committed, Transaction, TxKey, TxParticipant, WeakTransaction, cant_take_part,
+    Committed, Transaction, TxBackend, TxKey, TxOpen, TxParticipant, TxSlot, WeakTransaction,
+    cant_take_part, direct,
 };
 pub use vista::Vista;
 

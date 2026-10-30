@@ -11,6 +11,7 @@ use vantage_rhai::rhai;
 use vantage_types::Record;
 
 use super::Transaction;
+use super::joining::{Joined, note_joined};
 use crate::{
     Capability, Condition, NativeCondition, Page, Preview, SortDirection, TableShell, Vista,
     VistaCapabilities, VistaChangeStream, VistaMetadata, unsupported,
@@ -21,13 +22,15 @@ type Rec = Record<CborValue>;
 /// Forwards to the shell rebound to `tx`, once `tx` is checked open. When
 /// rebinding failed, `inner` is the original shell, kept for the schema
 /// only, and every call answers the refusal. Writes are reported to `tx`
-/// under the Vista's name. Streams (`Subscribe`, `Cursor`) are hidden: they
-/// would outlive the transaction.
+/// under the Vista's name, credited to the participants the rebind joined,
+/// or as unprotected when it was direct. Streams (`Subscribe`, `Cursor`)
+/// are hidden: they would outlive the transaction.
 #[derive(Clone)]
 pub(crate) struct TxShell {
     inner: Box<dyn TableShell>,
     refused: Option<Arc<VantageError>>,
     capabilities: VistaCapabilities,
+    joined: Joined,
     name: String,
     tx: Transaction,
 }
@@ -36,6 +39,7 @@ impl TxShell {
     pub(crate) fn new(
         original: Box<dyn TableShell>,
         rebound: Result<Box<dyn TableShell>>,
+        joined: Joined,
         name: String,
         tx: Transaction,
     ) -> Self {
@@ -51,6 +55,7 @@ impl TxShell {
             inner,
             refused,
             capabilities,
+            joined,
             name,
             tx,
         }
@@ -73,7 +78,7 @@ impl TxShell {
     }
 
     fn written<T>(&self, out: T) -> T {
-        self.tx.note_written(&self.name);
+        self.tx.note_written_by(&self.name, &self.joined);
         out
     }
 }
@@ -187,6 +192,7 @@ impl TableShell for TxShell {
     fn rebind(&self, tx: &Transaction) -> Result<Box<dyn TableShell>> {
         let inner = self.ready()?;
         if self.tx.same(tx) {
+            note_joined(tx, &self.joined);
             return Ok(Box::new(self.clone()));
         }
         inner.rebind(tx)

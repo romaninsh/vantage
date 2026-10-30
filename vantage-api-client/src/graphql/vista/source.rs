@@ -21,8 +21,8 @@ use vantage_table::pagination::Pagination;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{
-    Capability, Condition, Page, Preview, SortDirection, TableShell, Vista, VistaCapabilities,
-    VistaMetadata, unsupported,
+    Capability, Condition, Page, Preview, SortDirection, TableShell, Transaction, Vista,
+    VistaCapabilities, VistaMetadata, direct, unsupported,
 };
 
 use crate::graphql::api::GraphqlApi;
@@ -156,5 +156,11 @@ impl TableShell for GraphqlApiTableShell {
 
     fn get_ref(&self, relation: &str, row: Option<&Record<CborValue>>) -> Result<Vista> {
         self.ref_target(relation, row)
+    }
+
+    /// A GraphQL API has no transactions: inside one, the shell works as it
+    /// does outside.
+    fn rebind(&self, _tx: &Transaction) -> Result<Box<dyn TableShell>> {
+        Ok(direct(Box::new(self.clone())))
     }
 }

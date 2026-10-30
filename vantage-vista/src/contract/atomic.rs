@@ -1,6 +1,6 @@
 //! A Rhai `atomic {}` block lands every write it makes, or none.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use vantage_core::{Result, error};
@@ -9,6 +9,7 @@ use vantage_rhai::{Host, Limits};
 
 use super::transactions::{
     FAILED_STATEMENT, PROBE_DEADLINE, Runner, TxFixture, TxTables, absent, ensure, present, run,
+    writable,
 };
 use crate::rhai::{
     ATOMIC_ARM_TIMEOUT, ATOMIC_BLOCK_TIMEOUT, AtomicScope, AtomicVocab, DataVocab, ResolverCell,
@@ -25,10 +26,32 @@ const ARM_BUDGET: Duration = Duration::from_millis(200);
 /// Runs every `atomic` probe on fresh tables, one after another, under the
 /// same budget and deadlines as [`check_transactions`](super::check_transactions),
 /// then panics once, listing the probes that broke the contract. Scripts see
-/// the tables as `a` and `b` and run on a blocking thread, the way a host
-/// runs them; reads "outside" go through the unwrapped Vistas.
+/// the tables as `a` and `b`, and the second datasource's
+/// ([`fresh_other`](TxFixture::fresh_other)) as `c` and `d`, and run on a
+/// blocking thread, the way a host runs them; reads "outside" go through the
+/// unwrapped Vistas.
 pub async fn check_atomic_rhai(fx: &impl TxFixture) {
     let mut runner = Runner::new();
+    if !fx.supports_transactions() {
+        if writable(fx).await {
+            run(
+                &mut runner,
+                "direct_writes_land_and_are_reported",
+                PROBE_DEADLINE,
+                direct_writes_land_and_are_reported(fx),
+            )
+            .await;
+        } else {
+            run(
+                &mut runner,
+                "direct_reads_pass_through",
+                PROBE_DEADLINE,
+                direct_reads_pass_through(fx),
+            )
+            .await;
+        }
+        return runner.finish();
+    }
     run(
         &mut runner,
         "atomic_block_commits",
@@ -83,6 +106,27 @@ pub async fn check_atomic_rhai(fx: &impl TxFixture) {
         "nested_atomic_is_refused",
         PROBE_DEADLINE,
         nested_atomic_is_refused(fx),
+    )
+    .await;
+    run(
+        &mut runner,
+        "two_databases_commit_together",
+        PROBE_DEADLINE,
+        two_databases_commit_together(fx),
+    )
+    .await;
+    run(
+        &mut runner,
+        "a_throw_rolls_both_back",
+        PROBE_DEADLINE,
+        a_throw_rolls_both_back(fx),
+    )
+    .await;
+    run(
+        &mut runner,
+        "committed_is_empty_when_nothing_landed",
+        PROBE_DEADLINE,
+        committed_is_empty_when_nothing_landed(fx),
     )
     .await;
     runner.finish();
@@ -239,37 +283,181 @@ async fn nested_atomic_is_refused(fx: &impl TxFixture) -> Result<()> {
     absent(&t.a, "x", "after the nested block").await
 }
 
-/// What a script returned or threw, and its `seen` variable as it left it.
+/// The block throws after writing directly: the write stays, and the block
+/// reports its table once.
+async fn direct_writes_land_and_are_reported(fx: &impl TxFixture) -> Result<()> {
+    let t = fx.fresh().await;
+    let ran = eval(
+        &t,
+        r#"atomic {
+            table("a").insert(#{ id: "x", n: 1 });
+            throw "stop";
+        }"#,
+    )
+    .await?;
+    threw(&ran, "stop")?;
+    present(&t.a, "x", "after the throw, written directly").await?;
+    let wanted = [vec![t.a.name().to_string()]];
+    ensure(
+        ran.unprotected == wanted,
+        format!(
+            "the block reports {:?} as unprotected, not {wanted:?}",
+            ran.unprotected
+        ),
+    )
+}
+
+/// A read-only datasource without transactions: the block reads as outside,
+/// and reports no table.
+async fn direct_reads_pass_through(fx: &impl TxFixture) -> Result<()> {
+    let t = fx.fresh().await;
+    let outside = t.a.count().await?;
+    let ran = eval(
+        &t,
+        r#"let seen = ();
+        atomic {
+            seen = table("a").count().to_string();
+        }"#,
+    )
+    .await?;
+    if let Err(e) = ran.out {
+        return Err(error!(format!("the block throws `{e}`")));
+    }
+    ensure(
+        ran.seen == Some(outside.to_string()),
+        format!(
+            "the block counts {:?} rows of {}, {outside} outside",
+            ran.seen,
+            t.a.name()
+        ),
+    )?;
+    ensure(
+        ran.unprotected.concat().is_empty(),
+        format!(
+            "a block that only reads reports {:?} as unprotected",
+            ran.unprotected
+        ),
+    )
+}
+
+async fn two_databases_commit_together(fx: &impl TxFixture) -> Result<()> {
+    let Some(o) = fx.fresh_other().await else {
+        return Ok(());
+    };
+    let t = fx.fresh().await;
+    let ran = eval_on(
+        &t,
+        Some(&o),
+        r#"atomic {
+            table("a").insert(#{ id: "x", n: 1 });
+            table("c").insert(#{ id: "x", n: 1 });
+        }"#,
+    )
+    .await?;
+    if let Err(e) = ran.out {
+        return Err(error!(format!("the block throws `{e}`")));
+    }
+    present(&t.a, "x", "after the block").await?;
+    present(&o.a, "x", "after the block").await
+}
+
+async fn a_throw_rolls_both_back(fx: &impl TxFixture) -> Result<()> {
+    let Some(o) = fx.fresh_other().await else {
+        return Ok(());
+    };
+    let t = fx.fresh().await;
+    let ran = eval_on(
+        &t,
+        Some(&o),
+        r#"atomic {
+            table("a").insert(#{ id: "x", n: 1 });
+            table("c").insert(#{ id: "x", n: 1 });
+            throw "stop";
+        }"#,
+    )
+    .await?;
+    threw(&ran, "stop")?;
+    absent(&t.a, "x", "after the throw").await?;
+    absent(&o.a, "x", "after the throw").await
+}
+
+/// A throw before the commit: no datasource committed, so the arm's
+/// `committed` is an empty array.
+async fn committed_is_empty_when_nothing_landed(fx: &impl TxFixture) -> Result<()> {
+    let Some(o) = fx.fresh_other().await else {
+        return Ok(());
+    };
+    let t = fx.fresh().await;
+    let ran = eval_on(
+        &t,
+        Some(&o),
+        r#"let seen = ();
+        atomic {
+            table("a").insert(#{ id: "x", n: 1 });
+            table("c").insert(#{ id: "x", n: 1 });
+            throw "stop";
+        } rollback (e, committed) {
+            seen = `${type_of(committed)} of ${committed.len()}`;
+        }"#,
+    )
+    .await?;
+    threw(&ran, "stop")?;
+    ensure(
+        ran.seen.as_deref() == Some("array of 0"),
+        format!(
+            "the arm's `committed` is {:?}, not an empty array",
+            ran.seen
+        ),
+    )
+}
+
+/// What a script returned or threw, its `seen` variable as it left it, and
+/// the tables each block reported written directly.
 struct Ran {
     out: std::result::Result<Dynamic, String>,
     seen: Option<String>,
+    unprotected: Vec<Vec<String>>,
 }
 
-/// Runs `script` over the tables on a blocking thread, since table calls
-/// block on the runtime. Each run gets its own cell and atomic scope.
 async fn eval(t: &TxTables, script: &'static str) -> Result<Ran> {
-    let (a, b) = (t.a.clone(), t.b.clone());
+    eval_on(t, None, script).await
+}
+
+/// Runs `script` over the tables, and `other`'s as `c` and `d`, on a
+/// blocking thread, since table calls block on the runtime. Each run gets
+/// its own cell and atomic scope.
+async fn eval_on(t: &TxTables, other: Option<&TxTables>, script: &'static str) -> Result<Ran> {
+    let mut tables = vec![("a", t.a.clone()), ("b", t.b.clone())];
+    if let Some(o) = other {
+        tables.extend([("c", o.a.clone()), ("d", o.b.clone())]);
+    }
     tokio::task::spawn_blocking(move || {
-        let host = host(a, b);
+        let unprotected = Arc::new(Mutex::new(Vec::new()));
+        let host = host(tables, unprotected.clone());
         let mut scope = Scope::new();
         let out = host
             .engine()
             .eval_with_scope::<Dynamic>(&mut scope, script)
             .map_err(|e| message(&e));
+        let unprotected =
+            std::mem::take(&mut *unprotected.lock().unwrap_or_else(|e| e.into_inner()));
         Ran {
             out,
             seen: scope.get_value::<String>("seen"),
+            unprotected,
         }
     })
     .await
     .map_err(|e| error!(format!("the script's thread failed: {e}")))
 }
 
-fn host(a: Vista, b: Vista) -> Host {
-    let base: Arc<dyn VistaResolver> = Arc::new(move |name: &str| match name {
-        "a" => Ok(a.clone()),
-        "b" => Ok(b.clone()),
-        _ => Err(error!("no such table", name = name)),
+fn host(tables: Vec<(&'static str, Vista)>, unprotected: Arc<Mutex<Vec<Vec<String>>>>) -> Host {
+    let base: Arc<dyn VistaResolver> = Arc::new(move |name: &str| {
+        tables
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, vista)| vista.clone())
+            .ok_or_else(|| error!("no such table", name = name))
     });
     let cell = ResolverCell::new(base);
     let terminals = Terminals::ReadWrite {
@@ -278,7 +466,11 @@ fn host(a: Vista, b: Vista) -> Host {
     };
     let scope = AtomicScope::new(cell.clone())
         .with_limit(BLOCK_LIMIT)
-        .with_arm_budget(ARM_BUDGET);
+        .with_arm_budget(ARM_BUDGET)
+        .on_unprotected(Arc::new(move |tables| {
+            let mut reported = unprotected.lock().unwrap_or_else(|e| e.into_inner());
+            reported.push(tables.to_vec());
+        }));
     let clock = scope.clock();
     Host::builder(Limits::background())
         .vocab(DataVocab::new(terminals).with_resolver(Arc::new(cell)))

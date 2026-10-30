@@ -30,10 +30,13 @@ echo "Port: $PORT"
 echo "Database: $DB"
 
 # Start MongoDB container as a single-node replica set (no auth for local dev).
-# Change streams and transactions need a replica set.
+# Change streams and transactions need a replica set. The open-files limit is
+# MongoDB's recommended one: every collection and index is a file, and the
+# tests make many short-lived ones.
 docker run -d \
     --name $CONTAINER_NAME \
     -p $PORT:27017 \
+    --ulimit nofile=64000:64000 \
     mongo:7 --replSet rs0 --bind_ip_all
 
 # Wait for MongoDB to accept commands
