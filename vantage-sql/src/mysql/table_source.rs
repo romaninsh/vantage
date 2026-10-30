@@ -509,7 +509,8 @@ impl TableSource for MysqlDB {
             return insert_returning_id(&mut conn, &sql, &params).await;
         };
         let mut open = tx.connection().await?;
-        tx.watch(insert_returning_id(&mut open, &sql, &params).await)
+        tx.watch(insert_returning_id(&mut open, &sql, &params))
+            .await
     }
 
     fn related_in_condition<SourceE: Entity<Self::Value> + 'static>(

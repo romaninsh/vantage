@@ -75,12 +75,16 @@ impl<DB: Database> SqlTx<DB> {
         Ok(Open(slot))
     }
 
-    /// `out`, marking the transaction failed when it is an error: commit then
-    /// rolls back. SQLite and MySQL keep a transaction open after a failed
-    /// statement, so the server alone wouldn't refuse the commit.
-    pub(crate) fn watch<R>(&self, out: Result<R>) -> Result<R> {
-        if out.is_err() {
-            self.failed.store(true, Ordering::SeqCst);
+    /// Runs `statement`, marking the transaction failed unless it returns
+    /// `Ok`: commit then rolls back. SQLite and MySQL keep a transaction open
+    /// after a failed statement, so the server alone wouldn't refuse the
+    /// commit. A statement dropped mid-flight (a timeout, a `select!`) counts
+    /// as failed too: the server may still have run it.
+    pub(crate) async fn watch<R>(&self, statement: impl Future<Output = Result<R>>) -> Result<R> {
+        let armed = Armed(&self.failed);
+        let out = statement.await;
+        if out.is_ok() {
+            std::mem::forget(armed);
         }
         out
     }
@@ -90,6 +94,16 @@ impl<DB: Database> SqlTx<DB> {
         let mut slot = self.slot.lock().await;
         self.closed.store(true, Ordering::SeqCst);
         slot.take()
+    }
+}
+
+/// Marks the transaction failed on drop; forgotten once the statement is `Ok`.
+/// It only ever sets the flag, so an earlier failure stays.
+struct Armed<'a>(&'a AtomicBool);
+
+impl Drop for Armed<'_> {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::SeqCst);
     }
 }
 
@@ -145,5 +159,41 @@ impl<DB: Database> TxParticipant for SqlTx<DB> {
         open.rollback()
             .await
             .map_err(|e| error!("transaction rollback failed", details = e.to_string()))
+    }
+}
+
+#[cfg(all(test, feature = "sqlite"))]
+mod tests {
+    use std::future::pending;
+    use std::time::Duration;
+
+    use sqlx::SqlitePool;
+    use tokio::time::timeout;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn dropped_statement_fails_the_commit() {
+        let tx = Transaction::new();
+        let ok = SqlTx::new(
+            SqlitePool::connect_lazy("sqlite::memory:").unwrap(),
+            "BEGIN",
+            &tx,
+        );
+        ok.watch(async { Ok(()) }).await.unwrap();
+        ok.commit().await.unwrap();
+
+        let dropped = SqlTx::new(
+            SqlitePool::connect_lazy("sqlite::memory:").unwrap(),
+            "BEGIN",
+            &tx,
+        );
+        let cancelled = timeout(
+            Duration::from_millis(10),
+            dropped.watch(pending::<Result<()>>()),
+        );
+        assert!(cancelled.await.is_err());
+        let err = dropped.commit().await.unwrap_err();
+        assert!(err.to_string().contains(FAILED_STATEMENT));
     }
 }

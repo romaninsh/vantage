@@ -37,8 +37,9 @@ struct Inner {
     finished: AtomicBool,
 }
 
-/// A unit of work shared by every backend it touches: they commit or roll
-/// back together.
+/// A unit of work shared by every backend it touches. Commit runs backend by
+/// backend, so it's atomic per backend, not across them: if one fails part-way,
+/// the backends before it stay committed and the rest roll back.
 #[derive(Clone)]
 pub struct Transaction(Arc<Inner>);
 
@@ -77,6 +78,11 @@ impl Transaction {
         make: impl FnOnce() -> P,
     ) -> Result<Arc<P>> {
         let mut state = self.state();
+        // Checked under the state lock, where `finish` sets it: a participant
+        // added now would never be committed or rolled back.
+        if self.is_finished() {
+            return Err(error!("transaction finished"));
+        }
         if let Some(existing) = state.typed.get(&key) {
             return existing
                 .clone()
@@ -111,8 +117,9 @@ impl Transaction {
     }
 
     /// Commits participants in join order. On the first failure the rest are
-    /// rolled back and the error returned; deferred closures run only after a
-    /// full success, and their failures are logged, not returned.
+    /// rolled back and the error returned; the ones already committed stay
+    /// committed. Deferred closures run only after a full success, and their
+    /// failures are logged, not returned.
     pub async fn commit(&self) -> Result<Committed> {
         let (participants, deferred, written) = self.finish()?;
 
@@ -142,10 +149,10 @@ impl Transaction {
     }
 
     fn finish(&self) -> Result<Taken> {
+        let mut state = self.state();
         if self.0.finished.swap(true, Ordering::SeqCst) {
             return Err(error!("transaction finished"));
         }
-        let mut state = self.state();
         state.typed.clear();
         Ok((
             std::mem::take(&mut state.ordered),

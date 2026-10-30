@@ -139,6 +139,17 @@ async fn finished_after_commit() {
 }
 
 #[tokio::test]
+async fn participant_after_finish_is_refused() {
+    let tx = Transaction::new();
+    tx.commit().await.unwrap();
+    let token = Arc::new(());
+    let Err(err) = tx.participant(TxKey::of(&token), || Other) else {
+        panic!("joined a finished transaction");
+    };
+    assert!(err.to_string().contains("transaction finished"));
+}
+
+#[tokio::test]
 async fn written_tables_reported_once_each() {
     let tx = Transaction::new();
     tx.note_written("a");
