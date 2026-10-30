@@ -28,7 +28,9 @@
 //! exists, through [`eval_rule_script`], and its `table` is a
 //! [`RuleHandle`] with narrowing verbs only (see [`register_rule_vocab`]).
 
+mod atomic;
 mod bridge;
+mod cell;
 mod convert;
 mod eval;
 mod handle;
@@ -46,7 +48,11 @@ mod traverse;
 mod vocab;
 mod write;
 
+pub use atomic::{
+    ATOMIC_ARM_TIMEOUT, ATOMIC_BLOCK_TIMEOUT, AtomicClock, AtomicScope, AtomicVocab, OnCommit, Stop,
+};
 pub use bridge::block_on;
+pub use cell::{CellGuard, ResolverCell};
 pub use convert::{
     cbor_to_dynamic, dynamic_to_cbor, map_to_record, record_to_dynamic, record_to_map,
 };

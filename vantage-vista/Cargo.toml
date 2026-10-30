@@ -1,6 +1,6 @@
 [package]
 name = "vantage-vista"
-version = "2.4.0"
+version = "2.5.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Universal, schema-bearing data handle for the Vantage data framework"
@@ -22,7 +22,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_yaml_ng = "0.10"
 thiserror = "2.0"
 tracing = "0.1"
-vantage-rhai = { version = "1.1.0", path = "../vantage-rhai", optional = true }
+vantage-rhai = { version = "1.3.0", path = "../vantage-rhai", optional = true }
 # The agent-tool runners (`run_script`, `preview_script`) answer in JSON.
 serde_json = { version = "1", optional = true }
 # `sync` for the semaphore that gates a mock's `get`. The `rhai` feature adds
@@ -79,6 +79,14 @@ required-features = ["mocks"]
 
 [[test]]
 name = "rhai_vocab"
+required-features = ["rhai", "mocks"]
+
+[[test]]
+name = "rhai_cell"
+required-features = ["rhai", "mocks"]
+
+[[test]]
+name = "rhai_atomic"
 required-features = ["rhai", "mocks"]
 
 [[test]]
