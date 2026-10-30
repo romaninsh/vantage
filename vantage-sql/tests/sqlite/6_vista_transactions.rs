@@ -129,17 +129,25 @@ async fn after_hooks_wait_for_commit() {
     let body = async {
         let calls = Arc::new(AtomicUsize::new(0));
         let counted = calls.clone();
+        let seen = Arc::new(Mutex::new(None));
+        let record = seen.clone();
         let hook: AfterFn<SqliteDB> = Arc::new(move |_cx| {
             let counted = counted.clone();
+            let record = record.clone();
             Box::pin(async move {
                 counted.fetch_add(1, Ordering::SeqCst);
+                *record.lock().unwrap() = WriteContext::current().and_then(|c| c.group);
                 Ok(())
             })
         });
         let (_fx, a) = hooked(hook).await;
 
         let tx = Transaction::new();
-        tx.wrap(&a).insert_value("x", &rec(1)).await.unwrap();
+        WriteContext::new()
+            .with_group("g")
+            .scope(tx.wrap(&a).insert_value("x", &rec(1)))
+            .await
+            .unwrap();
         assert_eq!(
             calls.load(Ordering::SeqCst),
             0,
@@ -151,6 +159,7 @@ async fn after_hooks_wait_for_commit() {
             1,
             "the hook didn't run on commit"
         );
+        assert_eq!(seen.lock().unwrap().as_deref(), Some("g"));
 
         let tx = Transaction::new();
         tx.wrap(&a).insert_value("z", &rec(1)).await.unwrap();
@@ -160,33 +169,6 @@ async fn after_hooks_wait_for_commit() {
             1,
             "the hook ran after rollback"
         );
-    };
-    timeout(DEADLINE, body).await.expect("a hooked insert hung");
-}
-
-#[tokio::test]
-async fn deferred_hook_sees_the_write_context() {
-    let body = async {
-        let seen = Arc::new(Mutex::new(None));
-        let record = seen.clone();
-        let hook: AfterFn<SqliteDB> = Arc::new(move |_cx| {
-            let record = record.clone();
-            Box::pin(async move {
-                *record.lock().unwrap() = WriteContext::current().and_then(|c| c.group);
-                Ok(())
-            })
-        });
-        let (_fx, a) = hooked(hook).await;
-
-        let tx = Transaction::new();
-        let wrapped = tx.wrap(&a);
-        WriteContext::new()
-            .with_group("g")
-            .scope(wrapped.insert_value("x", &rec(1)))
-            .await
-            .unwrap();
-        tx.commit().await.unwrap();
-        assert_eq!(seen.lock().unwrap().as_deref(), Some("g"));
     };
     timeout(DEADLINE, body).await.expect("a hooked insert hung");
 }
