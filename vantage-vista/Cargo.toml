@@ -1,6 +1,6 @@
 [package]
 name = "vantage-vista"
-version = "2.3.0"
+version = "2.4.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Universal, schema-bearing data handle for the Vantage data framework"
@@ -21,6 +21,7 @@ futures-core = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml_ng = "0.10"
 thiserror = "2.0"
+tracing = "0.1"
 vantage-rhai = { version = "1.1.0", path = "../vantage-rhai", optional = true }
 # The agent-tool runners (`run_script`, `preview_script`) answer in JSON.
 serde_json = { version = "1", optional = true }
@@ -50,7 +51,8 @@ rhai = [
 ]
 # Driver-facing checks (`vantage_vista::contract`) that every backend's test
 # suite runs against its own fixture. Enable from `[dev-dependencies]` only.
-contract = []
+# `time` and `macros` for the transaction probes' deadlines and concurrent calls.
+contract = ["dep:tokio", "tokio/time", "tokio/macros"]
 # `vantage_vista::mocks`: an in-memory `TableShell` for tests and examples.
 # Enable from `[dev-dependencies]` only.
 mocks = ["dep:tokio"]
@@ -69,6 +71,10 @@ required-features = ["contract", "mocks"]
 
 [[test]]
 name = "contained"
+required-features = ["mocks"]
+
+[[test]]
+name = "transaction_wrap"
 required-features = ["mocks"]
 
 [[test]]

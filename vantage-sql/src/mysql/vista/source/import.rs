@@ -18,6 +18,11 @@
 //! defaults are not in it. If a hook fails the import is already committed:
 //! the error is returned and the remaining hooks do not run.
 //!
+//! On a datasource in transaction mode the import opens no transaction of its
+//! own: its statements run on the block's, and the after-insert hooks are
+//! held until the block commits, then run over the pool; a failing one is
+//! logged, not returned.
+//!
 //! Any failure before the commit rolls back and leaves the table as it was. A
 //! concurrent writer taking an id between the existence check and the `INSERT`
 //! fails the whole import (duplicate key).
@@ -29,6 +34,7 @@ use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use sqlx::{MySql, Transaction};
 use vantage_core::{Result, VantageError, error};
+use vantage_expressions::Expression;
 use vantage_table::table::Table;
 use vantage_types::{Entity, Record};
 
@@ -36,7 +42,7 @@ use super::MysqlTableShell;
 use crate::mysql::MysqlDB;
 use crate::mysql::table_source::id_value;
 use crate::mysql::types::AnyMysqlType;
-use crate::sql_exec::execute_affected_on;
+use crate::sql_exec::{execute_affected, execute_affected_on, fetch_rows, fetch_rows_on};
 use crate::sql_vista::native_record;
 use crate::table_writes::{held_outside, not_in_set};
 
@@ -94,34 +100,67 @@ where
         });
     }
 
-    let name = table.table_name();
-    let mut tx = table
-        .data_source()
-        .pool()
-        .begin()
-        .await
-        .map_err(|e| failed(name, e))?;
-    let written = match write_new(table, &mut tx, prepared).await {
-        Ok(written) => written,
-        Err(e) => {
-            // The original error is the useful one; a failed rollback still
-            // discards the transaction when the connection drops it.
-            let _ = tx.rollback().await;
-            return Err(e);
-        }
+    let data_source = table.data_source();
+    // Inside a block's transaction the import is part of it: its statements
+    // run there, and a failed one fails the block's commit.
+    let written = if data_source.tx.is_some() {
+        write_new(table, &mut Writer::Joined(data_source), prepared).await?
+    } else {
+        let name = table.table_name();
+        let mut tx = data_source
+            .pool()
+            .begin()
+            .await
+            .map_err(|e| failed(name, e))?;
+        let outcome = write_new(table, &mut Writer::Own(&mut tx), prepared).await;
+        let written = match outcome {
+            Ok(written) => written,
+            Err(e) => {
+                // The original error is the useful one; a failed rollback still
+                // discards the transaction when the connection drops it.
+                let _ = tx.rollback().await;
+                return Err(e);
+            }
+        };
+        tx.commit().await.map_err(|e| failed(name, e))?;
+        written
     };
-    tx.commit().await.map_err(|e| failed(name, e))?;
 
+    // Held until the block commits when the import is part of one.
     for item in &written {
         table.finish_insert(&item.id, &item.row).await?;
     }
     Ok(written.len())
 }
 
+/// Where the import's statements run.
+pub(super) enum Writer<'a> {
+    /// The import's own transaction.
+    Own(&'a mut Tx),
+    /// The datasource's transaction mode, one statement at a time.
+    Joined(&'a MysqlDB),
+}
+
+impl Writer<'_> {
+    pub(super) async fn fetch(&mut self, query: &Expression<AnyMysqlType>) -> Result<AnyMysqlType> {
+        match self {
+            Writer::Own(tx) => fetch_rows_on::<MysqlDB, _>(&mut ***tx, query).await,
+            Writer::Joined(db) => fetch_rows(*db, query).await,
+        }
+    }
+
+    async fn execute(&mut self, statement: &Expression<AnyMysqlType>) -> Result<u64> {
+        match self {
+            Writer::Own(tx) => execute_affected_on::<MysqlDB, _>(&mut ***tx, statement).await,
+            Writer::Joined(db) => execute_affected(*db, statement).await,
+        }
+    }
+}
+
 /// Insert the records the table does not hold yet; returns those.
 async fn write_new<E>(
     table: &Table<MysqlDB, E>,
-    tx: &mut Tx,
+    tx: &mut Writer<'_>,
     prepared: Vec<Prepared>,
 ) -> Result<Vec<Prepared>>
 where
@@ -152,8 +191,7 @@ where
 
     let width = rows::columns(&new).len();
     for chunk in new.chunks(rows_per_chunk(width)) {
-        execute_affected_on::<MysqlDB, _>(&mut **tx, &rows::insert(table.table_name(), chunk))
-            .await?;
+        tx.execute(&rows::insert(table.table_name(), chunk)).await?;
     }
     Ok(new)
 }

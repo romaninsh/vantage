@@ -10,13 +10,12 @@ use vantage_expressions::{Expression, expr_any};
 use vantage_table::table::Table;
 use vantage_types::{Entity, Record};
 
-use super::{Tx, rows_per_chunk};
+use super::{Writer, rows_per_chunk};
 use crate::mysql::MysqlDB;
 use crate::mysql::table_source::id_value;
 use crate::mysql::types::AnyMysqlType;
 use crate::primitives::identifier::ident;
 use crate::set_writes::{SetWrites, probe_columns, set_probe};
-use crate::sql_exec::fetch_rows_on;
 
 /// The incoming ids the table already holds, each mapped to whether its row
 /// is in the set. MySQL compares each id with `id = ?` under the column's
@@ -30,7 +29,7 @@ use crate::sql_exec::fetch_rows_on;
 /// ```
 pub(super) async fn held<E>(
     table: &Table<MysqlDB, E>,
-    tx: &mut Tx,
+    tx: &mut Writer<'_>,
     ids: &[&str],
     narrowed: bool,
 ) -> Result<HashMap<String, bool>>
@@ -82,7 +81,7 @@ where
             (Expression::from_vec(values, " UNION ALL ")),
             (alias.clone())
         );
-        for row in result_rows(fetch_rows_on::<MysqlDB, _>(&mut **tx, &query).await?)? {
+        for row in result_rows(tx.fetch(&query).await?)? {
             if flag(row.get("held")) {
                 found.insert(text(row.get("v"))?, flag(row.get("in_set")));
             }
@@ -96,7 +95,7 @@ where
 /// [`set_probe`]. Only for a table with conditions.
 pub(super) async fn fitting<E>(
     table: &Table<MysqlDB, E>,
-    tx: &mut Tx,
+    tx: &mut Writer<'_>,
     records: &[&Record<AnyMysqlType>],
 ) -> Result<HashSet<String>>
 where
@@ -109,7 +108,7 @@ where
         let select: Expression<AnyMysqlType> =
             expr_any!("{} AS {}", (ident(&id_field)), (ident("v")));
         let query = set_probe(table, chunk, select);
-        for row in result_rows(fetch_rows_on::<MysqlDB, _>(&mut **tx, &query).await?)? {
+        for row in result_rows(tx.fetch(&query).await?)? {
             fitting.insert(text(row.get("v"))?);
         }
     }

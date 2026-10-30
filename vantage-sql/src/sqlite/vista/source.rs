@@ -9,7 +9,7 @@ use vantage_core::Result;
 use vantage_table::column::core::Column;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Entity};
-use vantage_vista::Vista;
+use vantage_vista::{Transaction, Vista};
 
 use crate::condition::{SqliteCondition, build_sql_binary};
 use crate::primitives::identifier::ident;
@@ -32,6 +32,10 @@ impl SqlShellDialect for SqliteDB {
 
     fn cbor(value: AnySqliteType) -> CborValue {
         value.into_value()
+    }
+
+    fn in_transaction(&self, tx: &Transaction) -> Result<Self> {
+        SqliteDB::in_transaction(self, tx)
     }
 
     /// The executed form binds the inline values as `?N` parameters.

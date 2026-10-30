@@ -8,8 +8,8 @@ use vantage_core::Result;
 use vantage_types::Record;
 
 use crate::{
-    Condition, NativeCondition, Page, Preview, SortDirection, TableShell, Vista, VistaCapabilities,
-    VistaChangeStream, VistaMetadata,
+    Condition, NativeCondition, Page, Preview, SortDirection, TableShell, Transaction, Vista,
+    VistaCapabilities, VistaChangeStream, VistaMetadata, transaction::refuse_rebind,
 };
 
 type Rec = Record<CborValue>;
@@ -17,7 +17,9 @@ type Rec = Record<CborValue>;
 /// The trait [`forward_table_shell!`](crate::forward_table_shell) implements.
 /// Every `ForwardShell + Clone` is a [`TableShell`]; each method defaults to
 /// the [`inner`](Self::inner) shell's answer, so a wrapper overrides only
-/// what it changes.
+/// what it changes. The exception is [`rebind`](Self::rebind): it refuses
+/// unless the wrapper overrides it, because only the wrapper knows how to
+/// rebuild itself over a rebound inner shell.
 ///
 /// [`get_ref`](Self::get_ref) forwards the inner target as is; a wrapper
 /// whose behaviour should follow a reference re-wraps it.
@@ -111,5 +113,16 @@ pub trait ForwardShell: Send + Sync + 'static {
 
     fn get_ref(&self, relation: &str, row: Option<&Rec>) -> Result<Vista> {
         self.inner().get_ref(relation, row)
+    }
+
+    // ---- Transactions ------------------------------------------------------
+
+    /// Refuses unless overridden: rebinding has to rebuild the wrapper over
+    /// `self.inner().rebind(tx)?`, which only the wrapper can do.
+    fn rebind(&self, _tx: &Transaction) -> Result<Box<dyn TableShell>> {
+        Err(refuse_rebind())
+    }
+    fn set_lock(&mut self) -> Result<()> {
+        self.inner_mut().set_lock()
     }
 }

@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.10.3 — 2026-10-29
+
+Requires vantage-table 3.2.0 and vantage-vista 2.4.0.
+
+- Postgres, MySQL and SQLite datasources take part in a `Transaction`. `in_transaction(&tx)` gives
+  a datasource that joins `tx`, and `tx_key()` is the key it joins under. `BEGIN` is sent on first
+  use; SQLite uses `BEGIN IMMEDIATE`. A commit after any failed statement rolls back and returns
+  an error.
+- `lock()` reads `FOR UPDATE` on Postgres and MySQL. On SQLite it does nothing: `BEGIN IMMEDIATE`
+  already holds the write lock.
+- MySQL import and insert-without-id run on the transaction's connection.
+- `PostgresDB::new` and `MysqlDB::new` build a datasource from a pool.
+- vantage-vista is now always a dependency, so the `vista` feature is empty. It stays for
+  existing feature lists.
+
 ## 0.10.2 — 2026-10-26
 
 - Tests of one behaviour are folded into one test each, the same across the MySQL, Postgres and

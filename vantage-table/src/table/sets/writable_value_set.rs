@@ -8,7 +8,10 @@ use crate::{
     table::HookReturn,
     table::Table,
     table::sets::{
-        hooks::{UpdateOf, run_after, run_before, run_before_delete, run_delete_all},
+        hooks::{
+            UpdateOf, run_after, run_after_delete_all, run_before, run_before_delete,
+            run_delete_all,
+        },
         invariants::{enforce_invariants, validate_invariants},
     },
 };
@@ -150,7 +153,7 @@ where
         let erased = self.as_entity_erased();
         run_delete_all(self.before_delete_all_hooks(), erased).await?;
         self.data_source().delete_table_all_values(self).await?;
-        run_delete_all(self.after_delete_all_hooks(), erased).await
+        run_after_delete_all(self.after_delete_all_hooks(), erased).await
     }
 }
 

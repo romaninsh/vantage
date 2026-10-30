@@ -1,9 +1,27 @@
 pub mod vantage_vista
 pub mod vantage_vista::contract
+#[non_exhaustive] pub struct vantage_vista::contract::TxTables
+pub vantage_vista::contract::TxTables::a: vantage_vista::Vista
+pub vantage_vista::contract::TxTables::b: vantage_vista::Vista
+impl vantage_vista::contract::TxTables
+pub fn vantage_vista::contract::TxTables::new(vantage_vista::Vista, vantage_vista::Vista) -> Self
+impl core::marker::Freeze for vantage_vista::contract::TxTables
+impl core::marker::Send for vantage_vista::contract::TxTables
+impl core::marker::Sync for vantage_vista::contract::TxTables
+impl core::marker::Unpin for vantage_vista::contract::TxTables
+impl core::marker::UnsafeUnpin for vantage_vista::contract::TxTables
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_vista::contract::TxTables
+impl !core::panic::unwind_safe::UnwindSafe for vantage_vista::contract::TxTables
+pub trait vantage_vista::contract::TxFixture: core::marker::Send + core::marker::Sync
+pub fn vantage_vista::contract::TxFixture::detects_deadlocks(&self) -> bool
+pub fn vantage_vista::contract::TxFixture::fresh<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_vista::contract::TxTables> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_vista::contract::TxFixture::fresh_pool_of_one<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_vista::contract::TxTables> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_vista::contract::TxFixture::supports_lock(&self) -> bool
 pub async fn vantage_vista::contract::check_advertised(&vantage_vista::Vista)
 pub async fn vantage_vista::contract::check_advertised_writes(&vantage_vista::Vista)
 pub async fn vantage_vista::contract::check_clone(&vantage_vista::Vista, &str, vantage_vista::CborValue)
 pub async fn vantage_vista::contract::check_narrowing(&vantage_vista::Vista)
+pub async fn vantage_vista::contract::check_transactions(&impl vantage_vista::contract::TxFixture)
 pub mod vantage_vista::eval
 pub fn vantage_vista::eval::cbor_cmp(&ciborium::value::Value, &ciborium::value::Value) -> core::cmp::Ordering
 pub fn vantage_vista::eval::cell_get<'a>(&'a vantage_types::record::Record<ciborium::value::Value>, &str, &vantage_vista::VistaMetadata) -> core::option::Option<&'a ciborium::value::Value>
@@ -79,8 +97,10 @@ pub fn vantage_vista::mocks::MockShell::list<'life0, 'async_trait>(&'life0 self)
 pub fn vantage_vista::mocks::MockShell::metadata(&self) -> &vantage_vista::VistaMetadata
 pub fn vantage_vista::mocks::MockShell::patch<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
 pub fn vantage_vista::mocks::MockShell::preview(&self) -> vantage_vista::Preview
+pub fn vantage_vista::mocks::MockShell::rebind(&self, &vantage_vista::Transaction) -> vantage_core::util::error::Result<alloc::boxed::Box<dyn vantage_vista::TableShell>>
 pub fn vantage_vista::mocks::MockShell::register_rhai_extensions(&self, &mut rhai::engine::Engine)
 pub fn vantage_vista::mocks::MockShell::replace<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn vantage_vista::mocks::MockShell::set_lock(&mut self) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::mocks::MockShell::set_order(&mut self, core::option::Option<(&str, vantage_vista::SortDirection)>) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::mocks::MockShell::set_search(&mut self, core::option::Option<&str>) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::mocks::MockShell::upsert<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
@@ -263,6 +283,7 @@ pub async fn vantage_vista::Vista::fetch_cursor(&self, core::option::Option<cibo
 pub async fn vantage_vista::Vista::fetch_window(&self, usize, usize) -> vantage_core::util::error::Result<vantage_vista::Page>
 pub fn vantage_vista::Vista::get_ref(&self, &str, core::option::Option<&vantage_types::record::Record<ciborium::value::Value>>) -> vantage_core::util::error::Result<vantage_vista::Vista>
 pub async fn vantage_vista::Vista::import_values(&self, &indexmap::map::IndexMap<alloc::string::String, vantage_types::record::Record<ciborium::value::Value>>) -> vantage_core::util::error::Result<usize>
+pub fn vantage_vista::Vista::lock(&mut self) -> vantage_core::util::error::Result<()>
 pub async fn vantage_vista::Vista::watch(&self) -> vantage_core::util::error::Result<vantage_vista::VistaChangeStream>
 impl vantage_vista::Vista
 pub async fn vantage_vista::Vista::upsert_value(&self, impl core::convert::Into<alloc::string::String> + core::marker::Send, &vantage_types::record::Record<ciborium::value::Value>) -> vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>
@@ -864,6 +885,17 @@ impl<C> core::marker::Unpin for vantage_vista::ColumnSpec<C> where C: core::mark
 impl<C> core::marker::UnsafeUnpin for vantage_vista::ColumnSpec<C> where C: core::marker::UnsafeUnpin
 impl<C> core::panic::unwind_safe::RefUnwindSafe for vantage_vista::ColumnSpec<C> where C: core::panic::unwind_safe::RefUnwindSafe
 impl<C> core::panic::unwind_safe::UnwindSafe for vantage_vista::ColumnSpec<C> where C: core::panic::unwind_safe::UnwindSafe
+#[non_exhaustive] pub struct vantage_vista::Committed
+pub vantage_vista::Committed::written: alloc::vec::Vec<alloc::string::String>
+impl core::fmt::Debug for vantage_vista::Committed
+pub fn vantage_vista::Committed::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for vantage_vista::Committed
+impl core::marker::Send for vantage_vista::Committed
+impl core::marker::Sync for vantage_vista::Committed
+impl core::marker::Unpin for vantage_vista::Committed
+impl core::marker::UnsafeUnpin for vantage_vista::Committed
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_vista::Committed
+impl core::panic::unwind_safe::UnwindSafe for vantage_vista::Committed
 #[non_exhaustive] pub struct vantage_vista::Condition
 pub vantage_vista::Condition::column: alloc::string::String
 pub vantage_vista::Condition::op: vantage_vista::FilterOp
@@ -1096,6 +1128,53 @@ impl core::marker::Unpin for vantage_vista::ShortId
 impl core::marker::UnsafeUnpin for vantage_vista::ShortId
 impl core::panic::unwind_safe::RefUnwindSafe for vantage_vista::ShortId
 impl core::panic::unwind_safe::UnwindSafe for vantage_vista::ShortId
+pub struct vantage_vista::Transaction(_)
+impl vantage_vista::Transaction
+pub fn vantage_vista::Transaction::check_open(&self) -> vantage_core::util::error::Result<()>
+pub async fn vantage_vista::Transaction::commit(&self) -> vantage_core::util::error::Result<vantage_vista::Committed>
+pub fn vantage_vista::Transaction::defer(&self, alloc::boxed::Box<(dyn core::ops::function::FnOnce() -> futures_core::future::BoxFuture<'static, vantage_core::util::error::Result<()>> + core::marker::Send)>)
+pub fn vantage_vista::Transaction::downgrade(&self) -> vantage_vista::WeakTransaction
+pub fn vantage_vista::Transaction::is_finished(&self) -> bool
+pub fn vantage_vista::Transaction::new() -> vantage_vista::Transaction
+pub fn vantage_vista::Transaction::note_written(&self, &str)
+pub fn vantage_vista::Transaction::participant<P: vantage_vista::TxParticipant>(&self, vantage_vista::TxKey, impl core::ops::function::FnOnce() -> P) -> vantage_core::util::error::Result<alloc::rcs::arc::Arc<P>>
+pub async fn vantage_vista::Transaction::rollback(&self) -> vantage_core::util::error::Result<()>
+pub fn vantage_vista::Transaction::same(&self, &vantage_vista::Transaction) -> bool
+impl vantage_vista::Transaction
+pub fn vantage_vista::Transaction::resolver(&self, alloc::rcs::arc::Arc<dyn vantage_vista::VistaResolver>) -> alloc::rcs::arc::Arc<dyn vantage_vista::VistaResolver>
+pub fn vantage_vista::Transaction::wrap(&self, &vantage_vista::Vista) -> vantage_vista::Vista
+impl core::clone::Clone for vantage_vista::Transaction
+pub fn vantage_vista::Transaction::clone(&self) -> Self
+impl core::default::Default for vantage_vista::Transaction
+pub fn vantage_vista::Transaction::default() -> Self
+impl core::marker::Freeze for vantage_vista::Transaction
+impl core::marker::Send for vantage_vista::Transaction
+impl core::marker::Sync for vantage_vista::Transaction
+impl core::marker::Unpin for vantage_vista::Transaction
+impl core::marker::UnsafeUnpin for vantage_vista::Transaction
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_vista::Transaction
+impl core::panic::unwind_safe::UnwindSafe for vantage_vista::Transaction
+pub struct vantage_vista::TxKey(_)
+impl vantage_vista::TxKey
+pub fn vantage_vista::TxKey::of<T: ?core::marker::Sized>(&alloc::rcs::arc::Arc<T>) -> vantage_vista::TxKey
+impl core::clone::Clone for vantage_vista::TxKey
+pub fn vantage_vista::TxKey::clone(&self) -> Self
+impl core::cmp::Eq for vantage_vista::TxKey
+impl core::cmp::PartialEq for vantage_vista::TxKey
+pub fn vantage_vista::TxKey::eq(&self, &Self) -> bool
+impl core::fmt::Debug for vantage_vista::TxKey
+pub fn vantage_vista::TxKey::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for vantage_vista::TxKey
+pub fn vantage_vista::TxKey::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for vantage_vista::TxKey
+impl core::marker::StructuralPartialEq for vantage_vista::TxKey
+impl core::marker::Freeze for vantage_vista::TxKey
+impl core::marker::Send for vantage_vista::TxKey
+impl core::marker::Sync for vantage_vista::TxKey
+impl core::marker::Unpin for vantage_vista::TxKey
+impl core::marker::UnsafeUnpin for vantage_vista::TxKey
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_vista::TxKey
+impl core::panic::unwind_safe::UnwindSafe for vantage_vista::TxKey
 pub struct vantage_vista::Vista
 impl vantage_vista::Vista
 pub fn vantage_vista::Vista::add_condition(&mut self, &str, vantage_vista::FilterOp, impl core::convert::Into<ciborium::value::Value>) -> vantage_core::util::error::Result<()>
@@ -1132,6 +1211,7 @@ pub async fn vantage_vista::Vista::fetch_cursor(&self, core::option::Option<cibo
 pub async fn vantage_vista::Vista::fetch_window(&self, usize, usize) -> vantage_core::util::error::Result<vantage_vista::Page>
 pub fn vantage_vista::Vista::get_ref(&self, &str, core::option::Option<&vantage_types::record::Record<ciborium::value::Value>>) -> vantage_core::util::error::Result<vantage_vista::Vista>
 pub async fn vantage_vista::Vista::import_values(&self, &indexmap::map::IndexMap<alloc::string::String, vantage_types::record::Record<ciborium::value::Value>>) -> vantage_core::util::error::Result<usize>
+pub fn vantage_vista::Vista::lock(&mut self) -> vantage_core::util::error::Result<()>
 pub async fn vantage_vista::Vista::watch(&self) -> vantage_core::util::error::Result<vantage_vista::VistaChangeStream>
 impl vantage_vista::Vista
 pub async fn vantage_vista::Vista::upsert_value(&self, impl core::convert::Into<alloc::string::String> + core::marker::Send, &vantage_types::record::Record<ciborium::value::Value>) -> vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>
@@ -1280,6 +1360,18 @@ impl<T, C, R> core::marker::Unpin for vantage_vista::VistaSpec<T, C, R> where in
 impl<T, C, R> core::marker::UnsafeUnpin for vantage_vista::VistaSpec<T, C, R> where indexmap::map::IndexMap<alloc::string::String, vantage_vista::ColumnSpec<C>>: core::marker::UnsafeUnpin, indexmap::map::IndexMap<alloc::string::String, vantage_vista::ReferenceSpec<R>>: core::marker::UnsafeUnpin, indexmap::map::IndexMap<alloc::string::String, vantage_vista::ContainedYaml<C>>: core::marker::UnsafeUnpin, T: core::marker::UnsafeUnpin
 impl<T, C, R> core::panic::unwind_safe::RefUnwindSafe for vantage_vista::VistaSpec<T, C, R> where indexmap::map::IndexMap<alloc::string::String, vantage_vista::ColumnSpec<C>>: core::panic::unwind_safe::RefUnwindSafe, indexmap::map::IndexMap<alloc::string::String, vantage_vista::ReferenceSpec<R>>: core::panic::unwind_safe::RefUnwindSafe, indexmap::map::IndexMap<alloc::string::String, vantage_vista::ContainedYaml<C>>: core::panic::unwind_safe::RefUnwindSafe, T: core::panic::unwind_safe::RefUnwindSafe
 impl<T, C, R> core::panic::unwind_safe::UnwindSafe for vantage_vista::VistaSpec<T, C, R> where indexmap::map::IndexMap<alloc::string::String, vantage_vista::ColumnSpec<C>>: core::panic::unwind_safe::UnwindSafe, indexmap::map::IndexMap<alloc::string::String, vantage_vista::ReferenceSpec<R>>: core::panic::unwind_safe::UnwindSafe, indexmap::map::IndexMap<alloc::string::String, vantage_vista::ContainedYaml<C>>: core::panic::unwind_safe::UnwindSafe, T: core::panic::unwind_safe::UnwindSafe
+pub struct vantage_vista::WeakTransaction(_)
+impl vantage_vista::WeakTransaction
+pub fn vantage_vista::WeakTransaction::upgrade(&self) -> core::option::Option<vantage_vista::Transaction>
+impl core::clone::Clone for vantage_vista::WeakTransaction
+pub fn vantage_vista::WeakTransaction::clone(&self) -> Self
+impl core::marker::Freeze for vantage_vista::WeakTransaction
+impl core::marker::Send for vantage_vista::WeakTransaction
+impl core::marker::Sync for vantage_vista::WeakTransaction
+impl core::marker::Unpin for vantage_vista::WeakTransaction
+impl core::marker::UnsafeUnpin for vantage_vista::WeakTransaction
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_vista::WeakTransaction
+impl core::panic::unwind_safe::UnwindSafe for vantage_vista::WeakTransaction
 pub trait vantage_vista::CloneTableShell: vantage_vista::shell::sealed::Sealed
 impl<T: vantage_vista::TableShell + core::clone::Clone> vantage_vista::CloneTableShell for T
 pub trait vantage_vista::SpecResolver<S>: core::marker::Send + core::marker::Sync
@@ -1304,8 +1396,10 @@ pub fn vantage_vista::TableShell::list<'life0, 'async_trait>(&'life0 self) -> co
 pub fn vantage_vista::TableShell::metadata(&self) -> &vantage_vista::VistaMetadata
 pub fn vantage_vista::TableShell::patch<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
 pub fn vantage_vista::TableShell::preview(&self) -> vantage_vista::Preview
+pub fn vantage_vista::TableShell::rebind(&self, &vantage_vista::Transaction) -> vantage_core::util::error::Result<alloc::boxed::Box<dyn vantage_vista::TableShell>>
 pub fn vantage_vista::TableShell::register_rhai_extensions(&self, &mut rhai::engine::Engine)
 pub fn vantage_vista::TableShell::replace<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn vantage_vista::TableShell::set_lock(&mut self) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::TableShell::set_order(&mut self, core::option::Option<(&str, vantage_vista::SortDirection)>) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::TableShell::set_search(&mut self, core::option::Option<&str>) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::TableShell::upsert<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
@@ -1328,8 +1422,10 @@ pub fn vantage_vista::mocks::MockShell::list<'life0, 'async_trait>(&'life0 self)
 pub fn vantage_vista::mocks::MockShell::metadata(&self) -> &vantage_vista::VistaMetadata
 pub fn vantage_vista::mocks::MockShell::patch<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
 pub fn vantage_vista::mocks::MockShell::preview(&self) -> vantage_vista::Preview
+pub fn vantage_vista::mocks::MockShell::rebind(&self, &vantage_vista::Transaction) -> vantage_core::util::error::Result<alloc::boxed::Box<dyn vantage_vista::TableShell>>
 pub fn vantage_vista::mocks::MockShell::register_rhai_extensions(&self, &mut rhai::engine::Engine)
 pub fn vantage_vista::mocks::MockShell::replace<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn vantage_vista::mocks::MockShell::set_lock(&mut self) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::mocks::MockShell::set_order(&mut self, core::option::Option<(&str, vantage_vista::SortDirection)>) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::mocks::MockShell::set_search(&mut self, core::option::Option<&str>) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::mocks::MockShell::upsert<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
@@ -1352,12 +1448,17 @@ pub fn T::list<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxe
 pub fn T::metadata(&self) -> &vantage_vista::VistaMetadata
 pub fn T::patch<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
 pub fn T::preview(&self) -> vantage_vista::Preview
+pub fn T::rebind(&self, &vantage_vista::Transaction) -> vantage_core::util::error::Result<alloc::boxed::Box<dyn vantage_vista::TableShell>>
 pub fn T::register_rhai_extensions(&self, &mut rhai::engine::Engine)
 pub fn T::replace<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn T::set_lock(&mut self) -> vantage_core::util::error::Result<()>
 pub fn T::set_order(&mut self, core::option::Option<(&str, vantage_vista::SortDirection)>) -> vantage_core::util::error::Result<()>
 pub fn T::set_search(&mut self, core::option::Option<&str>) -> vantage_core::util::error::Result<()>
 pub fn T::upsert<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
 pub fn T::watch<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_vista::VistaChangeStream>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub trait vantage_vista::TxParticipant: core::any::Any + core::marker::Send + core::marker::Sync
+pub fn vantage_vista::TxParticipant::commit<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_vista::TxParticipant::rollback<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
 pub trait vantage_vista::VistaFactory: core::marker::Send + core::marker::Sync + 'static
 pub type vantage_vista::VistaFactory::ColumnExtras: serde_core::ser::Serialize + serde_core::de::DeserializeOwned + core::default::Default + core::marker::Send + core::marker::Sync + 'static
 pub type vantage_vista::VistaFactory::ReferenceExtras: serde_core::ser::Serialize + serde_core::de::DeserializeOwned + core::default::Default + core::marker::Send + core::marker::Sync + 'static
@@ -1371,6 +1472,7 @@ pub fn vantage_vista::Catalog::vista(&self, &str) -> vantage_core::util::error::
 impl<F: core::ops::function::Fn(&str) -> vantage_core::util::error::Result<vantage_vista::Vista> + core::marker::Send + core::marker::Sync> vantage_vista::VistaResolver for F
 pub fn F::vista(&self, &str) -> vantage_core::util::error::Result<vantage_vista::Vista>
 pub fn vantage_vista::build_contained_vista(&vantage_vista::Reference, vantage_vista::VistaMetadata, core::option::Option<&ciborium::value::Value>, core::option::Option<vantage_vista::ContainedWriteback>, core::option::Option<alloc::rcs::arc::Arc<dyn vantage_vista::VistaResolver>>) -> vantage_core::util::error::Result<vantage_vista::Vista>
+pub fn vantage_vista::cant_take_part(&str) -> vantage_core::util::error::VantageError
 pub fn vantage_vista::condition_column_error(&vantage_vista::VistaMetadata, &str) -> vantage_core::util::error::VantageError
 pub fn vantage_vista::operand_text(&ciborium::value::Value) -> alloc::string::String
 pub fn vantage_vista::resolve_base_spec<S>(core::option::Option<alloc::rcs::arc::Arc<dyn vantage_vista::SpecResolver<S>>>, &str) -> vantage_core::util::error::Result<(alloc::rcs::arc::Arc<dyn vantage_vista::SpecResolver<S>>, S)>

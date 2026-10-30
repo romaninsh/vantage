@@ -11,6 +11,8 @@ pub(crate) mod types;
 mod set_writes;
 #[cfg(any(feature = "sqlite", feature = "postgres", feature = "mysql"))]
 mod sql_exec;
+#[cfg(any(feature = "sqlite", feature = "postgres", feature = "mysql"))]
+mod sql_tx;
 #[cfg(all(
     feature = "vista",
     any(feature = "sqlite", feature = "postgres", feature = "mysql")

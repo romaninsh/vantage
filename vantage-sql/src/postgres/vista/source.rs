@@ -11,7 +11,7 @@ use vantage_table::column::core::Column;
 use vantage_table::sorting::{OrderBy, SortDirection};
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Entity};
-use vantage_vista::{Capability, Vista, VistaChangeStream};
+use vantage_vista::{Capability, Transaction, Vista, VistaChangeStream};
 
 use crate::condition::{PostgresCondition, build_sql_binary};
 use crate::postgres::PostgresDB;
@@ -34,6 +34,10 @@ impl SqlShellDialect for PostgresDB {
 
     fn cbor(value: AnyPostgresType) -> CborValue {
         value.into_value()
+    }
+
+    fn in_transaction(&self, tx: &Transaction) -> Result<Self> {
+        PostgresDB::in_transaction(self, tx)
     }
 
     /// The executed form binds the inline values as `$N` parameters.

@@ -61,6 +61,26 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         &self.data_source
     }
 
+    /// A copy of this table over `data_source`, keeping its columns,
+    /// conditions, references and hooks.
+    pub fn with_data_source(&self, data_source: T) -> Self {
+        Self {
+            data_source,
+            ..self.clone()
+        }
+    }
+
+    /// Read rows locked until the transaction commits. The datasource renders
+    /// it (`SELECT … FOR UPDATE`) on the reads that return rows; a datasource
+    /// without locking reads ignores it.
+    pub fn set_lock(&mut self) {
+        self.lock = true;
+    }
+
+    pub fn is_locked(&self) -> bool {
+        self.lock
+    }
+
     /// Get the title field column if set
     pub fn title_field(&self) -> Option<&T::Column<T::AnyType>> {
         self.title_field

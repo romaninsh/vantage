@@ -66,4 +66,7 @@ mod postgres {
     #[cfg(feature = "vista")]
     #[path = "6_vista_contract.rs"]
     mod vista_contract;
+    #[cfg(feature = "vista")]
+    #[path = "6_vista_transactions.rs"]
+    mod vista_transactions;
 }

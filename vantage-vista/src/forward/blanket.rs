@@ -9,8 +9,8 @@ use vantage_types::Record;
 
 use super::ForwardShell;
 use crate::{
-    Condition, NativeCondition, Page, Preview, SortDirection, TableShell, Vista, VistaCapabilities,
-    VistaChangeStream, VistaMetadata,
+    Condition, NativeCondition, Page, Preview, SortDirection, TableShell, Transaction, Vista,
+    VistaCapabilities, VistaChangeStream, VistaMetadata,
 };
 
 type Rec = Record<CborValue>;
@@ -94,5 +94,12 @@ impl<T: ForwardShell + Clone> TableShell for T {
 
     fn get_ref(&self, relation: &str, row: Option<&Rec>) -> Result<Vista> {
         ForwardShell::get_ref(self, relation, row)
+    }
+
+    fn rebind(&self, tx: &Transaction) -> Result<Box<dyn TableShell>> {
+        ForwardShell::rebind(self, tx)
+    }
+    fn set_lock(&mut self) -> Result<()> {
+        ForwardShell::set_lock(self)
     }
 }

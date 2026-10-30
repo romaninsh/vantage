@@ -94,4 +94,7 @@ mod mysql {
     #[cfg(all(feature = "vista", feature = "rhai"))]
     #[path = "6_vista_rhai_refs.rs"]
     mod vista_rhai_refs;
+    #[cfg(feature = "vista")]
+    #[path = "6_vista_transactions.rs"]
+    mod vista_transactions;
 }
