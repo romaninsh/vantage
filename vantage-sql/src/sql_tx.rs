@@ -81,11 +81,12 @@ impl<DB: Database> SqlTx<DB> {
     /// commit. A statement dropped mid-flight (a timeout, a `select!`) counts
     /// as failed too: the server may still have run it.
     pub(crate) async fn watch<R>(&self, statement: impl Future<Output = Result<R>>) -> Result<R> {
-        let armed = Armed(&self.failed);
+        let mut armed = Armed {
+            failed: &self.failed,
+            settled: false,
+        };
         let out = statement.await;
-        if out.is_ok() {
-            std::mem::forget(armed);
-        }
+        armed.settled = out.is_ok();
         out
     }
 
@@ -97,13 +98,18 @@ impl<DB: Database> SqlTx<DB> {
     }
 }
 
-/// Marks the transaction failed on drop; forgotten once the statement is `Ok`.
+/// Marks the transaction failed on drop unless the statement settled `Ok`.
 /// It only ever sets the flag, so an earlier failure stays.
-struct Armed<'a>(&'a AtomicBool);
+struct Armed<'a> {
+    failed: &'a AtomicBool,
+    settled: bool,
+}
 
 impl Drop for Armed<'_> {
     fn drop(&mut self) {
-        self.0.store(true, Ordering::SeqCst);
+        if !self.settled {
+            self.failed.store(true, Ordering::SeqCst);
+        }
     }
 }
 
