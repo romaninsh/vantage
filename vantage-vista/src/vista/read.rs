@@ -90,6 +90,12 @@ impl Vista {
         self.shell().get_ref(relation, row)
     }
 
+    /// Lock the rows the next reads return until the transaction this Vista
+    /// is wrapped in ends; see [`TableShell::set_lock`](crate::TableShell::set_lock).
+    pub fn lock(&mut self) -> Result<()> {
+        self.shell_mut().set_lock()
+    }
+
     /// Driver-native bulk load, returning how many rows were newly inserted;
     /// see [`TableShell::import`](crate::TableShell::import).
     pub async fn import_values(

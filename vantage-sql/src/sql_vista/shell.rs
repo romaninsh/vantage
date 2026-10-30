@@ -8,7 +8,7 @@
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
-use vantage_core::Result;
+use vantage_core::{Result, error};
 use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet, WritableValueSet};
 use vantage_table::conditions::ConditionHandle;
 use vantage_table::pagination::Pagination;
@@ -16,8 +16,8 @@ use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Entity, Record};
 use vantage_vista::{
-    Condition, NativeCondition, Page, Preview, SortDirection, TableShell, Vista, VistaCapabilities,
-    VistaChangeStream, VistaMetadata,
+    Condition, NativeCondition, Page, Preview, SortDirection, TableShell, Transaction, Vista,
+    VistaCapabilities, VistaChangeStream, VistaMetadata,
 };
 
 use super::dialect::SqlShellDialect;
@@ -200,6 +200,26 @@ where
 
     fn get_ref(&self, relation: &str, row: Option<&Record<CborValue>>) -> Result<Vista> {
         self.ref_target(relation, row)
+    }
+
+    /// The table keeps its hooks, conditions and references; only its
+    /// datasource runs on `tx`.
+    fn rebind(&self, tx: &Transaction) -> Result<Box<dyn TableShell>> {
+        let data_source = self.table.data_source().in_transaction(tx)?;
+        Ok(Box::new(Self {
+            table: self.table.with_data_source(data_source),
+            ..self.clone()
+        }))
+    }
+
+    /// Postgres and MySQL then read `FOR UPDATE`. SQLite renders nothing:
+    /// its `BEGIN IMMEDIATE` already holds the write lock.
+    fn set_lock(&mut self) -> Result<()> {
+        if self.table.data_source().transaction().is_none() {
+            return Err(error!("lock() needs a transaction"));
+        }
+        self.table.set_lock();
+        Ok(())
     }
 
     #[cfg(feature = "rhai")]

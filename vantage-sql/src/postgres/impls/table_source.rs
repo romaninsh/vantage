@@ -11,8 +11,10 @@ use vantage_table::column::core::{Column, ColumnType};
 use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
+use vantage_vista::Transaction;
 
 use crate::postgres::PostgresDB;
+use crate::postgres::statements::PostgresSelect;
 use crate::postgres::types::AnyPostgresType;
 use crate::primitives::identifier::ident;
 use crate::table_writes::{
@@ -42,6 +44,22 @@ where
         AnyPostgresType::from(id.to_string())
     } else {
         id_value(id)
+    }
+}
+
+/// Render a select for a read that returns rows: `FOR UPDATE` after the limit
+/// when the table is locked.
+fn row_query<E>(
+    table: &Table<PostgresDB, E>,
+    select: &PostgresSelect,
+) -> Expression<AnyPostgresType>
+where
+    E: Entity<AnyPostgresType>,
+{
+    if table.is_locked() {
+        Expression::new("{} FOR UPDATE", vec![ExpressiveEnum::Nested(select.expr())])
+    } else {
+        select.expr()
     }
 }
 
@@ -166,6 +184,17 @@ impl TableSource for PostgresDB {
         true
     }
 
+    fn transaction(&self) -> Option<Transaction> {
+        self.tx.as_ref().and_then(|tx| tx.transaction())
+    }
+
+    fn without_transaction(&self) -> Self {
+        Self {
+            tx: None,
+            ..self.clone()
+        }
+    }
+
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type> {
         Column::new(name)
     }
@@ -246,7 +275,7 @@ impl TableSource for PostgresDB {
         let id_field_name = table.id_field_name();
 
         let select = table.select();
-        let result = self.execute(&select.expr()).await?;
+        let result = self.execute(&row_query(table, &select)).await?;
 
         parse_rows(result, &id_field_name)
     }
@@ -266,7 +295,7 @@ impl TableSource for PostgresDB {
             postgres_expr!("{} = {}", (ident(&id_field_name)), id_val)
         };
         let select = table.select().with_condition(condition);
-        let result = self.execute(&select.expr()).await?;
+        let result = self.execute(&row_query(table, &select)).await?;
 
         let mut rows = parse_rows(result, &id_field_name)?;
         Ok(rows.swap_remove(id))
@@ -283,7 +312,7 @@ impl TableSource for PostgresDB {
 
         let mut select = table.select();
         select.set_limit(Some(1), None);
-        let result = self.execute(&select.expr()).await?;
+        let result = self.execute(&row_query(table, &select)).await?;
 
         let mut rows = parse_rows(result, &id_field_name)?;
         Ok(rows.swap_remove_index(0))

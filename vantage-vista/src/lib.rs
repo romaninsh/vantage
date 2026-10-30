@@ -29,6 +29,7 @@ pub mod rhai;
 mod shell;
 mod sort;
 mod spec;
+mod transaction;
 mod vista;
 
 pub use capabilities::{Capability, VistaCapabilities, unknown_relation, unsupported};
@@ -50,6 +51,9 @@ pub use sort::SortDirection;
 pub use spec::{
     ColumnSpec, ContainedYaml, NoExtras, ReferenceSpec, ReferenceSugar, SpecResolver, VistaSpec,
     resolve_base_spec,
+};
+pub use transaction::{
+    Committed, Transaction, TxKey, TxParticipant, WeakTransaction, cant_take_part,
 };
 pub use vista::Vista;
 

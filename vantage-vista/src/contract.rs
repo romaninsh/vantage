@@ -25,19 +25,25 @@
 //! - [`check_clone`]: a clone carries its narrowing, and narrowing a clone
 //!   leaves the original alone.
 //!
+//! - [`check_transactions`]: writes through a [`Transaction`](crate::Transaction)
+//!   land together or not at all, on tables a [`TxFixture`] hands out fresh.
+//!   Each probe has its own deadline, so a hang names the probe that hung.
+//!
 //! Each driver's contract test file runs `check_clone` and
 //! `check_advertised`, plus `check_advertised_writes` where its fixture is
-//! disposable.
+//! disposable, and `check_transactions` where its backend has transactions.
 
 mod advertised;
 mod clone;
 mod narrowing;
+mod transactions;
 mod window;
 mod writes;
 
 pub use advertised::check_advertised;
 pub use clone::check_clone;
 pub use narrowing::check_narrowing;
+pub use transactions::{TxFixture, TxTables, check_transactions};
 pub use writes::check_advertised_writes;
 
 use vantage_core::Result;

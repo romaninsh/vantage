@@ -8,6 +8,7 @@ use crate::postgres::PostgresDB;
 use crate::postgres::row::{bind_postgres_value, row_to_record};
 use crate::postgres::types::AnyPostgresType;
 use crate::sql_exec::{self, Placeholder, SqlDialect, SqlxQuery};
+use crate::sql_tx::SqlTx;
 
 impl SqlDialect for PostgresDB {
     type Db = sqlx::Postgres;
@@ -19,6 +20,10 @@ impl SqlDialect for PostgresDB {
 
     fn sqlx_pool(&self) -> &sqlx::PgPool {
         self.pool()
+    }
+
+    fn sql_tx(&self) -> Option<&SqlTx<sqlx::Postgres>> {
+        self.tx.as_deref()
     }
 
     fn bind<'q>(

@@ -12,6 +12,7 @@ use vantage_expressions::{
     traits::expressive::ExpressiveEnum,
 };
 use vantage_types::{Entity, Record};
+use vantage_vista::Transaction;
 
 use crate::{column::core::ColumnType, table::Table, traits::column_like::ColumnLike};
 
@@ -137,6 +138,18 @@ pub trait TableSource: DataSource + Clone + 'static {
     /// link), not a quoted string that matches nothing.
     fn coerce_reference_value(&self, value: Self::Value) -> Self::Value {
         value
+    }
+
+    /// The transaction this datasource runs its statements on, when it is
+    /// in transaction mode. Default `None`.
+    fn transaction(&self) -> Option<Transaction> {
+        None
+    }
+
+    /// This datasource back on its pool, for work that runs after the
+    /// transaction it was in. Default: a clone.
+    fn without_transaction(&self) -> Self {
+        self.clone()
     }
 
     /// Create a new column with the given name

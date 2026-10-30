@@ -14,6 +14,8 @@ use vantage_core::{Context, Result, VantageError, error};
 use vantage_expressions::{Expression, ExpressionFlattener, ExpressiveEnum, Flatten};
 use vantage_types::Record;
 
+use crate::sql_tx::SqlTx;
+
 pub(crate) type SqlxQuery<'q, DB> = sqlx::query::Query<'q, DB, <DB as Database>::Arguments<'q>>;
 
 /// How a dialect spells the n-th positional parameter.
@@ -55,6 +57,10 @@ pub(crate) trait SqlDialect {
 
     fn sqlx_pool(&self) -> &Pool<Self::Db>;
 
+    /// The transaction this datasource runs its statements on, when it is in
+    /// transaction mode.
+    fn sql_tx(&self) -> Option<&SqlTx<Self::Db>>;
+
     /// Bind one parameter. Errors when the value can't be expressed as a
     /// parameter of this dialect.
     fn bind<'q>(
@@ -89,7 +95,16 @@ where
     for<'c> &'c mut <D::Db as Database>::Connection: Executor<'c, Database = D::Db>,
     for<'q> <D::Db as Database>::Arguments<'q>: IntoArguments<'q, D::Db>,
 {
-    fetch_rows_on::<D, _>(db.sqlx_pool(), expr).await
+    // Deferred parameters may query this same datasource, so they resolve
+    // before the transaction's connection is taken.
+    let (sql, params) = prepare(expr, D::PLACEHOLDER).await?;
+    match db.sql_tx() {
+        None => fetch_prepared::<D, _>(db.sqlx_pool(), &sql, &params).await,
+        Some(tx) => {
+            let mut open = tx.connection().await?;
+            tx.watch(fetch_prepared::<D, _>(&mut *open, &sql, &params).await)
+        }
+    }
 }
 
 /// [`fetch_rows`] on a given executor — a connection or an open transaction.
@@ -103,12 +118,21 @@ where
     for<'q> <D::Db as Database>::Arguments<'q>: IntoArguments<'q, D::Db>,
 {
     let (sql, params) = prepare(expr, D::PLACEHOLDER).await?;
-    let rows = bind_all::<D>(&sql, &params)?
+    fetch_prepared::<D, _>(executor, &sql, &params).await
+}
+
+async fn fetch_prepared<'c, D, X>(executor: X, sql: &str, params: &[D::Value]) -> Result<D::Value>
+where
+    D: SqlDialect,
+    X: Executor<'c, Database = D::Db>,
+    for<'q> <D::Db as Database>::Arguments<'q>: IntoArguments<'q, D::Db>,
+{
+    let rows = bind_all::<D>(sql, params)?
         .fetch_all(executor)
         .await
         .map_err(|e| {
             let err = error!(D::QUERY_FAILED, details = e.to_string());
-            failure_context::<D>(err, &sql, &params)
+            failure_context::<D>(err, sql, params)
         })?;
 
     let rows = rows
@@ -133,7 +157,14 @@ where
     for<'c> &'c mut <D::Db as Database>::Connection: Executor<'c, Database = D::Db>,
     for<'q> <D::Db as Database>::Arguments<'q>: IntoArguments<'q, D::Db>,
 {
-    execute_affected_on::<D, _>(db.sqlx_pool(), expr).await
+    let (sql, params) = prepare(expr, D::PLACEHOLDER).await?;
+    match db.sql_tx() {
+        None => execute_prepared::<D, _>(db.sqlx_pool(), &sql, &params).await,
+        Some(tx) => {
+            let mut open = tx.connection().await?;
+            tx.watch(execute_prepared::<D, _>(&mut *open, &sql, &params).await)
+        }
+    }
 }
 
 /// [`execute_affected`] on a given executor — a connection or an open
@@ -148,10 +179,19 @@ where
     for<'q> <D::Db as Database>::Arguments<'q>: IntoArguments<'q, D::Db>,
 {
     let (sql, params) = prepare(expr, D::PLACEHOLDER).await?;
-    let done = bind_all::<D>(&sql, &params)?
+    execute_prepared::<D, _>(executor, &sql, &params).await
+}
+
+async fn execute_prepared<'c, D, X>(executor: X, sql: &str, params: &[D::Value]) -> Result<u64>
+where
+    D: SqlDialect,
+    X: Executor<'c, Database = D::Db>,
+    for<'q> <D::Db as Database>::Arguments<'q>: IntoArguments<'q, D::Db>,
+{
+    let done = bind_all::<D>(sql, params)?
         .execute(executor)
         .await
-        .with_context(|| failure_context::<D>(error!(D::STATEMENT_FAILED), &sql, &params))?;
+        .with_context(|| failure_context::<D>(error!(D::STATEMENT_FAILED), sql, params))?;
     Ok(D::rows_affected(&done))
 }
 

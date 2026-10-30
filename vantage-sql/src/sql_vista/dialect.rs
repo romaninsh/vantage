@@ -10,7 +10,7 @@ use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Entity, InvariantValue, Record};
 use vantage_vista::{
-    Capability, NativeCondition, Reference, Vista, VistaChangeStream, unsupported,
+    Capability, NativeCondition, Reference, Transaction, Vista, VistaChangeStream, unsupported,
 };
 
 use super::shell::SqlTableShell;
@@ -33,6 +33,9 @@ pub(crate) trait SqlShellDialect:
     fn cell(value: CborValue) -> Self::Value;
 
     fn cbor(value: Self::Value) -> CborValue;
+
+    /// This datasource running its statements on `tx`.
+    fn in_transaction(&self, tx: &Transaction) -> Result<Self>;
 
     /// The SELECT the table would run, rendered with values inline.
     fn preview<E: Entity<Self::Value>>(table: &Table<Self, E>) -> String;

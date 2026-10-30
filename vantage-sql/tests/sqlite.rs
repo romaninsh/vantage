@@ -79,4 +79,7 @@ mod sqlite {
     #[cfg(feature = "vista")]
     #[path = "6_vista_targets.rs"]
     mod vista_targets;
+    #[cfg(feature = "vista")]
+    #[path = "6_vista_transactions.rs"]
+    mod vista_transactions;
 }

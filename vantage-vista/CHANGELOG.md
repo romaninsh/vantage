@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.4.0 — 2026-10-29
+
+- `Transaction` wraps any Vista (`tx.wrap`, or `tx.resolver` for a resolver) so its reads and
+  writes land together on commit or not at all. A datasource joins the transaction when its Vista
+  is wrapped and begins it on first use. Refs reached through a wrapped Vista are in the
+  transaction too. `tx.commit()` returns `Committed`, the tables it wrote.
+- `Vista::lock()` makes a read take row locks where the datasource supports it. `TableShell` gains
+  `rebind` and `set_lock`; a shell that can't take part refuses with `"<table>" can't take part in
+  a transaction`.
+- `contract::check_transactions`, run with a `TxFixture`, is the shared transaction test for
+  drivers.
+
 ## 2.3.0 — 2026-10-28
 
 - The Rhai table handle has `offset(n)`: it skips the first `n` rows of the narrowed, sorted set,

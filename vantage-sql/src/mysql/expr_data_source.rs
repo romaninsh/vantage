@@ -8,6 +8,7 @@ use crate::mysql::MysqlDB;
 use crate::mysql::row::{bind_mysql_value, row_to_record};
 use crate::mysql::types::AnyMysqlType;
 use crate::sql_exec::{self, Placeholder, SqlDialect, SqlxQuery};
+use crate::sql_tx::SqlTx;
 
 impl SqlDialect for MysqlDB {
     type Db = sqlx::MySql;
@@ -19,6 +20,10 @@ impl SqlDialect for MysqlDB {
 
     fn sqlx_pool(&self) -> &sqlx::MySqlPool {
         self.pool()
+    }
+
+    fn sql_tx(&self) -> Option<&SqlTx<sqlx::MySql>> {
+        self.tx.as_deref()
     }
 
     fn bind<'q>(

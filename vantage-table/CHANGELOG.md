@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.2.0 — 2026-10-29
+
+- Requires vantage-vista 2.4.0.
+- `Table::with_data_source` rebuilds a table on another data source. `TableSource::transaction()`
+  reports the `Transaction` a data source is in, and `without_transaction()` gives the same data
+  source back on its pool (by default `None` and a clone). `Table::set_lock` makes the table's
+  reads lock rows.
+- After-hooks of writes made inside a transaction run after commit, under the writer's
+  `WriteContext`, and are dropped on rollback.
+
 ## 3.1.1 — 2026-10-26
 
 - Tests of one behaviour are folded into one test each (entity reads, insert, save and replace,

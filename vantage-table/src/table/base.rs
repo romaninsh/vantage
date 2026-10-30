@@ -73,6 +73,8 @@ where
     /// See [`Self::invariants`].
     pub(super) invariants: IndexMap<String, T::Value>,
     pub(super) hooks: Hooks<T>,
+    /// See [`Self::set_lock`].
+    pub(super) lock: bool,
 }
 
 impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
@@ -102,6 +104,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             id_auto: false,
             invariants: IndexMap::new(),
             hooks: Hooks::default(),
+            lock: false,
         }
     }
 
@@ -135,6 +138,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             id_auto: self.id_auto,
             invariants: self.invariants,
             hooks: self.hooks,
+            lock: self.lock,
         }
     }
 

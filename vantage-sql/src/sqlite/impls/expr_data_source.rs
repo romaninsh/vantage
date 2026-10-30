@@ -5,6 +5,7 @@ use vantage_expressions::traits::expressive::DeferredFn;
 use vantage_types::Record;
 
 use crate::sql_exec::{self, Placeholder, SqlDialect, SqlxQuery};
+use crate::sql_tx::SqlTx;
 use crate::sqlite::SqliteDB;
 use crate::sqlite::row::{bind_sqlite_value, describe_param_types, row_to_record};
 use crate::sqlite::types::AnySqliteType;
@@ -19,6 +20,10 @@ impl SqlDialect for SqliteDB {
 
     fn sqlx_pool(&self) -> &sqlx::SqlitePool {
         self.pool()
+    }
+
+    fn sql_tx(&self) -> Option<&SqlTx<sqlx::Sqlite>> {
+        self.tx.as_deref()
     }
 
     fn bind<'q>(

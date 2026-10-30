@@ -11,6 +11,7 @@ use vantage_table::column::core::{Column, ColumnType};
 use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
+use vantage_vista::Transaction;
 
 use crate::primitives::identifier::ident;
 use crate::sqlite::SqliteDB;
@@ -120,6 +121,17 @@ impl TableSource for SqliteDB {
 
     fn can_confine_writes(&self) -> bool {
         true
+    }
+
+    fn transaction(&self) -> Option<Transaction> {
+        self.tx.as_ref().and_then(|tx| tx.transaction())
+    }
+
+    fn without_transaction(&self) -> Self {
+        Self {
+            tx: None,
+            ..self.clone()
+        }
     }
 
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type> {

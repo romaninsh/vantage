@@ -2,6 +2,8 @@ use crate::mysql::operation::MysqlOperation;
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
+use sqlx::Row;
+use sqlx::mysql::MySqlConnection;
 use vantage_core::{Result, error};
 use vantage_expressions::traits::associated_expressions::AssociatedExpression;
 use vantage_expressions::traits::datasource::ExprDataSource;
@@ -11,14 +13,29 @@ use vantage_table::column::core::{Column, ColumnType};
 use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
+use vantage_vista::Transaction;
 
 use crate::mysql::MysqlDB;
+use crate::mysql::statements::MysqlSelect;
 use crate::mysql::types::AnyMysqlType;
 use crate::primitives::identifier::ident;
 use crate::table_writes::{
     guard_insert, guard_new_row, guard_patch, guard_replace, settle_failed_insert,
 };
 use vantage_expressions::expr_any;
+
+/// Render a select for a read that returns rows: `FOR UPDATE` after the limit
+/// when the table is locked.
+fn row_query<E>(table: &Table<MysqlDB, E>, select: &MysqlSelect) -> Expression<AnyMysqlType>
+where
+    E: Entity<AnyMysqlType>,
+{
+    if table.is_locked() {
+        Expression::new("{} FOR UPDATE", vec![ExpressiveEnum::Nested(select.expr())])
+    } else {
+        select.expr()
+    }
+}
 
 /// Create an AnyMysqlType for an id value. Always binds as string to
 /// preserve semantics of textual ids (e.g., leading zeros in "00123").
@@ -86,6 +103,32 @@ pub(super) fn parse_rows(
     Ok(records)
 }
 
+/// Run the INSERT, then read the id it generated on the same connection.
+async fn insert_returning_id(
+    conn: &mut MySqlConnection,
+    sql: &str,
+    params: &[AnyMysqlType],
+) -> Result<String> {
+    crate::sql_exec::bind_all::<MysqlDB>(sql, params)?
+        .execute(&mut *conn)
+        .await
+        .map_err(|e| {
+            let err = error!("MySQL insert failed", details = e.to_string());
+            crate::sql_exec::failure_context::<MysqlDB>(err, sql, params)
+        })?;
+
+    let row = sqlx::query("SELECT LAST_INSERT_ID() AS id")
+        .fetch_one(&mut *conn)
+        .await
+        .map_err(|e| error!("MySQL LAST_INSERT_ID failed", details = e.to_string()))?;
+
+    let id: u64 = row
+        .try_get("id")
+        .map_err(|e| error!("MySQL get id failed", details = e.to_string()))?;
+
+    Ok(id.to_string())
+}
+
 #[async_trait]
 impl TableSource for MysqlDB {
     type Column<Type>
@@ -126,6 +169,17 @@ impl TableSource for MysqlDB {
 
     fn can_confine_writes(&self) -> bool {
         true
+    }
+
+    fn transaction(&self) -> Option<Transaction> {
+        self.tx.as_ref().and_then(|tx| tx.transaction())
+    }
+
+    fn without_transaction(&self) -> Self {
+        Self {
+            tx: None,
+            ..self.clone()
+        }
     }
 
     fn create_column<Type: ColumnType>(&self, name: &str) -> Self::Column<Type> {
@@ -205,7 +259,7 @@ impl TableSource for MysqlDB {
         let id_field_name = table.id_field_name();
 
         let select = table.select();
-        let result = self.execute(&select.expr()).await?;
+        let result = self.execute(&row_query(table, &select)).await?;
 
         parse_rows(result, &id_field_name)
     }
@@ -225,7 +279,7 @@ impl TableSource for MysqlDB {
             mysql_expr!("{} = {}", (ident(&id_field_name)), id_val)
         };
         let select = table.select().with_condition(condition);
-        let result = self.execute(&select.expr()).await?;
+        let result = self.execute(&row_query(table, &select)).await?;
 
         let mut rows = parse_rows(result, &id_field_name)?;
         Ok(rows.swap_remove(id))
@@ -242,7 +296,7 @@ impl TableSource for MysqlDB {
 
         let mut select = table.select();
         select.set_limit(Some(1), None);
-        let result = self.execute(&select.expr()).await?;
+        let result = self.execute(&row_query(table, &select)).await?;
 
         let mut rows = parse_rows(result, &id_field_name)?;
         Ok(rows.swap_remove_index(0))
@@ -445,33 +499,17 @@ impl TableSource for MysqlDB {
         )
         .await?;
 
-        // Acquire a single connection to ensure LAST_INSERT_ID() works
-        let mut conn = self
-            .pool()
-            .acquire()
-            .await
-            .map_err(|e| error!("MySQL acquire connection failed", details = e.to_string()))?;
-
-        crate::sql_exec::bind_all::<Self>(&sql, &params)?
-            .execute(&mut *conn)
-            .await
-            .map_err(|e| {
-                let err = error!("MySQL insert failed", details = e.to_string());
-                crate::sql_exec::failure_context::<Self>(err, &sql, &params)
-            })?;
-
-        let last_id_sql = "SELECT LAST_INSERT_ID() AS id";
-        let row = sqlx::query(last_id_sql)
-            .fetch_one(&mut *conn)
-            .await
-            .map_err(|e| error!("MySQL LAST_INSERT_ID failed", details = e.to_string()))?;
-
-        use sqlx::Row;
-        let id: u64 = row
-            .try_get("id")
-            .map_err(|e| error!("MySQL get id failed", details = e.to_string()))?;
-
-        Ok(id.to_string())
+        // Both statements run on one connection, for LAST_INSERT_ID(): the
+        // transaction's, when there is one.
+        let Some(tx) = &self.tx else {
+            let mut conn =
+                self.pool().acquire().await.map_err(|e| {
+                    error!("MySQL acquire connection failed", details = e.to_string())
+                })?;
+            return insert_returning_id(&mut conn, &sql, &params).await;
+        };
+        let mut open = tx.connection().await?;
+        tx.watch(insert_returning_id(&mut open, &sql, &params).await)
     }
 
     fn related_in_condition<SourceE: Entity<Self::Value> + 'static>(

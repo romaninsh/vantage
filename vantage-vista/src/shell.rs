@@ -15,6 +15,7 @@ use crate::{
     page::{NativeCondition, Page, Preview},
     query::Condition,
     sort::SortDirection,
+    transaction::{Transaction, refuse_lock, refuse_rebind},
     vista::Vista,
 };
 
@@ -211,6 +212,24 @@ pub trait TableShell: CloneTableShell + Send + Sync + 'static {
     /// join and `is_narrowed()` holds.
     fn get_ref(&self, _relation: &str, _row: Option<&Rec>) -> Result<Vista> {
         unsupported(Capability::Traverse)
+    }
+
+    // ---- Transactions -------------------------------------------------------
+
+    /// This shell rebuilt to read and write through `tx`
+    /// ([`Transaction::wrap`] calls it). A forwarding shell rebinds its inner
+    /// shell and wraps the result in a copy of itself; a shell over a
+    /// datasource without transactions returns a clone of itself. The
+    /// default refuses, and the wrapped Vista then errors at first use with
+    /// [`cant_take_part`](crate::cant_take_part).
+    fn rebind(&self, _tx: &Transaction) -> Result<Box<dyn TableShell>> {
+        Err(refuse_rebind())
+    }
+
+    /// Lock the rows the next reads return until the transaction ends
+    /// ([`Vista::lock`]). There is no capability for it: the default refuses.
+    fn set_lock(&mut self) -> Result<()> {
+        Err(refuse_lock())
     }
 
     // ---- Scripting ----------------------------------------------------------

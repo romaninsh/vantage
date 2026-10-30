@@ -17,7 +17,7 @@ use vantage_table::column::core::Column;
 use vantage_table::sorting::{OrderBy, SortDirection};
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Entity, Record};
-use vantage_vista::{NativeCondition, Reference, Vista};
+use vantage_vista::{NativeCondition, Reference, Transaction, Vista};
 
 use crate::condition::{MysqlCondition, build_sql_binary};
 use crate::mysql::MysqlDB;
@@ -57,6 +57,10 @@ impl SqlShellDialect for MysqlDB {
 
     fn cbor(value: AnyMysqlType) -> CborValue {
         value.into_value()
+    }
+
+    fn in_transaction(&self, tx: &Transaction) -> Result<Self> {
+        MysqlDB::in_transaction(self, tx)
     }
 
     /// The executed form binds the inline values as `?` parameters.
