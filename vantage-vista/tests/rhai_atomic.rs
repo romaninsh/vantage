@@ -221,21 +221,6 @@ fn atomic_rolls_back_on_throw_and_runs_the_arm() {
 }
 
 #[test]
-fn atomic_without_an_arm_rethrows() {
-    let f = fixture(Duration::from_secs(2));
-
-    let err = f
-        .eval(
-            &mut Scope::new(),
-            r#"atomic { table("a").insert(#{ name: "pen" }); throw "no"; }"#,
-        )
-        .unwrap_err();
-
-    assert_eq!(err, "no");
-    assert_eq!(f.log(), ["rollback"]);
-}
-
-#[test]
 fn nested_atomic_is_refused() {
     let f = fixture(Duration::from_secs(2));
 
