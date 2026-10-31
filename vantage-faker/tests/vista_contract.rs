@@ -128,13 +128,11 @@ impl TxFixture for Shaped {
     }
 }
 
+/// Without transactions both contracts run the same direct writes, so one
+/// test checks both.
 #[tokio::test]
-async fn faker_transactions_hold_the_contract() {
-    contract::check_transactions(&Shaped).await
-}
-
-#[cfg(feature = "sim")]
-#[tokio::test]
-async fn faker_atomic_holds_the_contract() {
-    contract::check_atomic_rhai(&Shaped).await
+async fn faker_transactions_and_atomic_hold_the_contract() {
+    contract::check_transactions(&Shaped).await;
+    #[cfg(feature = "sim")]
+    contract::check_atomic_rhai(&Shaped).await;
 }
