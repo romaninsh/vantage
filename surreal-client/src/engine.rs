@@ -14,6 +14,21 @@ pub trait Engine: Send + Sync {
     /// Send one RPC and return its result, or the server's error.
     async fn send_message_cbor(&mut self, method: &str, params: CborValue) -> Result<CborValue>;
 
+    /// [`send_message_cbor`](Self::send_message_cbor) inside the interactive
+    /// transaction `txn`, an id the `begin` RPC returned on this connection.
+    /// The default refuses: only a socket keeps a transaction open between
+    /// calls.
+    async fn send_message_cbor_in(
+        &mut self,
+        _txn: &CborValue,
+        _method: &str,
+        _params: CborValue,
+    ) -> Result<CborValue> {
+        Err(SurrealError::Protocol(
+            "transactions are not supported by this engine".to_string(),
+        ))
+    }
+
     /// [`send_message_cbor`](Self::send_message_cbor) with JSON in and out.
     async fn send_message(&mut self, method: &str, params: Value) -> Result<Value> {
         let cbor_params = crate::cbor_convert::json_to_cbor(params);

@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.1.0 — 2026-10-31
+
+Requires vantage-vista 2.6.0.
+
+- The store takes part in a `Transaction`. One transaction claims the store at a time; another one
+  waits 2 s and then fails with a busy error. Writes go to a row journal that is replayed at
+  commit, and dropped on rollback.
+
 ## 3.0.1 — 2026-10-26
 
 - Tests of one behaviour are folded into one test each (`load_file` choosing YAML or JSON by

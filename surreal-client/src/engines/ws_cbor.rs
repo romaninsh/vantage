@@ -278,6 +278,43 @@ impl WsCborEngine {
 #[async_trait]
 impl Engine for WsCborEngine {
     async fn send_message_cbor(&mut self, method: &str, params: CborValue) -> Result<CborValue> {
+        self.send_request(method, params, None).await
+    }
+
+    async fn send_message_cbor_in(
+        &mut self,
+        txn: &CborValue,
+        method: &str,
+        params: CborValue,
+    ) -> Result<CborValue> {
+        self.send_request(method, params, Some(txn)).await
+    }
+
+    async fn register_live(
+        &mut self,
+        query_id: &str,
+    ) -> Result<mpsc::UnboundedReceiver<Notification>> {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let mut subs = self.live_subscribers.lock().await;
+        subs.insert(query_id.to_string(), tx);
+        Ok(rx)
+    }
+
+    async fn unregister_live(&mut self, query_id: &str) {
+        let mut subs = self.live_subscribers.lock().await;
+        subs.remove(query_id);
+    }
+}
+
+impl WsCborEngine {
+    /// One RPC, inside the interactive transaction `txn` when given: the
+    /// request then carries it as a top-level `txn` field.
+    async fn send_request(
+        &mut self,
+        method: &str,
+        params: CborValue,
+        txn: Option<&CborValue>,
+    ) -> Result<CborValue> {
         let (tx, rx) = oneshot::channel();
         let id = self.msg_id.fetch_add(1, SeqCst).to_string();
 
@@ -306,6 +343,9 @@ impl Engine for WsCborEngine {
         if let Some(params) = request.params {
             request_map.push((CborValue::Text("params".to_string()), params));
         }
+        if let Some(txn) = txn {
+            request_map.push((CborValue::Text("txn".to_string()), txn.clone()));
+        }
 
         let rpc_message = CborValue::Map(request_map);
 
@@ -324,59 +364,40 @@ impl Engine for WsCborEngine {
             .await
             .map_err(|_| SurrealError::Protocol("Response channel closed".to_string()))?;
 
-        if let CborValue::Map(map) = &response {
-            for (key, value) in map {
-                if let CborValue::Text(k) = key
-                    && k == "error"
-                {
-                    if let CborValue::Map(error_map) = value {
-                        let mut code = -1;
-                        let mut message = String::new();
-
-                        for (error_key, error_value) in error_map {
-                            if let CborValue::Text(error_k) = error_key {
-                                match error_k.as_str() {
-                                    "code" => {
-                                        if let CborValue::Integer(c) = error_value {
-                                            code = (*c).try_into().unwrap_or(-1);
-                                        }
-                                    }
-                                    "message" => {
-                                        if let CborValue::Text(m) = error_value {
-                                            message = m.clone();
-                                        }
-                                    }
-                                    _ => {}
-                                }
-                            }
-                        }
-
-                        if !message.is_empty() {
-                            return Err(SurrealError::ServerError { code, message });
-                        }
-                    }
-
-                    return Err(SurrealError::Protocol(format!("Server error: {:?}", value)));
-                }
-            }
+        if let CborValue::Map(map) = &response
+            && let Some((_, value)) = map
+                .iter()
+                .find(|(key, _)| matches!(key, CborValue::Text(k) if k == "error"))
+        {
+            return Err(server_error(value));
         }
 
         Ok(response)
     }
+}
 
-    async fn register_live(
-        &mut self,
-        query_id: &str,
-    ) -> Result<mpsc::UnboundedReceiver<Notification>> {
-        let (tx, rx) = mpsc::unbounded_channel();
-        let mut subs = self.live_subscribers.lock().await;
-        subs.insert(query_id.to_string(), tx);
-        Ok(rx)
+/// The error a response's `error` field carries: a `ServerError` when it has a
+/// message, else the raw value.
+fn server_error(value: &CborValue) -> SurrealError {
+    let mut code = -1;
+    let mut message = String::new();
+    if let CborValue::Map(fields) = value {
+        for (key, field) in fields {
+            match (key, field) {
+                (CborValue::Text(k), CborValue::Integer(c)) if k == "code" => {
+                    code = (*c).try_into().unwrap_or(-1);
+                }
+                (CborValue::Text(k), CborValue::Text(m)) if k == "message" => {
+                    message = m.clone();
+                }
+                _ => {}
+            }
+        }
     }
-
-    async fn unregister_live(&mut self, query_id: &str) {
-        let mut subs = self.live_subscribers.lock().await;
-        subs.remove(query_id);
+    if message.is_empty() {
+        SurrealError::Protocol(format!("Server error: {:?}", value))
+    } else {
+        SurrealError::ServerError { code, message }
     }
 }
 

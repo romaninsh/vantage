@@ -29,8 +29,8 @@ use spacetimedb_sats::ProductType;
 use vantage_core::Result;
 use vantage_types::Record;
 use vantage_vista::{
-    Capability, Condition, Page, Preview, TableShell, VistaCapabilities, VistaChangeStream,
-    VistaMetadata, condition_column_error, unsupported,
+    Capability, Condition, Page, Preview, TableShell, Transaction, VistaCapabilities,
+    VistaChangeStream, VistaMetadata, condition_column_error, direct, unsupported,
 };
 
 use crate::client::SpacetimeDb;
@@ -186,4 +186,11 @@ impl TableShell for SpacetimeTableShell {
 
     // A SpacetimeDB module declares no foreign keys, so the shell has no
     // references and `get_ref` keeps the trait's `Traverse` refusal.
+
+    /// Each SQL statement the server runs is its own transaction, and the API
+    /// spans none across statements: inside a transaction, every write lands
+    /// as it is made.
+    fn rebind(&self, _tx: &Transaction) -> Result<Box<dyn TableShell>> {
+        Ok(direct(Box::new(self.clone())))
+    }
 }

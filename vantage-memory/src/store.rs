@@ -10,9 +10,11 @@ mod write;
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use ciborium::Value as CborValue;
 use parking_lot::RwLock;
+use tokio::sync::Mutex;
 use vantage_types::Record;
 
 pub use events::MemoryChange;
@@ -43,14 +45,48 @@ impl Default for TableDef {
     }
 }
 
-#[derive(Clone, Default)]
+/// How long a transaction waits for another one to finish with the store.
+const TRANSACTION_WAIT: Duration = Duration::from_secs(2);
+
+#[derive(Clone)]
 pub struct MemoryStore {
     tables: Arc<RwLock<HashMap<String, MemoryTableHandle>>>,
+    /// Held by the transaction working on the store, from its first use
+    /// until it finishes; callers outside a transaction never take it.
+    claim: Arc<Mutex<()>>,
+    transaction_wait: Duration,
+}
+
+impl Default for MemoryStore {
+    fn default() -> Self {
+        Self {
+            tables: Arc::default(),
+            claim: Arc::default(),
+            transaction_wait: TRANSACTION_WAIT,
+        }
+    }
 }
 
 impl MemoryStore {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// How long a transaction's first use of the store waits for another
+    /// transaction to finish with it before failing (2 s by default). Two
+    /// blocks that take two stores in opposite orders would otherwise wait
+    /// on each other for good.
+    pub fn with_transaction_wait(mut self, wait: Duration) -> Self {
+        self.transaction_wait = wait;
+        self
+    }
+
+    pub(crate) fn claim(&self) -> &Arc<Mutex<()>> {
+        &self.claim
+    }
+
+    pub(crate) fn transaction_wait(&self) -> Duration {
+        self.transaction_wait
     }
 
     /// The table `name`, created with the default definition if missing.

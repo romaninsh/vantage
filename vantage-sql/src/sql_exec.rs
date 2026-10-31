@@ -101,8 +101,8 @@ where
     match db.sql_tx() {
         None => fetch_prepared::<D, _>(db.sqlx_pool(), &sql, &params).await,
         Some(tx) => {
-            let mut open = tx.connection().await?;
-            tx.watch(fetch_prepared::<D, _>(&mut *open, &sql, &params))
+            let mut open = tx.open().await?;
+            tx.watch(fetch_prepared::<D, _>(&mut **open, &sql, &params))
                 .await
         }
     }
@@ -162,8 +162,8 @@ where
     match db.sql_tx() {
         None => execute_prepared::<D, _>(db.sqlx_pool(), &sql, &params).await,
         Some(tx) => {
-            let mut open = tx.connection().await?;
-            tx.watch(execute_prepared::<D, _>(&mut *open, &sql, &params))
+            let mut open = tx.open().await?;
+            tx.watch(execute_prepared::<D, _>(&mut **open, &sql, &params))
                 .await
         }
     }

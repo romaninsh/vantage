@@ -30,8 +30,8 @@ use vantage_dataset::traits::ReadableValueSet;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{
-    Capability, Condition, FilterOp, Page, Preview, SortDirection, TableShell, Vista,
-    VistaCapabilities, VistaMetadata, VistaQuery, condition_column_error, unknown_relation,
+    Capability, Condition, FilterOp, Page, Preview, SortDirection, TableShell, Transaction, Vista,
+    VistaCapabilities, VistaMetadata, VistaQuery, condition_column_error, direct, unknown_relation,
     unsupported,
 };
 
@@ -159,5 +159,11 @@ impl TableShell for KubeTableShell {
         self.table.traverse_erased(reference, row, |target| {
             KubeVistaFactory::new(self.table.data_source().clone()).from_table(target)
         })
+    }
+
+    /// The API server has no transactions: inside one, the shell works as
+    /// it does outside.
+    fn rebind(&self, _tx: &Transaction) -> Result<Box<dyn TableShell>> {
+        Ok(direct(Box::new(self.clone())))
     }
 }

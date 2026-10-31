@@ -23,8 +23,8 @@ use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{
     Capability, Condition, FilterOp, Page, Preview, Reference as VistaReference, SortDirection,
-    TableShell, Vista, VistaCapabilities, VistaMetadata, VistaResolver, condition_column_error,
-    unknown_relation, unsupported,
+    TableShell, Transaction, Vista, VistaCapabilities, VistaMetadata, VistaResolver,
+    condition_column_error, direct, unknown_relation, unsupported,
 };
 
 use super::factory::RestApiVistaFactory;
@@ -231,5 +231,11 @@ impl TableShell for RestApiTableShell {
             Some(row) => reference.narrow(target, row),
             None => Ok(target),
         }
+    }
+
+    /// A REST API has no transactions: inside one, the shell works as it
+    /// does outside.
+    fn rebind(&self, _tx: &Transaction) -> Result<Box<dyn TableShell>> {
+        Ok(direct(Box::new(self.clone())))
     }
 }

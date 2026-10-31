@@ -14,7 +14,7 @@ use std::sync::Arc;
 use sqlx::sqlite::SqlitePool;
 use vantage_vista::{Transaction, TxKey};
 
-use crate::sql_tx::SqlTx;
+use crate::sql_tx::{SqlBegin, SqlTx};
 
 pub use types::{AnySqliteType, SqliteType};
 
@@ -58,7 +58,7 @@ impl SqliteDB {
     pub fn in_transaction(&self, tx: &Transaction) -> vantage_core::Result<Self> {
         tx.check_open()?;
         let joined = tx.participant(self.tx_key(), || {
-            SqlTx::new(self.pool.clone(), "BEGIN IMMEDIATE", tx)
+            SqlTx::new(SqlBegin::new(self.pool.clone(), "BEGIN IMMEDIATE"), tx)
         })?;
         Ok(Self {
             tx: Some(joined),

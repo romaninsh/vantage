@@ -508,7 +508,7 @@ impl TableSource for MysqlDB {
                 })?;
             return insert_returning_id(&mut conn, &sql, &params).await;
         };
-        let mut open = tx.connection().await?;
+        let mut open = tx.open().await?;
         tx.watch(insert_returning_id(&mut open, &sql, &params))
             .await
     }

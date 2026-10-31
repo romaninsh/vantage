@@ -6,16 +6,21 @@ mod factory;
 mod narrow;
 mod refs;
 mod shell;
+mod tx;
 mod watch;
 mod writes;
+
+use std::sync::Arc;
 
 use affinity::Affinity;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
+use vantage_core::Result;
 use vantage_vista::{Capability, SortDirection, VistaCapabilities, VistaMetadata};
 
 use crate::eval::MemoryCondition;
 use crate::{MemoryTableHandle, Query};
+use tx::MemoryTx;
 
 pub use catalog::MemoryCatalog;
 pub use factory::{MemoryBlock, MemoryTableExtras, MemoryVistaFactory, MemoryVistaSpec};
@@ -32,6 +37,9 @@ pub struct MemoryTableShell {
     /// fill them and patches may not contradict them.
     pub(crate) invariants: IndexMap<String, CborValue>,
     capabilities: VistaCapabilities,
+    /// Set by `rebind`: reads and writes go to the transaction's copy of
+    /// the table.
+    tx: Option<Arc<MemoryTx>>,
 }
 
 impl MemoryTableShell {
@@ -52,7 +60,24 @@ impl MemoryTableShell {
             query: Query::new(),
             invariants: IndexMap::new(),
             capabilities: Self::capabilities_for_memory(),
+            tx: None,
         }
+    }
+
+    /// `op` run on this shell or, bound to a transaction, on a copy of it
+    /// over the transaction's rows.
+    async fn on_rows<R>(&self, op: impl FnOnce(&Self) -> Result<R> + Send) -> Result<R> {
+        let Some(tx) = &self.tx else {
+            return op(self);
+        };
+        tx.run(&self.table, |work| {
+            op(&Self {
+                table: work.clone(),
+                tx: None,
+                ..self.clone()
+            })
+        })
+        .await
     }
 
     fn affinity(&self, column: &str) -> Affinity {

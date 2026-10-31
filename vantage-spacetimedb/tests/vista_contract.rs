@@ -8,7 +8,9 @@
 //! There are no write probes: `cardroom` is shared live data, not a disposable
 //! fixture.
 
+use async_trait::async_trait;
 use vantage_spacetimedb::SpacetimeDb;
+use vantage_vista::contract::{TxFixture, TxTables};
 use vantage_vista::{Vista, contract};
 
 fn db() -> SpacetimeDb {
@@ -36,4 +38,34 @@ async fn spacetimedb_contract_advertised() {
 #[ignore = "needs a running SpacetimeDB host with `cardroom` published and playing"]
 async fn spacetimedb_contract_clone() {
     contract::check_clone(&vista("game").await, "status", "ended".into()).await;
+}
+
+/// The SQL API spans no transaction across statements. Without the owner's
+/// token `game` takes no writes, so only the direct-read probe runs; both
+/// tables are `game`, since the probe reads only the first.
+struct Cardroom;
+
+#[async_trait]
+impl TxFixture for Cardroom {
+    async fn fresh(&self) -> TxTables {
+        TxTables::new(vista("game").await, vista("game").await)
+    }
+
+    async fn fresh_pool_of_one(&self) -> TxTables {
+        self.fresh().await
+    }
+
+    fn detects_deadlocks(&self) -> bool {
+        false
+    }
+
+    fn supports_transactions(&self) -> bool {
+        false
+    }
+}
+
+#[tokio::test]
+#[ignore = "needs a running SpacetimeDB host with the `cardroom` module published"]
+async fn spacetimedb_transactions_hold_the_contract() {
+    contract::check_transactions(&Cardroom).await
 }

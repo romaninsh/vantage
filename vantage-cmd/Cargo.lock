@@ -1323,7 +1323,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-cli-util"
-version = "0.6.4"
+version = "0.6.7"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -1340,7 +1340,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-cmd"
-version = "0.7.0"
+version = "0.7.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1363,7 +1363,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-core"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "atty",
  "indexmap",
@@ -1376,7 +1376,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-dataset"
-version = "1.1.2"
+version = "1.1.3"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -1395,7 +1395,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-expressions"
-version = "1.2.0"
+version = "1.2.3"
 dependencies = [
  "async-trait",
  "serde",
@@ -1407,7 +1407,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-rhai"
-version = "1.1.0"
+version = "1.4.0"
 dependencies = [
  "rhai",
  "serde",
@@ -1417,7 +1417,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "2.0.0"
+version = "3.2.0"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1430,7 +1430,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
- "uuid",
  "vantage-core",
  "vantage-dataset",
  "vantage-expressions",
@@ -1440,7 +1439,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-types"
-version = "1.0.0"
+version = "1.0.3"
 dependencies = [
  "chrono",
  "ciborium",
@@ -1463,16 +1462,21 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "2.0.0"
+version = "2.6.0"
 dependencies = [
  "async-stream",
  "async-trait",
  "ciborium",
  "futures-core",
+ "getrandom 0.4.2",
  "indexmap",
  "serde",
+ "serde_json",
  "serde_yaml_ng",
  "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
  "vantage-core",
  "vantage-dataset",
  "vantage-types",
