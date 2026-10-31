@@ -18,6 +18,12 @@ use crate::vista::Vista;
 /// as `Arc<dyn VistaResolver>`.
 pub trait VistaResolver: Send + Sync {
     fn vista(&self, name: &str) -> Result<Vista>;
+
+    /// A Vista already in hand, as this resolver would hand it out. Identity by
+    /// default; a transaction's resolver wraps it.
+    fn adopt(&self, vista: Vista) -> Vista {
+        vista
+    }
 }
 
 impl<F: Fn(&str) -> Result<Vista> + Send + Sync> VistaResolver for F {

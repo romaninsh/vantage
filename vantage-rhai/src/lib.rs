@@ -19,6 +19,7 @@
 
 pub use rhai;
 
+mod atomic;
 mod compiled;
 mod error;
 mod host;
@@ -30,6 +31,7 @@ mod row_pipe;
 mod slot;
 pub mod template;
 
+pub use atomic::register_atomic_syntax;
 pub use compiled::{Compiled, Env, Slot};
 pub use error::{Located, Result, RhaiError};
 pub use host::{AST_CACHE_BOUND, Host, HostBuilder, Mode, Vocab, background_host, ui_host};

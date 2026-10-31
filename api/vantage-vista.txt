@@ -19,6 +19,7 @@ pub fn vantage_vista::contract::TxFixture::fresh_pool_of_one<'life0, 'async_trai
 pub fn vantage_vista::contract::TxFixture::supports_lock(&self) -> bool
 pub async fn vantage_vista::contract::check_advertised(&vantage_vista::Vista)
 pub async fn vantage_vista::contract::check_advertised_writes(&vantage_vista::Vista)
+pub async fn vantage_vista::contract::check_atomic_rhai(&impl vantage_vista::contract::TxFixture)
 pub async fn vantage_vista::contract::check_clone(&vantage_vista::Vista, &str, vantage_vista::CborValue)
 pub async fn vantage_vista::contract::check_narrowing(&vantage_vista::Vista)
 pub async fn vantage_vista::contract::check_transactions(&impl vantage_vista::contract::TxFixture)
@@ -347,10 +348,16 @@ impl core::marker::UnsafeUnpin for vantage_vista::VistaQuery
 impl core::panic::unwind_safe::RefUnwindSafe for vantage_vista::VistaQuery
 impl core::panic::unwind_safe::UnwindSafe for vantage_vista::VistaQuery
 pub trait vantage_vista::prelude::VistaResolver: core::marker::Send + core::marker::Sync
+pub fn vantage_vista::prelude::VistaResolver::adopt(&self, vantage_vista::Vista) -> vantage_vista::Vista
 pub fn vantage_vista::prelude::VistaResolver::vista(&self, &str) -> vantage_core::util::error::Result<vantage_vista::Vista>
 impl vantage_vista::VistaResolver for vantage_vista::Catalog
+pub fn vantage_vista::Catalog::adopt(&self, vantage_vista::Vista) -> vantage_vista::Vista
 pub fn vantage_vista::Catalog::vista(&self, &str) -> vantage_core::util::error::Result<vantage_vista::Vista>
+impl vantage_vista::VistaResolver for vantage_vista::rhai::ResolverCell
+pub fn vantage_vista::rhai::ResolverCell::adopt(&self, vantage_vista::Vista) -> vantage_vista::Vista
+pub fn vantage_vista::rhai::ResolverCell::vista(&self, &str) -> vantage_core::util::error::Result<vantage_vista::Vista>
 impl<F: core::ops::function::Fn(&str) -> vantage_core::util::error::Result<vantage_vista::Vista> + core::marker::Send + core::marker::Sync> vantage_vista::VistaResolver for F
+pub fn F::adopt(&self, vantage_vista::Vista) -> vantage_vista::Vista
 pub fn F::vista(&self, &str) -> vantage_core::util::error::Result<vantage_vista::Vista>
 pub type vantage_vista::prelude::CborValue = ciborium::value::Value
 pub mod vantage_vista::rhai
@@ -420,6 +427,26 @@ impl core::marker::Unpin for vantage_vista::rhai::RuleVerb
 impl core::marker::UnsafeUnpin for vantage_vista::rhai::RuleVerb
 impl core::panic::unwind_safe::RefUnwindSafe for vantage_vista::rhai::RuleVerb
 impl core::panic::unwind_safe::UnwindSafe for vantage_vista::rhai::RuleVerb
+#[non_exhaustive] pub enum vantage_vista::rhai::Stop
+pub vantage_vista::rhai::Stop::ArmTimeout
+pub vantage_vista::rhai::Stop::BlockTimeout
+pub vantage_vista::rhai::Stop::Cancelled
+impl core::clone::Clone for vantage_vista::rhai::Stop
+pub fn vantage_vista::rhai::Stop::clone(&self) -> Self
+impl core::cmp::Eq for vantage_vista::rhai::Stop
+impl core::cmp::PartialEq for vantage_vista::rhai::Stop
+pub fn vantage_vista::rhai::Stop::eq(&self, &Self) -> bool
+impl core::fmt::Debug for vantage_vista::rhai::Stop
+pub fn vantage_vista::rhai::Stop::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vantage_vista::rhai::Stop
+impl core::marker::StructuralPartialEq for vantage_vista::rhai::Stop
+impl core::marker::Freeze for vantage_vista::rhai::Stop
+impl core::marker::Send for vantage_vista::rhai::Stop
+impl core::marker::Sync for vantage_vista::rhai::Stop
+impl core::marker::Unpin for vantage_vista::rhai::Stop
+impl core::marker::UnsafeUnpin for vantage_vista::rhai::Stop
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_vista::rhai::Stop
+impl core::panic::unwind_safe::UnwindSafe for vantage_vista::rhai::Stop
 #[non_exhaustive] pub enum vantage_vista::rhai::Terminals
 pub vantage_vista::rhai::Terminals::Describe
 pub vantage_vista::rhai::Terminals::ReadWrite
@@ -450,6 +477,61 @@ impl core::marker::Unpin for vantage_vista::rhai::Writes
 impl core::marker::UnsafeUnpin for vantage_vista::rhai::Writes
 impl core::panic::unwind_safe::RefUnwindSafe for vantage_vista::rhai::Writes
 impl core::panic::unwind_safe::UnwindSafe for vantage_vista::rhai::Writes
+pub struct vantage_vista::rhai::AtomicClock(_)
+impl vantage_vista::rhai::AtomicClock
+pub fn vantage_vista::rhai::AtomicClock::remaining(&self) -> core::option::Option<core::time::Duration>
+pub fn vantage_vista::rhai::AtomicClock::should_stop(&self, bool) -> core::option::Option<vantage_vista::rhai::Stop>
+impl core::clone::Clone for vantage_vista::rhai::AtomicClock
+pub fn vantage_vista::rhai::AtomicClock::clone(&self) -> Self
+impl core::default::Default for vantage_vista::rhai::AtomicClock
+pub fn vantage_vista::rhai::AtomicClock::default() -> Self
+impl core::marker::Freeze for vantage_vista::rhai::AtomicClock
+impl core::marker::Send for vantage_vista::rhai::AtomicClock
+impl core::marker::Sync for vantage_vista::rhai::AtomicClock
+impl core::marker::Unpin for vantage_vista::rhai::AtomicClock
+impl core::marker::UnsafeUnpin for vantage_vista::rhai::AtomicClock
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_vista::rhai::AtomicClock
+impl core::panic::unwind_safe::UnwindSafe for vantage_vista::rhai::AtomicClock
+pub struct vantage_vista::rhai::AtomicScope(_)
+impl vantage_vista::rhai::AtomicScope
+pub fn vantage_vista::rhai::AtomicScope::clock(&self) -> vantage_vista::rhai::AtomicClock
+pub fn vantage_vista::rhai::AtomicScope::is_active(&self) -> bool
+pub fn vantage_vista::rhai::AtomicScope::new(vantage_vista::rhai::ResolverCell) -> Self
+pub fn vantage_vista::rhai::AtomicScope::on_commit(self, vantage_vista::rhai::OnCommit) -> Self
+pub fn vantage_vista::rhai::AtomicScope::run<T>(&self, impl core::ops::function::FnOnce() -> core::result::Result<T, alloc::boxed::Box<rhai::types::error::EvalAltResult>>, core::option::Option<&'_ mut dyn core::ops::function::FnMut(alloc::boxed::Box<rhai::types::error::EvalAltResult>) -> core::result::Result<(), alloc::boxed::Box<rhai::types::error::EvalAltResult>>>) -> core::result::Result<T, alloc::boxed::Box<rhai::types::error::EvalAltResult>>
+pub fn vantage_vista::rhai::AtomicScope::with_arm_budget(self, core::time::Duration) -> Self
+pub fn vantage_vista::rhai::AtomicScope::with_limit(self, core::time::Duration) -> Self
+impl core::clone::Clone for vantage_vista::rhai::AtomicScope
+pub fn vantage_vista::rhai::AtomicScope::clone(&self) -> Self
+impl core::marker::Freeze for vantage_vista::rhai::AtomicScope
+impl core::marker::Send for vantage_vista::rhai::AtomicScope
+impl core::marker::Sync for vantage_vista::rhai::AtomicScope
+impl core::marker::Unpin for vantage_vista::rhai::AtomicScope
+impl core::marker::UnsafeUnpin for vantage_vista::rhai::AtomicScope
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_vista::rhai::AtomicScope
+impl !core::panic::unwind_safe::UnwindSafe for vantage_vista::rhai::AtomicScope
+pub struct vantage_vista::rhai::AtomicVocab(_)
+impl vantage_vista::rhai::AtomicVocab
+pub fn vantage_vista::rhai::AtomicVocab::new(vantage_vista::rhai::AtomicScope) -> Self
+impl vantage_rhai::host::Vocab for vantage_vista::rhai::AtomicVocab
+pub fn vantage_vista::rhai::AtomicVocab::register(&self, &mut rhai::engine::Engine)
+impl core::marker::Freeze for vantage_vista::rhai::AtomicVocab
+impl core::marker::Send for vantage_vista::rhai::AtomicVocab
+impl core::marker::Sync for vantage_vista::rhai::AtomicVocab
+impl core::marker::Unpin for vantage_vista::rhai::AtomicVocab
+impl core::marker::UnsafeUnpin for vantage_vista::rhai::AtomicVocab
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_vista::rhai::AtomicVocab
+impl !core::panic::unwind_safe::UnwindSafe for vantage_vista::rhai::AtomicVocab
+pub struct vantage_vista::rhai::CellGuard
+impl core::ops::drop::Drop for vantage_vista::rhai::CellGuard
+pub fn vantage_vista::rhai::CellGuard::drop(&mut self)
+impl core::marker::Freeze for vantage_vista::rhai::CellGuard
+impl core::marker::Send for vantage_vista::rhai::CellGuard
+impl core::marker::Sync for vantage_vista::rhai::CellGuard
+impl core::marker::Unpin for vantage_vista::rhai::CellGuard
+impl core::marker::UnsafeUnpin for vantage_vista::rhai::CellGuard
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_vista::rhai::CellGuard
+impl !core::panic::unwind_safe::UnwindSafe for vantage_vista::rhai::CellGuard
 pub struct vantage_vista::rhai::DataVocab
 impl vantage_vista::rhai::DataVocab
 pub fn vantage_vista::rhai::DataVocab::new(vantage_vista::rhai::Terminals) -> Self
@@ -500,6 +582,24 @@ impl core::marker::Unpin for vantage_vista::rhai::RecordDraft
 impl core::marker::UnsafeUnpin for vantage_vista::rhai::RecordDraft
 impl core::panic::unwind_safe::RefUnwindSafe for vantage_vista::rhai::RecordDraft
 impl core::panic::unwind_safe::UnwindSafe for vantage_vista::rhai::RecordDraft
+pub struct vantage_vista::rhai::ResolverCell(_)
+impl vantage_vista::rhai::ResolverCell
+pub fn vantage_vista::rhai::ResolverCell::base(&self) -> alloc::rcs::arc::Arc<dyn vantage_vista::VistaResolver>
+pub fn vantage_vista::rhai::ResolverCell::is_pointed(&self) -> bool
+pub fn vantage_vista::rhai::ResolverCell::new(alloc::rcs::arc::Arc<dyn vantage_vista::VistaResolver>) -> Self
+pub fn vantage_vista::rhai::ResolverCell::point(&self, alloc::rcs::arc::Arc<dyn vantage_vista::VistaResolver>) -> vantage_vista::rhai::CellGuard
+impl core::clone::Clone for vantage_vista::rhai::ResolverCell
+pub fn vantage_vista::rhai::ResolverCell::clone(&self) -> Self
+impl vantage_vista::VistaResolver for vantage_vista::rhai::ResolverCell
+pub fn vantage_vista::rhai::ResolverCell::adopt(&self, vantage_vista::Vista) -> vantage_vista::Vista
+pub fn vantage_vista::rhai::ResolverCell::vista(&self, &str) -> vantage_core::util::error::Result<vantage_vista::Vista>
+impl core::marker::Freeze for vantage_vista::rhai::ResolverCell
+impl core::marker::Send for vantage_vista::rhai::ResolverCell
+impl core::marker::Sync for vantage_vista::rhai::ResolverCell
+impl core::marker::Unpin for vantage_vista::rhai::ResolverCell
+impl core::marker::UnsafeUnpin for vantage_vista::rhai::ResolverCell
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_vista::rhai::ResolverCell
+impl !core::panic::unwind_safe::UnwindSafe for vantage_vista::rhai::ResolverCell
 pub struct vantage_vista::rhai::RuleHandle
 impl vantage_vista::rhai::RuleHandle
 pub fn vantage_vista::rhai::RuleHandle::native_condition(&self, alloc::boxed::Box<(dyn core::any::Any + core::marker::Send)>, alloc::string::String) -> vantage_core::util::error::Result<()>
@@ -514,6 +614,8 @@ impl core::marker::Unpin for vantage_vista::rhai::RuleHandle
 impl core::marker::UnsafeUnpin for vantage_vista::rhai::RuleHandle
 impl core::panic::unwind_safe::RefUnwindSafe for vantage_vista::rhai::RuleHandle
 impl core::panic::unwind_safe::UnwindSafe for vantage_vista::rhai::RuleHandle
+pub const vantage_vista::rhai::ATOMIC_ARM_TIMEOUT: &str
+pub const vantage_vista::rhai::ATOMIC_BLOCK_TIMEOUT: &str
 pub const vantage_vista::rhai::DEFAULT_LIMIT: usize
 pub const vantage_vista::rhai::IMPORT_CANCELLED: &str
 pub const vantage_vista::rhai::IMPORT_CANCELLED_SKIPPED: &str
@@ -538,6 +640,7 @@ pub fn vantage_vista::rhai::register_rule_vocab(&mut rhai::engine::Engine)
 pub fn vantage_vista::rhai::reject_dropped_narrowing(&rhai::ast::ast::AST, &'static str, bool) -> vantage_core::util::error::Result<()>
 pub async fn vantage_vista::rhai::run_script(alloc::string::String, alloc::rcs::arc::Arc<dyn vantage_vista::VistaResolver>, usize, vantage_vista::rhai::Writes) -> core::result::Result<serde_json::value::Value, alloc::string::String>
 pub fn vantage_vista::rhai::script_tables<F: vantage_vista::VistaFactory>(F, core::option::Option<alloc::rcs::arc::Arc<dyn vantage_vista::SpecResolver<vantage_vista::VistaSpec<<F as vantage_vista::VistaFactory>::TableExtras, <F as vantage_vista::VistaFactory>::ColumnExtras, <F as vantage_vista::VistaFactory>::ReferenceExtras>>>>, core::option::Option<fn(&str) -> vantage_vista::VistaSpec<<F as vantage_vista::VistaFactory>::TableExtras, <F as vantage_vista::VistaFactory>::ColumnExtras, <F as vantage_vista::VistaFactory>::ReferenceExtras>>) -> alloc::rcs::arc::Arc<dyn vantage_vista::VistaResolver>
+pub type vantage_vista::rhai::OnCommit = alloc::rcs::arc::Arc<(dyn core::ops::function::Fn(&vantage_vista::Committed) + core::marker::Send + core::marker::Sync)>
 pub type vantage_vista::rhai::RuleHookFn = alloc::rcs::arc::Arc<(dyn core::ops::function::Fn(vantage_vista::rhai::RuleHookInput) -> core::result::Result<(), alloc::string::String> + core::marker::Send + core::marker::Sync)>
 pub macro vantage_vista::forward_table_shell!
 #[non_exhaustive] pub enum vantage_vista::Capability
@@ -814,6 +917,7 @@ pub fn vantage_vista::Catalog::default() -> Self
 impl core::fmt::Debug for vantage_vista::Catalog
 pub fn vantage_vista::Catalog::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl vantage_vista::VistaResolver for vantage_vista::Catalog
+pub fn vantage_vista::Catalog::adopt(&self, vantage_vista::Vista) -> vantage_vista::Vista
 pub fn vantage_vista::Catalog::vista(&self, &str) -> vantage_core::util::error::Result<vantage_vista::Vista>
 impl core::marker::Freeze for vantage_vista::Catalog
 impl core::marker::Send for vantage_vista::Catalog
@@ -1466,10 +1570,16 @@ pub type vantage_vista::VistaFactory::TableExtras: serde_core::ser::Serialize + 
 pub fn vantage_vista::VistaFactory::build_from_spec(&self, vantage_vista::VistaSpec<Self::TableExtras, Self::ColumnExtras, Self::ReferenceExtras>) -> vantage_core::util::error::Result<vantage_vista::Vista>
 pub fn vantage_vista::VistaFactory::from_yaml(&self, &str) -> vantage_core::util::error::Result<vantage_vista::Vista>
 pub trait vantage_vista::VistaResolver: core::marker::Send + core::marker::Sync
+pub fn vantage_vista::VistaResolver::adopt(&self, vantage_vista::Vista) -> vantage_vista::Vista
 pub fn vantage_vista::VistaResolver::vista(&self, &str) -> vantage_core::util::error::Result<vantage_vista::Vista>
 impl vantage_vista::VistaResolver for vantage_vista::Catalog
+pub fn vantage_vista::Catalog::adopt(&self, vantage_vista::Vista) -> vantage_vista::Vista
 pub fn vantage_vista::Catalog::vista(&self, &str) -> vantage_core::util::error::Result<vantage_vista::Vista>
+impl vantage_vista::VistaResolver for vantage_vista::rhai::ResolverCell
+pub fn vantage_vista::rhai::ResolverCell::adopt(&self, vantage_vista::Vista) -> vantage_vista::Vista
+pub fn vantage_vista::rhai::ResolverCell::vista(&self, &str) -> vantage_core::util::error::Result<vantage_vista::Vista>
 impl<F: core::ops::function::Fn(&str) -> vantage_core::util::error::Result<vantage_vista::Vista> + core::marker::Send + core::marker::Sync> vantage_vista::VistaResolver for F
+pub fn F::adopt(&self, vantage_vista::Vista) -> vantage_vista::Vista
 pub fn F::vista(&self, &str) -> vantage_core::util::error::Result<vantage_vista::Vista>
 pub fn vantage_vista::build_contained_vista(&vantage_vista::Reference, vantage_vista::VistaMetadata, core::option::Option<&ciborium::value::Value>, core::option::Option<vantage_vista::ContainedWriteback>, core::option::Option<alloc::rcs::arc::Arc<dyn vantage_vista::VistaResolver>>) -> vantage_core::util::error::Result<vantage_vista::Vista>
 pub fn vantage_vista::cant_take_part(&str) -> vantage_core::util::error::VantageError

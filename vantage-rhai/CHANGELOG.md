@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.0 — 2026-10-30
+
+- `register_atomic_syntax(engine, eval)`: the grammar of `atomic { BODY }` and
+  `atomic { BODY } rollback (NAME) { ARM }`, defined once. vantage-vista's `AtomicVocab` registers
+  it with the block's behaviour; a validator registers it with an `eval` that never runs, so a body
+  using `atomic {` compiles there too.
+
 ## 1.2.0 — 2026-10-28
 
 - `Compiled<Block>::eval_raw(&env)`: `eval` with rhai's own `EvalAltResult`, before it becomes a

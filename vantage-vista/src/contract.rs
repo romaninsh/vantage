@@ -28,12 +28,18 @@
 //! - [`check_transactions`]: writes through a [`Transaction`](crate::Transaction)
 //!   land together or not at all, on tables a [`TxFixture`] hands out fresh.
 //!   Each probe has its own deadline, so a hang names the probe that hung.
+//! - [`check_atomic_rhai`] (feature `rhai`): the same promise from a Rhai
+//!   `atomic {}` block, its `rollback` arm, a `return` out of it, and handles
+//!   made before and used after it.
 //!
 //! Each driver's contract test file runs `check_clone` and
 //! `check_advertised`, plus `check_advertised_writes` where its fixture is
-//! disposable, and `check_transactions` where its backend has transactions.
+//! disposable, and `check_transactions` and `check_atomic_rhai` where its
+//! backend has transactions.
 
 mod advertised;
+#[cfg(feature = "rhai")]
+mod atomic;
 mod clone;
 mod narrowing;
 mod transactions;
@@ -41,6 +47,8 @@ mod window;
 mod writes;
 
 pub use advertised::check_advertised;
+#[cfg(feature = "rhai")]
+pub use atomic::check_atomic_rhai;
 pub use clone::check_clone;
 pub use narrowing::check_narrowing;
 pub use transactions::{TxFixture, TxTables, check_transactions};

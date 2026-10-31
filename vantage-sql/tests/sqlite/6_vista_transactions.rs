@@ -1,4 +1,5 @@
-//! `vantage_vista::contract::check_transactions` over file-backed SQLite: an
+//! `vantage_vista::contract::check_transactions` and `check_atomic_rhai` over
+//! file-backed SQLite: an
 //! in-memory database is private to one connection, and the probes need a
 //! second one to read "outside" the transaction.
 
@@ -105,6 +106,12 @@ impl TxFixture for SqliteTx {
 #[tokio::test]
 async fn sqlite_transactions_hold_the_contract() {
     contract::check_transactions(&SqliteTx::new().await).await
+}
+
+#[cfg(feature = "rhai")]
+#[tokio::test]
+async fn sqlite_atomic_holds_the_contract() {
+    contract::check_atomic_rhai(&SqliteTx::new().await).await
 }
 
 const DEADLINE: Duration = Duration::from_secs(2);

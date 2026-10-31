@@ -30,9 +30,27 @@ impl Transaction {
             .map_shell(|original| TxShell::new(original, rebound, name, self.clone()))
     }
 
-    /// `base`, with every Vista it resolves wrapped in this transaction.
+    /// `base`, with every Vista it resolves, or adopts, wrapped in this
+    /// transaction.
     pub fn resolver(&self, base: Arc<dyn VistaResolver>) -> Arc<dyn VistaResolver> {
-        let tx = self.clone();
-        Arc::new(move |name: &str| -> Result<Vista> { Ok(tx.wrap(&base.vista(name)?)) })
+        Arc::new(TxResolver {
+            tx: self.clone(),
+            base,
+        })
+    }
+}
+
+struct TxResolver {
+    tx: Transaction,
+    base: Arc<dyn VistaResolver>,
+}
+
+impl VistaResolver for TxResolver {
+    fn vista(&self, name: &str) -> Result<Vista> {
+        Ok(self.tx.wrap(&self.base.vista(name)?))
+    }
+
+    fn adopt(&self, vista: Vista) -> Vista {
+        self.tx.wrap(&self.base.adopt(vista))
     }
 }

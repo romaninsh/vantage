@@ -16,7 +16,7 @@ use crate::{CborValue, FilterOp, Transaction, Vista};
 
 type Rec = Record<CborValue>;
 
-const PROBE_DEADLINE: Duration = Duration::from_secs(2);
+pub(super) const PROBE_DEADLINE: Duration = Duration::from_secs(2);
 const COLLIDE_DEADLINE: Duration = Duration::from_secs(3);
 /// The whole check's time, so its one panic lands before nextest's 5 s kill.
 const CHECK_BUDGET: Duration = Duration::from_millis(4500);
@@ -24,7 +24,7 @@ const CHECK_BUDGET: Duration = Duration::from_millis(4500);
 const WRITER_WAIT: Duration = Duration::from_millis(100);
 /// How long `lock_makes_a_reader_wait` gives the second reader to (wrongly) get through.
 const READER_WAIT: Duration = Duration::from_millis(200);
-const FAILED_STATEMENT: &str = "a statement failed inside the transaction; rolled back";
+pub(super) const FAILED_STATEMENT: &str = "a statement failed inside the transaction; rolled back";
 const LOCK_NEEDS_TX: &str = "lock() needs a transaction";
 
 /// Two empty tables on one datasource:
@@ -63,10 +63,7 @@ pub trait TxFixture: Send + Sync {
 /// deadline, or didn't run because the check's time budget was spent. Reads
 /// "outside" the transaction go through the unwrapped Vistas.
 pub async fn check_transactions(fixture: &impl TxFixture) {
-    let mut runner = Runner {
-        probe: Probe::default(),
-        ends: Instant::now() + CHECK_BUDGET,
-    };
+    let mut runner = Runner::new();
     let fx = fixture;
     run(
         &mut runner,
@@ -168,17 +165,31 @@ pub async fn check_transactions(fixture: &impl TxFixture) {
         )
         .await;
     }
-    runner.probe.finish();
+    runner.finish();
 }
 
 /// Runs the probes in turn, each under its own deadline cut to what is left
 /// of [`CHECK_BUDGET`].
-struct Runner {
+pub(super) struct Runner {
     probe: Probe,
     ends: Instant,
 }
 
-async fn run(
+impl Runner {
+    pub(super) fn new() -> Self {
+        Self {
+            probe: Probe::default(),
+            ends: Instant::now() + CHECK_BUDGET,
+        }
+    }
+
+    #[track_caller]
+    pub(super) fn finish(self) {
+        self.probe.finish();
+    }
+}
+
+pub(super) async fn run(
     runner: &mut Runner,
     name: &str,
     deadline: Duration,
@@ -484,11 +495,11 @@ fn rec_b(a_id: &str, n: i64) -> Rec {
     .collect()
 }
 
-fn ensure(holds: bool, broken: String) -> Result<()> {
+pub(super) fn ensure(holds: bool, broken: String) -> Result<()> {
     if holds { Ok(()) } else { Err(error!(broken)) }
 }
 
-async fn present(vista: &Vista, id: &str, when: &str) -> Result<()> {
+pub(super) async fn present(vista: &Vista, id: &str, when: &str) -> Result<()> {
     match vista.get_value(id).await? {
         Some(_) => Ok(()),
         None => Err(error!(format!(
@@ -498,7 +509,7 @@ async fn present(vista: &Vista, id: &str, when: &str) -> Result<()> {
     }
 }
 
-async fn absent(vista: &Vista, id: &str, when: &str) -> Result<()> {
+pub(super) async fn absent(vista: &Vista, id: &str, when: &str) -> Result<()> {
     match vista.get_value(id).await? {
         Some(_) => Err(error!(format!(
             "{}/{id} is found outside {when}",

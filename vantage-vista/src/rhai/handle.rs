@@ -162,10 +162,12 @@ impl Handle {
         })
     }
 
+    /// A Vista in hand is adopted by the resolver, so inside `atomic` it comes
+    /// back wrapped in the block's transaction.
     fn resolve_base(&self, resolver: Option<&dyn VistaResolver>) -> Result<Vista> {
+        let resolver = resolver.or(self.resolver.as_deref());
         match &self.base {
             Base::Name(name) => resolver
-                .or(self.resolver.as_deref())
                 .ok_or_else(|| {
                     error!(
                         "Table can't be resolved here: no tables are available",
@@ -173,7 +175,37 @@ impl Handle {
                     )
                 })?
                 .vista(name),
-            Base::Vista(vista) => Ok(Vista::clone(vista)),
+            Base::Vista(vista) => Ok(match resolver {
+                Some(resolver) => resolver.adopt(Vista::clone(vista)),
+                None => Vista::clone(vista),
+            }),
         }
+    }
+}
+
+#[cfg(all(test, feature = "mocks"))]
+mod tests {
+    use std::sync::Arc;
+
+    use vantage_dataset::traits::ReadableValueSet;
+
+    use super::Handle;
+    use crate::{Transaction, VistaResolver, mocks::MockShell, vista::Vista};
+
+    #[tokio::test]
+    async fn a_vista_in_hand_resolves_adopted() {
+        let base: Arc<dyn VistaResolver> =
+            Arc::new(|name: &str| Ok(Vista::new(name, MockShell::new())));
+        let resolver = Transaction::new().resolver(base);
+        let handle = Handle::over(Vista::new("a", MockShell::new()));
+
+        let vista = handle.resolve(Some(&*resolver)).unwrap();
+
+        // MockShell can't rebind, so only a wrapped Vista refuses to list.
+        let err = vista.list_values().await.unwrap_err();
+        assert!(
+            err.to_string().contains("can't take part in a transaction"),
+            "{err}"
+        );
     }
 }

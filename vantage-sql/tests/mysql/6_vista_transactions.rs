@@ -1,8 +1,8 @@
-//! `vantage_vista::contract::check_transactions` over MySQL, and an insert
-//! without an id inside a transaction.
+//! `vantage_vista::contract::check_transactions` and `check_atomic_rhai` over
+//! MySQL, and an insert without an id inside a transaction.
 //!
 //! Requires a running MySQL on `mysql://vantage:vantage@localhost:3306/vantage`.
-//! Every `fresh` call makes its own suffixed tables.
+//! Every `fresh` call makes its own prefixed and suffixed tables.
 
 #![cfg(feature = "vista")]
 
@@ -25,21 +25,24 @@ const MYSQL_URL: &str = "mysql://vantage:vantage@localhost:3306/vantage";
 
 struct MysqlTx {
     db: MysqlDB,
+    prefix: &'static str,
     next: AtomicUsize,
 }
 
 impl MysqlTx {
-    async fn new() -> Self {
+    /// Tests run in parallel, so each names its tables with its own `prefix`.
+    async fn new(prefix: &'static str) -> Self {
         Self {
             db: MysqlDB::connect(MYSQL_URL).await.unwrap(),
+            prefix,
             next: AtomicUsize::new(0),
         }
     }
 
     /// Names of two new, empty tables.
     async fn create(&self) -> (String, String) {
-        let n = self.next.fetch_add(1, Ordering::SeqCst);
-        let (a, b) = (format!("contract_tx_a_{n}"), format!("contract_tx_b_{n}"));
+        let (p, n) = (self.prefix, self.next.fetch_add(1, Ordering::SeqCst));
+        let (a, b) = (format!("{p}_a_{n}"), format!("{p}_b_{n}"));
         for sql in [
             format!("DROP TABLE IF EXISTS `{a}`"),
             format!("DROP TABLE IF EXISTS `{b}`"),
@@ -112,7 +115,13 @@ impl TxFixture for MysqlTx {
 
 #[tokio::test]
 async fn mysql_transactions_hold_the_contract() {
-    contract::check_transactions(&MysqlTx::new().await).await
+    contract::check_transactions(&MysqlTx::new("contract_tx").await).await
+}
+
+#[cfg(feature = "rhai")]
+#[tokio::test]
+async fn mysql_atomic_holds_the_contract() {
+    contract::check_atomic_rhai(&MysqlTx::new("contract_atomic").await).await
 }
 
 const DEADLINE: Duration = Duration::from_secs(2);
