@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -15,6 +15,16 @@ use vantage_vista::{
 };
 
 type Log = Arc<Mutex<Vec<&'static str>>>;
+
+/// Scripts run inside it, so a commit can await a timer; its worker thread
+/// drives the timer while the script blocks.
+static RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_time()
+        .build()
+        .unwrap()
+});
 
 /// What a table's datasource does slowly: both take 300 ms.
 #[derive(Clone, Copy, PartialEq)]
@@ -70,8 +80,6 @@ forward_table_shell!(Joining, inner, {
 
 struct Fixture {
     host: Host,
-    /// Scripts run inside it, so a commit can await a timer.
-    runtime: tokio::runtime::Runtime,
     log: Log,
     committed: Arc<Mutex<Vec<Vec<String>>>>,
 }
@@ -130,12 +138,6 @@ fn fixture(limit: Duration) -> Fixture {
         .build();
     Fixture {
         host,
-        // A worker thread drives the timer while the script blocks on it.
-        runtime: tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(1)
-            .enable_time()
-            .build()
-            .unwrap(),
         log,
         committed,
     }
@@ -143,7 +145,7 @@ fn fixture(limit: Duration) -> Fixture {
 
 impl Fixture {
     fn eval(&self, scope: &mut Scope, script: &str) -> std::result::Result<Dynamic, String> {
-        let _runtime = self.runtime.enter();
+        let _runtime = RUNTIME.enter();
         self.host
             .engine()
             .eval_with_scope::<Dynamic>(scope, script)
