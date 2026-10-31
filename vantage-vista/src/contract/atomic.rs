@@ -1,6 +1,6 @@
 //! A Rhai `atomic {}` block lands every write it makes, or none.
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use vantage_core::{Result, error};
@@ -440,7 +440,7 @@ async fn eval_on(t: &TxTables, other: Option<&TxTables>, script: &'static str) -
             .eval_with_scope::<Dynamic>(&mut scope, script)
             .map_err(|e| message(&e));
         let unprotected =
-            std::mem::take(&mut *unprotected.lock().unwrap_or_else(|e| e.into_inner()));
+            std::mem::take(&mut *unprotected.lock().unwrap_or_else(PoisonError::into_inner));
         Ran {
             out,
             seen: scope.get_value::<String>("seen"),
@@ -468,7 +468,7 @@ fn host(tables: Vec<(&'static str, Vista)>, unprotected: Arc<Mutex<Vec<Vec<Strin
         .with_limit(BLOCK_LIMIT)
         .with_arm_budget(ARM_BUDGET)
         .on_unprotected(Arc::new(move |tables| {
-            let mut reported = unprotected.lock().unwrap_or_else(|e| e.into_inner());
+            let mut reported = unprotected.lock().unwrap_or_else(PoisonError::into_inner);
             reported.push(tables.to_vec());
         }));
     let clock = scope.clock();

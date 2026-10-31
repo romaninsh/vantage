@@ -364,44 +364,40 @@ impl WsCborEngine {
             .await
             .map_err(|_| SurrealError::Protocol("Response channel closed".to_string()))?;
 
-        if let CborValue::Map(map) = &response {
-            for (key, value) in map {
-                if let CborValue::Text(k) = key
-                    && k == "error"
-                {
-                    if let CborValue::Map(error_map) = value {
-                        let mut code = -1;
-                        let mut message = String::new();
-
-                        for (error_key, error_value) in error_map {
-                            if let CborValue::Text(error_k) = error_key {
-                                match error_k.as_str() {
-                                    "code" => {
-                                        if let CborValue::Integer(c) = error_value {
-                                            code = (*c).try_into().unwrap_or(-1);
-                                        }
-                                    }
-                                    "message" => {
-                                        if let CborValue::Text(m) = error_value {
-                                            message = m.clone();
-                                        }
-                                    }
-                                    _ => {}
-                                }
-                            }
-                        }
-
-                        if !message.is_empty() {
-                            return Err(SurrealError::ServerError { code, message });
-                        }
-                    }
-
-                    return Err(SurrealError::Protocol(format!("Server error: {:?}", value)));
-                }
-            }
+        if let CborValue::Map(map) = &response
+            && let Some((_, value)) = map
+                .iter()
+                .find(|(key, _)| matches!(key, CborValue::Text(k) if k == "error"))
+        {
+            return Err(server_error(value));
         }
 
         Ok(response)
+    }
+}
+
+/// The error a response's `error` field carries: a `ServerError` when it has a
+/// message, else the raw value.
+fn server_error(value: &CborValue) -> SurrealError {
+    let mut code = -1;
+    let mut message = String::new();
+    if let CborValue::Map(fields) = value {
+        for (key, field) in fields {
+            match (key, field) {
+                (CborValue::Text(k), CborValue::Integer(c)) if k == "code" => {
+                    code = (*c).try_into().unwrap_or(-1);
+                }
+                (CborValue::Text(k), CborValue::Text(m)) if k == "message" => {
+                    message = m.clone();
+                }
+                _ => {}
+            }
+        }
+    }
+    if message.is_empty() {
+        SurrealError::Protocol(format!("Server error: {:?}", value))
+    } else {
+        SurrealError::ServerError { code, message }
     }
 }
 
