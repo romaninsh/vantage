@@ -13,7 +13,9 @@ use std::cell::RefCell;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
-use vantage_rhai::rhai::{Array, Dynamic, Engine, EvalAltResult, EvalContext, Expression};
+use vantage_rhai::rhai::{
+    Array, Dynamic, Engine, EvalAltResult, EvalContext, Expression, Position,
+};
 use vantage_rhai::{Vocab, register_atomic_syntax};
 
 use super::bridge::block_on;
@@ -183,7 +185,20 @@ impl AtomicScope {
         // Read before the commit: a slow commit's own error isn't a timeout.
         let overran = Instant::now() >= deadline;
 
+        let ended = match &outcome {
+            Ok(_) => true,
+            Err(e) => matches!(**e, EvalAltResult::Return(..) | EvalAltResult::Exit(..)),
+        };
         let (err, committed) = match outcome {
+            // A body that ended past the deadline, say after a long lock
+            // wait, doesn't commit.
+            _ if overran && ended => (
+                Box::new(EvalAltResult::ErrorTerminated(
+                    ATOMIC_BLOCK_TIMEOUT.into(),
+                    Position::NONE,
+                )),
+                Vec::new(),
+            ),
             Ok(value) => match self.commit(&tx) {
                 Ok(()) => return Ok(value),
                 Err(failed) => failed,
