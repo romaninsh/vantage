@@ -180,6 +180,8 @@ impl AtomicScope {
             let _pointed = cell.point(tx.resolver(cell.base()));
             body()
         };
+        // Read before the commit: a slow commit's own error isn't a timeout.
+        let overran = Instant::now() >= deadline;
 
         let (err, committed) = match outcome {
             Ok(value) => match self.commit(&tx) {
@@ -208,7 +210,7 @@ impl AtomicScope {
         // Rhai parses `break` inside the block when it sits in a loop.
         let replaced = if matches!(*err, EvalAltResult::LoopBreak(..)) {
             Some(LEFT_BY_LOOP)
-        } else if Instant::now() >= deadline {
+        } else if overran && matches!(err.unwrap_inner(), EvalAltResult::ErrorTerminated(..)) {
             Some(ATOMIC_BLOCK_TIMEOUT)
         } else {
             None

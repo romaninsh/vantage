@@ -18,16 +18,17 @@ use vantage_vista::{
 type Log = Arc<Mutex<Vec<&'static str>>>;
 
 /// One datasource's share of a transaction: records how it finished. With
-/// `fails`, its commit fails.
+/// `fails`, its commit fails after that long.
 struct Recorder {
     log: Log,
-    fails: bool,
+    fails: Option<Duration>,
 }
 
 #[async_trait]
 impl TxParticipant for Recorder {
     async fn commit(&self) -> Result<()> {
-        if self.fails {
+        if let Some(delay) = self.fails {
+            std::thread::sleep(delay);
             self.log.lock().unwrap().push("failed commit");
             return Err(error!("commit failed"));
         }
@@ -45,7 +46,7 @@ impl TxParticipant for Recorder {
 struct Joining {
     inner: Box<dyn TableShell>,
     source: Arc<()>,
-    fails: bool,
+    fails: Option<Duration>,
     log: Log,
 }
 
@@ -80,9 +81,9 @@ struct Fixture {
     direct: Vista,
 }
 
-/// Table `fails_commit` is on a second datasource whose commit fails, table
-/// `direct` on a datasource without transactions; every other name is on
-/// one transactional datasource.
+/// Tables `fails_commit` and `slow_fail` (after 300 ms) are on a second
+/// datasource whose commit fails, table `direct` on a datasource without
+/// transactions; every other name is on one transactional datasource.
 fn fixture(limit: Duration) -> Fixture {
     let log = Log::default();
     let committed = Arc::new(Mutex::new(Vec::new()));
@@ -96,8 +97,9 @@ fn fixture(limit: Duration) -> Fixture {
         let log = shell_log.clone();
         let (source, fails) = match name {
             "direct" => return Ok(direct_table.clone()),
-            "fails_commit" => (second.clone(), true),
-            _ => (source.clone(), false),
+            "fails_commit" => (second.clone(), Some(Duration::ZERO)),
+            "slow_fail" => (second.clone(), Some(Duration::from_millis(300))),
+            _ => (source.clone(), None),
         };
         Ok(
             Vista::new(name, MockShell::new()).map_shell(|inner| Joining {
@@ -200,44 +202,22 @@ fn atomic_rolls_back_on_throw_and_runs_the_arm() {
         .eval(
             &mut scope,
             r#"
-            let log = ();
-            atomic {
+            fn add() {
                 table("a").insert(#{ name: "pen" });
                 throw "no";
-            } rollback (e) {
-                log = e;
             }
+            let log = ();
+            atomic { add() } rollback (e) { log = e; }
             "#,
         )
         .unwrap_err();
 
-    assert_eq!(err, "no");
+    assert!(err.contains("no"), "{err}");
     assert_eq!(f.log(), ["rollback"]);
+    // A throw inside a fn reaches the arm as thrown, not wrapped in the call.
     assert_eq!(scope.get_value::<String>("log").as_deref(), Some("no"));
     assert!(!scope.contains("e"), "the arm's binding is rewound");
     assert!(f.committed.lock().unwrap().is_empty());
-}
-
-#[test]
-fn a_throw_inside_a_fn_reaches_the_arm_as_thrown() {
-    let f = fixture(Duration::from_secs(2));
-    let mut scope = Scope::new();
-
-    f.eval(
-        &mut scope,
-        r#"
-        fn add() {
-            table("a").insert(#{ name: "pen" });
-            throw "no";
-        }
-        let seen = ();
-        atomic { add() } rollback (e) { seen = e; }
-        "#,
-    )
-    .unwrap_err();
-
-    assert_eq!(scope.get_value::<String>("seen").as_deref(), Some("no"));
-    assert_eq!(f.log(), ["rollback"]);
 }
 
 #[test]
@@ -303,9 +283,23 @@ fn the_deadline_stops_a_long_block() {
     assert_eq!(f.log(), ["rollback"]);
 }
 
+#[test]
+fn a_commit_failing_past_the_deadline_keeps_its_error() {
+    let f = fixture(Duration::from_millis(200));
+
+    let err = f
+        .eval(
+            &mut Scope::new(),
+            r#"atomic { table("slow_fail").insert(#{ name: "pen" }) }"#,
+        )
+        .unwrap_err();
+
+    assert!(err.contains("commit failed"), "{err}");
+}
+
 /// The second datasource fails its commit after the first committed: the
 /// first stays committed, and both the arm's `committed` and the host's
-/// hook name its table.
+/// hook name every table written on it, in write order.
 #[test]
 fn committed_names_what_landed() {
     let f = fixture(Duration::from_secs(2));
@@ -318,6 +312,7 @@ fn committed_names_what_landed() {
             let seen = ();
             let landed = ();
             atomic {
+                table("b").insert(#{ name: "pen" });
                 table("a").insert(#{ name: "pen" });
                 table("fails_commit").insert(#{ name: "ink" });
             } rollback (e, committed) {
@@ -330,8 +325,11 @@ fn committed_names_what_landed() {
 
     assert!(err.contains("commit failed"), "{err}");
     assert_eq!(f.log(), ["commit", "failed commit"]);
-    assert_eq!(names(&scope, "landed"), ["a"]);
-    assert_eq!(*f.landed.lock().unwrap(), [vec!["a".to_string()]]);
+    assert_eq!(names(&scope, "landed"), ["b", "a"]);
+    assert_eq!(
+        *f.landed.lock().unwrap(),
+        [vec!["b".to_string(), "a".to_string()]]
+    );
     assert!(f.committed.lock().unwrap().is_empty());
     let seen = scope.get_value::<String>("seen").unwrap_or_default();
     assert!(seen.contains("commit failed"), "the arm sees {seen:?}");
@@ -341,36 +339,30 @@ fn committed_names_what_landed() {
     );
 }
 
-/// What the arm's `committed` holds after `body`, whose last write goes to
-/// the datasource that fails its commit.
-fn landed_after(body: &str) -> Vec<String> {
-    let f = fixture(Duration::from_secs(2));
-    let mut scope = Scope::new();
-    let script = format!(
-        r#"let landed = ();
-        atomic {{ {body} table("fails_commit").insert(#{{ name: "ink" }}); }}
-        rollback (e, committed) {{ landed = committed; }}"#
-    );
-    f.eval(&mut scope, &script).unwrap_err();
-    assert_eq!(f.log(), ["commit", "failed commit"]);
-    names(&scope, "landed")
-}
-
-/// Two tables on the first datasource: both landed, in write order.
-#[test]
-fn committed_lists_every_table_of_a_committed_database() {
-    let landed = landed_after(
-        r#"table("b").insert(#{ name: "pen" }); table("a").insert(#{ name: "pen" });"#,
-    );
-    assert_eq!(landed, ["b", "a"]);
-}
-
 /// A read of `b` joins the first datasource; `a`, written after it, still
 /// counts as landed and `b`, only read, doesn't.
 #[test]
 fn committed_lists_a_table_written_after_a_read_joined_its_database() {
-    let landed = landed_after(r#"table("b").count(); table("a").insert(#{ name: "pen" });"#);
-    assert_eq!(landed, ["a"]);
+    let f = fixture(Duration::from_secs(2));
+    let mut scope = Scope::new();
+
+    f.eval(
+        &mut scope,
+        r#"
+        let landed = ();
+        atomic {
+            table("b").count();
+            table("a").insert(#{ name: "pen" });
+            table("fails_commit").insert(#{ name: "ink" });
+        } rollback (e, committed) {
+            landed = committed;
+        }
+        "#,
+    )
+    .unwrap_err();
+
+    assert_eq!(f.log(), ["commit", "failed commit"]);
+    assert_eq!(names(&scope, "landed"), ["a"]);
 }
 
 /// A block over a transactional table and a direct one throws: the

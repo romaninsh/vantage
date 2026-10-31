@@ -22,9 +22,9 @@ Requires vantage-rhai 1.3.0.
 
 - `atomic { … } rollback (e) { … }` in Rhai: every table handle used inside the block reads and
   writes through one `Transaction` per database. The block commits at its end and rolls back on a
-  `throw`, a cancel or a timeout (30 s for the block, 10 s for the rollback arm). `actions.x()` and
-  a nested `atomic` throw inside a block. It is built from `AtomicVocab`, `AtomicScope`,
-  `AtomicClock` and `Stop`.
+  `throw`, a cancel or a timeout (30 s for the block, 10 s for the rollback arm). A nested `atomic`
+  throws, and `AtomicScope::is_active` lets a host refuse its own calls inside a block. It is built
+  from `AtomicVocab`, `AtomicScope`, `AtomicClock` and `Stop`.
 - `ResolverCell` holds a resolver a script can swap, and `VistaResolver::adopt` lets a resolver
   take over another's handles, so the handles in a block resolve through the transaction.
 - `contract::check_atomic_rhai`, run with a `TxFixture`, is the shared test of `atomic` blocks for
