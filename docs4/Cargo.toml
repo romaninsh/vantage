@@ -16,7 +16,8 @@ vantage-table = { path = "../vantage-table" }
 vantage-types = { path = "../vantage-types" }
 # `rhai` so the Rhai chapters' links (Handle, run_script, …) resolve.
 vantage-rhai = { path = "../vantage-rhai" }
-vantage-vista = { path = "../vantage-vista", features = ["rhai", "mocks"] }
+# `contract` so the transactions chapter's links (contract::check_transactions, …) resolve.
+vantage-vista = { path = "../vantage-vista", features = ["rhai", "mocks", "contract"] }
 
 # What the chapters' snippets compile against (`cargo test -p vantage-docs --doc`).
 [dev-dependencies]

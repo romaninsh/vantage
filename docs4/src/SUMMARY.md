@@ -30,6 +30,7 @@
   - [Downstream: vantage-ui and vantage-actions](./migration-2.0/downstream.md)
 - [Expressions & Queries](./expressions.md)
 - [Records: Traversal, Invariants & Hooks](./record-lifecycle.md)
+- [Transactions](./transactions.md)
 - [Relations & Traversal](./relations.md)
   - [Traversing Sets and Records](./relations/traversal.md)
   - [Expressions & Subqueries](./relations/expressions.md)

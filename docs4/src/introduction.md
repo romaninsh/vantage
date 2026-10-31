@@ -11,7 +11,8 @@ Vantage offers two ways to work with your data. In **transactional** mode there 
 manage: load a set, act on it, done — each operation goes straight to the backend. This is the
 natural shape of a REST endpoint: handle the request, read or update the data, respond. (The
 name describes that request/response shape, not database transactions — BEGIN/COMMIT is the
-backend's business, and Vantage doesn't wrap your operations in one.) In **live** mode Vantage
+backend's business, and Vantage doesn't wrap your operations in one unless you ask; see
+[Transactions](./transactions.md).) In **live** mode Vantage
 maintains a local representation of the data segment you're working with: you operate on your
 local copy, and it reconciles with the source over time. That's how a user interface behaves —
 any kind. Live mode is built on top of transactional mode, so everything you learn about the
