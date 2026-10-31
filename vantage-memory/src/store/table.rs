@@ -58,7 +58,7 @@ impl MemoryTable {
     }
 
     /// A private, unindexed copy of the rows for a transaction to work on.
-    /// It records its writes, for [`apply`](Self::apply) to replay at
+    /// It records its writes, for [`apply_all`](Self::apply_all) to replay at
     /// commit, and generates ids from this table's counter.
     pub(crate) fn fork(&self) -> MemoryTable {
         let def = TableDef {
