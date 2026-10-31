@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -17,18 +17,39 @@ use vantage_vista::{
 
 type Log = Arc<Mutex<Vec<&'static str>>>;
 
-/// One datasource's share of a transaction: records how it finished. With
-/// `fails`, its commit fails after that long.
+/// Scripts run inside it, so a commit can await a timer; its worker thread
+/// drives the timer while the script blocks.
+static RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_time()
+        .build()
+        .unwrap()
+});
+
+/// How a table's datasource behaves in a transaction; slow means 300 ms.
+#[derive(Clone, Copy, PartialEq)]
+enum Quirk {
+    None,
+    FailingCommit,
+    SlowFailingCommit,
+    /// Joining the transaction is slow, so the write ends late.
+    SlowJoin,
+}
+
+/// One datasource's share of a transaction: records how it finished.
 struct Recorder {
     log: Log,
-    fails: Option<Duration>,
+    quirk: Quirk,
 }
 
 #[async_trait]
 impl TxParticipant for Recorder {
     async fn commit(&self) -> Result<()> {
-        if let Some(delay) = self.fails {
-            std::thread::sleep(delay);
+        if self.quirk == Quirk::SlowFailingCommit {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+        }
+        if matches!(self.quirk, Quirk::FailingCommit | Quirk::SlowFailingCommit) {
             self.log.lock().unwrap().push("failed commit");
             return Err(error!("commit failed"));
         }
@@ -46,14 +67,17 @@ impl TxParticipant for Recorder {
 struct Joining {
     inner: Box<dyn TableShell>,
     source: Arc<()>,
-    fails: Option<Duration>,
+    quirk: Quirk,
     log: Log,
 }
 
 forward_table_shell!(Joining, inner, {
     fn rebind(&self, tx: &Transaction) -> Result<Box<dyn TableShell>> {
-        let (log, fails) = (self.log.clone(), self.fails);
-        tx.participant(TxKey::of(&self.source), || Recorder { log, fails })?;
+        if self.quirk == Quirk::SlowJoin {
+            std::thread::sleep(Duration::from_millis(300));
+        }
+        let (log, quirk) = (self.log.clone(), self.quirk);
+        tx.participant(TxKey::of(&self.source), || Recorder { log, quirk })?;
         Ok(Box::new(self.clone()))
     }
 });
@@ -83,7 +107,8 @@ struct Fixture {
 
 /// Tables `fails_commit` and `slow_fail` (after 300 ms) are on a second
 /// datasource whose commit fails, table `direct` on a datasource without
-/// transactions; every other name is on one transactional datasource.
+/// transactions; every other name, `slow_join` joining slowly, is on one
+/// transactional datasource.
 fn fixture(limit: Duration) -> Fixture {
     let log = Log::default();
     let committed = Arc::new(Mutex::new(Vec::new()));
@@ -95,17 +120,18 @@ fn fixture(limit: Duration) -> Fixture {
     let direct_table = direct.clone();
     let base: Arc<dyn VistaResolver> = Arc::new(move |name: &str| {
         let log = shell_log.clone();
-        let (source, fails) = match name {
+        let (source, quirk) = match name {
             "direct" => return Ok(direct_table.clone()),
-            "fails_commit" => (second.clone(), Some(Duration::ZERO)),
-            "slow_fail" => (second.clone(), Some(Duration::from_millis(300))),
-            _ => (source.clone(), None),
+            "fails_commit" => (second.clone(), Quirk::FailingCommit),
+            "slow_fail" => (second.clone(), Quirk::SlowFailingCommit),
+            "slow_join" => (source.clone(), Quirk::SlowJoin),
+            _ => (source.clone(), Quirk::None),
         };
         Ok(
             Vista::new(name, MockShell::new()).map_shell(|inner| Joining {
                 inner,
                 source,
-                fails,
+                quirk,
                 log,
             }),
         )
@@ -158,6 +184,7 @@ fn fixture(limit: Duration) -> Fixture {
 
 impl Fixture {
     fn eval(&self, scope: &mut Scope, script: &str) -> std::result::Result<Dynamic, String> {
+        let _runtime = RUNTIME.enter();
         self.host
             .engine()
             .eval_with_scope::<Dynamic>(scope, script)
@@ -280,6 +307,21 @@ fn a_commit_failing_past_the_deadline_keeps_its_error() {
         .unwrap_err();
 
     assert!(err.contains("commit failed"), "{err}");
+}
+
+#[test]
+fn a_body_ending_past_the_deadline_rolls_back() {
+    let f = fixture(Duration::from_millis(200));
+
+    let err = f
+        .eval(
+            &mut Scope::new(),
+            r#"atomic { table("slow_join").insert(#{ name: "pen" }) }"#,
+        )
+        .unwrap_err();
+
+    assert!(err.contains("atomic block ran out of time"), "{err}");
+    assert_eq!(f.log(), ["rollback"]);
 }
 
 /// The second datasource fails its commit after the first committed: the
