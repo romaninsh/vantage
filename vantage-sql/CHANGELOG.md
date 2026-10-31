@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.10.4 — 2026-10-30
+
+Requires vantage-vista 2.5.0 (dev-dependency).
+
+- Tests only: SQLite, Postgres and MySQL run `check_atomic_rhai`, the shared test for `atomic`
+  blocks in Rhai.
+- The transaction test fixtures take a table prefix, so the two shared tests don't collide on the
+  same tables.
+
 ## 0.10.3 — 2026-10-29
 
 Requires vantage-table 3.2.0 and vantage-vista 2.4.0.

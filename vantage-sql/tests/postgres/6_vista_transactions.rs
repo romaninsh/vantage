@@ -1,7 +1,8 @@
-//! `vantage_vista::contract::check_transactions` over PostgreSQL.
+//! `vantage_vista::contract::check_transactions` and `check_atomic_rhai` over
+//! PostgreSQL.
 //!
 //! Requires a running PostgreSQL on `postgres://vantage:vantage@localhost:5433/vantage`.
-//! Every `fresh` call makes its own suffixed tables.
+//! Every `fresh` call makes its own prefixed and suffixed tables.
 
 #![cfg(feature = "vista")]
 
@@ -18,21 +19,24 @@ const PG_URL: &str = "postgres://vantage:vantage@localhost:5433/vantage";
 
 struct PostgresTx {
     db: PostgresDB,
+    prefix: &'static str,
     next: AtomicUsize,
 }
 
 impl PostgresTx {
-    async fn new() -> Self {
+    /// Tests run in parallel, so each names its tables with its own `prefix`.
+    async fn new(prefix: &'static str) -> Self {
         Self {
             db: PostgresDB::connect(PG_URL).await.unwrap(),
+            prefix,
             next: AtomicUsize::new(0),
         }
     }
 
     /// Names of two new, empty tables.
     async fn create(&self) -> (String, String) {
-        let n = self.next.fetch_add(1, Ordering::SeqCst);
-        let (a, b) = (format!("contract_tx_a_{n}"), format!("contract_tx_b_{n}"));
+        let (p, n) = (self.prefix, self.next.fetch_add(1, Ordering::SeqCst));
+        let (a, b) = (format!("{p}_a_{n}"), format!("{p}_b_{n}"));
         for sql in [
             format!("DROP TABLE IF EXISTS \"{a}\""),
             format!("DROP TABLE IF EXISTS \"{b}\""),
@@ -99,5 +103,11 @@ impl TxFixture for PostgresTx {
 
 #[tokio::test]
 async fn postgres_transactions_hold_the_contract() {
-    contract::check_transactions(&PostgresTx::new().await).await
+    contract::check_transactions(&PostgresTx::new("contract_tx").await).await
+}
+
+#[cfg(feature = "rhai")]
+#[tokio::test]
+async fn postgres_atomic_holds_the_contract() {
+    contract::check_atomic_rhai(&PostgresTx::new("contract_atomic").await).await
 }
