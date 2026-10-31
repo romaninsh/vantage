@@ -16,18 +16,27 @@ use vantage_vista::{
 
 type Log = Arc<Mutex<Vec<&'static str>>>;
 
-/// One datasource's share of a transaction: records how it finished. With
-/// `slow_fail`, its commit takes 300 ms and fails.
+/// What a table's datasource does slowly: both take 300 ms.
+#[derive(Clone, Copy, PartialEq)]
+enum Slow {
+    No,
+    /// The commit is slow and fails.
+    FailingCommit,
+    /// Joining the transaction is slow, so the write ends late.
+    Join,
+}
+
+/// One datasource's share of a transaction: records how it finished.
 struct Recorder {
     log: Log,
-    slow_fail: bool,
+    slow: Slow,
 }
 
 #[async_trait]
 impl TxParticipant for Recorder {
     async fn commit(&self) -> Result<()> {
-        if self.slow_fail {
-            std::thread::sleep(Duration::from_millis(300));
+        if self.slow == Slow::FailingCommit {
+            tokio::time::sleep(Duration::from_millis(300)).await;
             return Err(error!("commit failed"));
         }
         self.log.lock().unwrap().push("commit");
@@ -44,26 +53,32 @@ impl TxParticipant for Recorder {
 struct Joining {
     inner: Box<dyn TableShell>,
     source: Arc<()>,
-    slow_fail: bool,
+    slow: Slow,
     log: Log,
 }
 
 forward_table_shell!(Joining, inner, {
     fn rebind(&self, tx: &Transaction) -> Result<Box<dyn TableShell>> {
-        let (log, slow_fail) = (self.log.clone(), self.slow_fail);
-        tx.participant(TxKey::of(&self.source), || Recorder { log, slow_fail })?;
+        if self.slow == Slow::Join {
+            std::thread::sleep(Duration::from_millis(300));
+        }
+        let (log, slow) = (self.log.clone(), self.slow);
+        tx.participant(TxKey::of(&self.source), || Recorder { log, slow })?;
         Ok(Box::new(self.clone()))
     }
 });
 
 struct Fixture {
     host: Host,
+    /// Scripts run inside it, so a commit can await a timer.
+    runtime: tokio::runtime::Runtime,
     log: Log,
     committed: Arc<Mutex<Vec<Vec<String>>>>,
 }
 
 /// Table `slow_fail` is on a second datasource whose commit is slow and
-/// fails; every other name is on one datasource.
+/// fails, table `slow_join` joins slowly; every other name is on one
+/// datasource.
 fn fixture(limit: Duration) -> Fixture {
     let log = Log::default();
     let committed = Arc::new(Mutex::new(Vec::new()));
@@ -71,15 +86,16 @@ fn fixture(limit: Duration) -> Fixture {
     let shell_log = log.clone();
     let base: Arc<dyn VistaResolver> = Arc::new(move |name: &str| {
         let log = shell_log.clone();
-        let (source, slow_fail) = match name {
-            "slow_fail" => (second.clone(), true),
-            _ => (source.clone(), false),
+        let (source, slow) = match name {
+            "slow_fail" => (second.clone(), Slow::FailingCommit),
+            "slow_join" => (source.clone(), Slow::Join),
+            _ => (source.clone(), Slow::No),
         };
         Ok(
             Vista::new(name, MockShell::new()).map_shell(|inner| Joining {
                 inner,
                 source,
-                slow_fail,
+                slow,
                 log,
             }),
         )
@@ -114,6 +130,12 @@ fn fixture(limit: Duration) -> Fixture {
         .build();
     Fixture {
         host,
+        // A worker thread drives the timer while the script blocks on it.
+        runtime: tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_time()
+            .build()
+            .unwrap(),
         log,
         committed,
     }
@@ -121,6 +143,7 @@ fn fixture(limit: Duration) -> Fixture {
 
 impl Fixture {
     fn eval(&self, scope: &mut Scope, script: &str) -> std::result::Result<Dynamic, String> {
+        let _runtime = self.runtime.enter();
         self.host
             .engine()
             .eval_with_scope::<Dynamic>(scope, script)
@@ -243,4 +266,19 @@ fn a_commit_failing_past_the_deadline_keeps_its_error() {
         .unwrap_err();
 
     assert!(err.contains("commit failed"), "{err}");
+}
+
+#[test]
+fn a_body_ending_past_the_deadline_rolls_back() {
+    let f = fixture(Duration::from_millis(200));
+
+    let err = f
+        .eval(
+            &mut Scope::new(),
+            r#"atomic { table("slow_join").insert(#{ name: "pen" }) }"#,
+        )
+        .unwrap_err();
+
+    assert!(err.contains("atomic block ran out of time"), "{err}");
+    assert_eq!(f.log(), ["rollback"]);
 }
