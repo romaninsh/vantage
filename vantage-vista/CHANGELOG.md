@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.6.0 — 2026-10-31
+
+Requires vantage-rhai 1.4.0.
+
+- MongoDB (replica sets) and SurrealDB 3+ take part in a `Transaction`; each SurrealDB transaction
+  runs on its own connection. The in-memory store gets transactions too: one claim per store (a
+  second transaction waits 2 s, then gets a busy error) and a row journal replayed at commit.
+- `TxSlot` is the shared slot behind the SQL, MongoDB and SurrealDB transactions.
+- Datasources without transactions (CSV, REST and GraphQL, Kubernetes, AWS, SpacetimeDB, cmd,
+  log-writer) write directly inside an `atomic` block, and the run log says so:
+  `atomic: "<table>" has no transactions; its writes landed directly`.
+- A `Transaction` over several databases commits them in order. `rollback (e, committed)` in Rhai
+  names the tables that had already landed when a later database failed.
+- A cancelled run's rollback arm keeps its children, so it can still notify and log.
+- `contract` gains the shared checks drivers run for these cases.
+
 ## 2.5.0 — 2026-10-30
 
 Requires vantage-rhai 1.3.0.

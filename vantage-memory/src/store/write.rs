@@ -2,6 +2,7 @@
 //! broadcasts its change under a single hold of the write lock, so
 //! concurrent writers cannot interleave between the check and the write.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use ciborium::Value as CborValue;
@@ -19,6 +20,16 @@ pub enum UpsertOutcome {
     Updated,
     /// The row already held identical content; nothing was broadcast.
     Unchanged,
+}
+
+/// One row-level write, as a transaction's copy of a table records it for
+/// [`MemoryTable::apply_all`].
+pub(crate) enum Change {
+    Insert(String, Row),
+    Replace(String, Row),
+    Upsert(String, Row),
+    Patch(String, Record<CborValue>),
+    Delete(String),
 }
 
 impl MemoryTable {
@@ -48,6 +59,23 @@ impl MemoryTable {
         true
     }
 
+    /// Store `row` as `id`, over the row there or as a new one.
+    fn put(&self, rows: &mut Rows, id: &str, row: Row) {
+        match rows.map.get(id).cloned() {
+            Some(old) => {
+                self.put_over(rows, id, old, row);
+            }
+            None => self.put_new(rows, id, row),
+        }
+    }
+
+    /// Record `change` when this table is a transaction's copy.
+    fn journal(&self, change: impl FnOnce() -> Change) {
+        if let Some(journal) = &self.journal {
+            journal.lock().push(change());
+        }
+    }
+
     fn duplicate(&self, id: &str) -> vantage_core::VantageError {
         vantage_core::error!("Row already exists", table = self.name, id = id)
     }
@@ -62,7 +90,8 @@ impl MemoryTable {
             None => self.ids.next(|candidate| rows.map.contains_key(candidate)),
         };
         let row = self.with_id(record, &id);
-        self.put_new(&mut rows, &id, row);
+        self.put_new(&mut rows, &id, row.clone());
+        self.journal(|| Change::Insert(id.clone(), row));
         Ok(id)
     }
 
@@ -75,6 +104,7 @@ impl MemoryTable {
             return Err(self.duplicate(id));
         }
         self.put_new(&mut rows, id, row.clone());
+        self.journal(|| Change::Insert(id.to_string(), row.clone()));
         Ok(row)
     }
 
@@ -85,6 +115,7 @@ impl MemoryTable {
         let mut rows = self.rows.write();
         let old = rows.map.get(id)?.clone();
         self.put_over(&mut rows, id, old, row.clone());
+        self.journal(|| Change::Replace(id.to_string(), row.clone()));
         Some(row)
     }
 
@@ -92,22 +123,33 @@ impl MemoryTable {
     pub fn upsert(&self, id: &str, record: Record<CborValue>) -> UpsertOutcome {
         let row = self.with_id(record, id);
         let mut rows = self.rows.write();
-        match rows.map.get(id).cloned() {
+        let outcome = match rows.map.get(id).cloned() {
             None => {
-                self.put_new(&mut rows, id, row);
+                self.put_new(&mut rows, id, row.clone());
                 UpsertOutcome::Inserted
             }
-            Some(old) => match self.put_over(&mut rows, id, old, row) {
+            Some(old) => match self.put_over(&mut rows, id, old, row.clone()) {
                 true => UpsertOutcome::Updated,
                 false => UpsertOutcome::Unchanged,
             },
+        };
+        if outcome != UpsertOutcome::Unchanged {
+            self.journal(|| Change::Upsert(id.to_string(), row));
         }
+        outcome
     }
 
     /// Merge `partial` into row `id`. The id column is never changed; a
     /// value for it in `partial` is ignored. `false` when the row is missing.
     pub fn patch(&self, id: &str, partial: &Record<CborValue>) -> bool {
-        let mut rows = self.rows.write();
+        let patched = self.merge(&mut self.rows.write(), id, partial);
+        if patched {
+            self.journal(|| Change::Patch(id.to_string(), partial.clone()));
+        }
+        patched
+    }
+
+    fn merge(&self, rows: &mut Rows, id: &str, partial: &Record<CborValue>) -> bool {
         let Some(old) = rows.map.get(id).cloned() else {
             return false;
         };
@@ -117,14 +159,11 @@ impl MemoryTable {
                 next.insert(k.clone(), v.clone());
             }
         }
-        self.put_over(&mut rows, id, old, Arc::new(next));
+        self.put_over(rows, id, old, Arc::new(next));
         true
     }
 
-    /// Remove row `id`. `false` when it is missing. O(n) in the table size:
-    /// the row map shifts later rows down to keep insertion order.
-    pub fn delete(&self, id: &str) -> bool {
-        let mut rows = self.rows.write();
+    fn take_out(&self, rows: &mut Rows, id: &str) -> bool {
         let Some(old) = rows.map.shift_remove(id) else {
             return false;
         };
@@ -134,5 +173,83 @@ impl MemoryTable {
             old,
         });
         true
+    }
+
+    /// Remove row `id`. `false` when it is missing. O(n) in the table size:
+    /// the row map shifts later rows down to keep insertion order.
+    pub fn delete(&self, id: &str) -> bool {
+        let deleted = self.take_out(&mut self.rows.write(), id);
+        if deleted {
+            self.journal(|| Change::Delete(id.to_string()));
+        }
+        deleted
+    }
+
+    /// The first id `work` inserted that this table's `rows` hold by now,
+    /// other than one the block deleted before inserting it again.
+    fn taken_insert(rows: &Rows, work: &MemoryTable) -> Option<String> {
+        let journal = work.journal.as_ref()?.lock();
+        let mut freed = HashSet::new();
+        for change in journal.iter() {
+            match change {
+                Change::Delete(id) => {
+                    freed.insert(id.as_str());
+                }
+                Change::Insert(id, _)
+                    if !freed.remove(id.as_str()) && rows.map.contains_key(id) =>
+                {
+                    return Some(id.clone());
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
+    /// Replay `work`'s journal onto `rows`, the rows this table holds now.
+    /// Writes made here since the fork stay: a replace or a patch of a row
+    /// since deleted is skipped, as an SQL `UPDATE` that matches no row,
+    /// a patch merges into the current row, and rows the block never
+    /// wrote are untouched.
+    fn replay(&self, rows: &mut Rows, work: &MemoryTable) {
+        let Some(journal) = &work.journal else {
+            return;
+        };
+        for change in std::mem::take(&mut *journal.lock()) {
+            match change {
+                Change::Insert(id, row) | Change::Upsert(id, row) => self.put(rows, &id, row),
+                Change::Replace(id, row) => {
+                    if let Some(old) = rows.map.get(&id).cloned() {
+                        self.put_over(rows, &id, old, row);
+                    }
+                }
+                Change::Patch(id, partial) => {
+                    self.merge(rows, &id, &partial);
+                }
+                Change::Delete(id) => {
+                    self.take_out(rows, &id);
+                }
+            }
+        }
+    }
+
+    /// Replay each `(live, work)` pair's journal, `work` a
+    /// [`fork`](Self::fork) of `live`, holding every live table's write
+    /// lock throughout. When an id a block inserted has been taken in its
+    /// live table meanwhile, nothing is applied and the error names it.
+    pub(crate) fn apply_all(pairs: &[(&MemoryTable, &MemoryTable)]) -> vantage_core::Result<()> {
+        let mut locked: Vec<_> = pairs.iter().map(|(live, _)| live.rows.write()).collect();
+        for ((live, work), rows) in pairs.iter().zip(&locked) {
+            if let Some(id) = Self::taken_insert(rows, work) {
+                return Err(vantage_core::error!(format!(
+                    "\"{}\" already has a row with id \"{id}\"",
+                    live.name
+                )));
+            }
+        }
+        for ((live, work), rows) in pairs.iter().zip(&mut locked) {
+            live.replay(rows, work);
+        }
+        Ok(())
     }
 }

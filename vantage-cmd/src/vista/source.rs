@@ -16,8 +16,9 @@ use vantage_dataset::traits::ReadableValueSet;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{
-    Capability, Condition, FilterOp, Page, Preview, TableShell, Vista, VistaCapabilities,
-    VistaMetadata, condition_column_error, unknown_relation, unsupported,
+    Capability, Condition, FilterOp, Page, Preview, TableShell, Transaction, Vista,
+    VistaCapabilities, VistaMetadata, condition_column_error, direct, unknown_relation,
+    unsupported,
 };
 
 use crate::cmd::Cmd;
@@ -160,5 +161,11 @@ impl TableShell for CmdTableShell {
         self.table.traverse_erased(reference, row, |target| {
             CmdVistaFactory::new(self.table.data_source().clone()).from_table(target)
         })
+    }
+
+    /// A command has no transactions: inside one, the shell works as it
+    /// does outside.
+    fn rebind(&self, _tx: &Transaction) -> Result<Box<dyn TableShell>> {
+        Ok(direct(Box::new(self.clone())))
     }
 }

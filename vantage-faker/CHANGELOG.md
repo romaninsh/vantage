@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.2 — 2026-10-31
+
+- Requires vantage-vista 2.6.0 and vantage-memory 3.1.0. Inside an `atomic` block the faker vista
+  writes directly and is reported as having no transactions.
+
 ## 2.0.1 — 2026-10-18
 
 - Requires vantage-memory 3.0.0.

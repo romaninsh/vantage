@@ -15,8 +15,8 @@ use vantage_dataset::traits::WritableValueSet;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{
-    Capability, Condition, FilterOp, Page, Preview, TableShell, VistaCapabilities, VistaMetadata,
-    condition_column_error, unsupported,
+    Capability, Condition, FilterOp, Page, Preview, TableShell, Transaction, VistaCapabilities,
+    VistaMetadata, condition_column_error, direct, unsupported,
 };
 
 use crate::log_writer::LogWriter;
@@ -138,5 +138,11 @@ impl TableShell for LogWriterTableShell {
             .map(|(k, v)| (k, vantage_types::json_to_cbor(v)))
             .collect();
         Ok((id, stored))
+    }
+
+    /// A log file has no transactions: inside one, a line is appended as
+    /// it is written, and stays after a rollback.
+    fn rebind(&self, _tx: &Transaction) -> Result<Box<dyn TableShell>> {
+        Ok(direct(Box::new(self.clone())))
     }
 }

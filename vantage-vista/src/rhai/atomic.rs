@@ -1,6 +1,8 @@
-//! `atomic { BODY } rollback (NAME) { ARM }`: every table a block touches
-//! reads and writes through one [`Transaction`], committed when the block
-//! ends and rolled back when it throws, is cancelled or runs out of time.
+//! `atomic { BODY } rollback (NAME[, COMMITTED]) { ARM }`: every table a
+//! block touches reads and writes through one [`Transaction`], committed
+//! when the block ends and rolled back when it throws, is cancelled or runs
+//! out of time. `COMMITTED` is the array of tables that had committed when
+//! a commit across several datasources failed part-way, else empty.
 //!
 //! [`AtomicScope`] is the Rust core a host also runs an `atomic: true` body
 //! through; [`AtomicVocab`] registers the syntax over it. The time limits
@@ -11,7 +13,9 @@ use std::cell::RefCell;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
-use vantage_rhai::rhai::{Dynamic, Engine, EvalAltResult, EvalContext, Expression, Position};
+use vantage_rhai::rhai::{
+    Array, Dynamic, Engine, EvalAltResult, EvalContext, Expression, Position,
+};
 use vantage_rhai::{Vocab, register_atomic_syntax};
 
 use super::bridge::block_on;
@@ -27,7 +31,18 @@ const LEFT_BY_LOOP: &str = "break and continue can't leave an atomic block";
 /// Called with what a block committed, e.g. to refresh the written tables.
 pub type OnCommit = Arc<dyn Fn(&Committed) + Send + Sync>;
 
+/// Called once per block that wrote directly to a datasource without
+/// transactions, whether the block committed or not, with those tables
+/// ([`Committed::unprotected`]).
+pub type OnUnprotected = Arc<dyn Fn(&[String]) + Send + Sync>;
+
+/// Called when a block's commit failed after earlier datasources committed,
+/// with those datasources' tables ([`Transaction::committed_before_failure`]).
+pub type OnCommittedBeforeFailure = Arc<dyn Fn(&[String]) + Send + Sync>;
+
 type Arm<'a> = &'a mut dyn FnMut(Box<EvalAltResult>) -> RhaiResult<()>;
+/// An arm that is also told the tables that committed before the failure.
+type ArmWithCommitted<'a> = &'a mut dyn FnMut(Box<EvalAltResult>, Vec<String>) -> RhaiResult<()>;
 
 /// One per run; never shared across runs.
 #[derive(Clone)]
@@ -39,6 +54,8 @@ struct ScopeInner {
     limit: Duration,
     arm_budget: Duration,
     on_commit: Option<OnCommit>,
+    on_unprotected: Option<OnUnprotected>,
+    on_committed_before_failure: Option<OnCommittedBeforeFailure>,
     clock: AtomicClock,
 }
 
@@ -84,6 +101,8 @@ impl AtomicScope {
             limit: Duration::from_secs(30),
             arm_budget: Duration::from_secs(10),
             on_commit: None,
+            on_unprotected: None,
+            on_committed_before_failure: None,
             clock: AtomicClock::default(),
         }))
     }
@@ -98,6 +117,19 @@ impl AtomicScope {
 
     pub fn on_commit(self, hook: OnCommit) -> Self {
         self.map(|inner| inner.on_commit = Some(hook))
+    }
+
+    /// Where a block's direct writes are reported, e.g. the run log, as
+    /// [`unprotected_warning`]. Without a hook each table is logged with
+    /// `tracing::warn!`.
+    pub fn on_unprotected(self, hook: OnUnprotected) -> Self {
+        self.map(|inner| inner.on_unprotected = Some(hook))
+    }
+
+    /// Where the tables that landed before a part-way commit failure are
+    /// reported, e.g. to refresh them: their rows stay committed.
+    pub fn on_committed_before_failure(self, hook: OnCommittedBeforeFailure) -> Self {
+        self.map(|inner| inner.on_committed_before_failure = Some(hook))
     }
 
     fn map(self, change: impl FnOnce(&mut ScopeInner)) -> Self {
@@ -119,6 +151,23 @@ impl AtomicScope {
     /// `arm(err)` if given. A Rhai `return` out of `body` commits and carries
     /// on outward. Refuses to start inside another block or its arm.
     pub fn run<T>(&self, body: impl FnOnce() -> RhaiResult<T>, arm: Option<Arm>) -> RhaiResult<T> {
+        match arm {
+            Some(arm) => self.run_with_committed(
+                body,
+                Some(&mut |err: Box<EvalAltResult>, _: Vec<String>| arm(err)),
+            ),
+            None => self.run_with_committed(body, None),
+        }
+    }
+
+    /// [`run`](Self::run), with the arm also told the tables that had
+    /// committed when the failure came, in commit order: empty unless the
+    /// block's commit failed after an earlier datasource committed.
+    pub fn run_with_committed<T>(
+        &self,
+        body: impl FnOnce() -> RhaiResult<T>,
+        arm: Option<ArmWithCommitted>,
+    ) -> RhaiResult<T> {
         let ScopeInner {
             cell,
             limit,
@@ -140,29 +189,38 @@ impl AtomicScope {
             Ok(_) => true,
             Err(e) => matches!(**e, EvalAltResult::Return(..) | EvalAltResult::Exit(..)),
         };
-        let err = match outcome {
+        let (err, committed) = match outcome {
             // A body that ended past the deadline, say after a long lock
             // wait, doesn't commit.
-            _ if overran && ended => Box::new(EvalAltResult::ErrorTerminated(
-                ATOMIC_BLOCK_TIMEOUT.into(),
-                Position::NONE,
-            )),
+            _ if overran && ended => (
+                Box::new(EvalAltResult::ErrorTerminated(
+                    ATOMIC_BLOCK_TIMEOUT.into(),
+                    Position::NONE,
+                )),
+                Vec::new(),
+            ),
             Ok(value) => match self.commit(&tx) {
                 Ok(()) => return Ok(value),
-                Err(err) => err,
+                Err(failed) => failed,
             },
             // A `return` or `exit` leaving the block isn't a failure.
             Err(ret) if matches!(*ret, EvalAltResult::Return(..) | EvalAltResult::Exit(..)) => {
                 match self.commit(&tx) {
                     Ok(()) => return Err(ret),
-                    Err(err) => err,
+                    Err(failed) => failed,
                 }
             }
-            Err(err) => err,
+            Err(err) => (err, Vec::new()),
         };
 
         if let Err(failed) = block_on(tx.rollback()) {
             tracing::warn!("atomic rollback failed: {failed}");
+        }
+        self.report_unprotected(&tx.unprotected());
+        if !committed.is_empty()
+            && let Some(hook) = &self.0.on_committed_before_failure
+        {
+            hook(&committed);
         }
         // Rhai parses `break` inside the block when it sits in a loop.
         let replaced = if matches!(*err, EvalAltResult::LoopBreak(..)) {
@@ -181,20 +239,47 @@ impl AtomicScope {
             && let Ok(_arm) = clock.enter(Phase::Arm {
                 deadline: Instant::now() + *arm_budget,
             })
-            && let Err(failed) = arm(for_arm(&err))
+            && let Err(failed) = arm(for_arm(&err), committed)
         {
             tracing::warn!("atomic rollback arm failed: {failed}");
         }
         Err(err)
     }
 
-    fn commit(&self, tx: &Transaction) -> RhaiResult<()> {
-        let committed = block_on(tx.commit()).and_then(|r| r).map_err(rhai_err)?;
+    /// On failure, the error and the tables that committed before it.
+    fn commit(&self, tx: &Transaction) -> Result<(), (Box<EvalAltResult>, Vec<String>)> {
+        let committed = match block_on(tx.commit()).and_then(|r| r) {
+            Ok(committed) => committed,
+            Err(err) => {
+                let landed = Transaction::committed_before_failure(&err);
+                return Err((rhai_err(err), landed));
+            }
+        };
+        self.report_unprotected(&committed.unprotected);
         if let Some(hook) = &self.0.on_commit {
             hook(&committed);
         }
         Ok(())
     }
+
+    fn report_unprotected(&self, tables: &[String]) {
+        if tables.is_empty() {
+            return;
+        }
+        match &self.0.on_unprotected {
+            Some(hook) => hook(tables),
+            None => {
+                for table in tables {
+                    tracing::warn!("{}", unprotected_warning(table));
+                }
+            }
+        }
+    }
+}
+
+/// The run-log warning for a table a block wrote directly.
+pub fn unprotected_warning(table: &str) -> String {
+    format!("atomic: \"{table}\" has no transactions; its writes landed directly")
 }
 
 impl AtomicClock {
@@ -252,7 +337,7 @@ fn for_arm(err: &EvalAltResult) -> Box<EvalAltResult> {
     Box::new(EvalAltResult::ErrorRuntime(value, err.position()))
 }
 
-/// Registers `atomic { BODY }` and `atomic { BODY } rollback (NAME) { ARM }`.
+/// Registers `atomic { BODY }` and `atomic { BODY } rollback (NAME[, COMMITTED]) { ARM }`.
 pub struct AtomicVocab(AtomicScope);
 
 impl AtomicVocab {
@@ -277,11 +362,14 @@ fn eval_atomic(
 ) -> RhaiResult<Dynamic> {
     let context = RefCell::new(context);
     let body = || context.borrow_mut().eval_expression_tree(&inputs[0]);
-    let [_, name, arm] = inputs else {
-        return scope.run(body, None);
+    let (name, committed_name, arm) = match inputs {
+        [_, name, arm] => (name, None, arm),
+        [_, name, committed, arm] => (name, Some(committed), arm),
+        _ => return scope.run(body, None),
     };
-    let name = name.get_string_value().unwrap_or_default().to_string();
-    let mut arm = |err: Box<EvalAltResult>| -> RhaiResult<()> {
+    let ident = |input: &Expression| input.get_string_value().unwrap_or_default().to_string();
+    let (name, committed_name) = (ident(name), committed_name.map(ident));
+    let mut arm = |err: Box<EvalAltResult>, committed: Vec<String>| -> RhaiResult<()> {
         let mut context = context.borrow_mut();
         let bound = match *err {
             EvalAltResult::ErrorRuntime(value, _) => value,
@@ -289,9 +377,15 @@ fn eval_atomic(
         };
         let depth = context.scope().len();
         context.scope_mut().push_dynamic(name.as_str(), bound);
+        if let Some(committed_name) = &committed_name {
+            let committed: Array = committed.into_iter().map(Dynamic::from).collect();
+            context
+                .scope_mut()
+                .push_dynamic(committed_name.as_str(), committed.into());
+        }
         let out = context.eval_expression_tree(arm);
         context.scope_mut().rewind(depth);
         out.map(|_| ())
     };
-    scope.run(body, Some(&mut arm))
+    scope.run_with_committed(body, Some(&mut arm))
 }

@@ -4,7 +4,9 @@ use ciborium::Value as CborValue;
 use serde_json::{Value, json};
 
 use crate::live::LiveStream;
-use crate::{Engine, RecordId, RecordRange, Result, SessionState, SurrealError, Table};
+use crate::{
+    Engine, RecordId, RecordRange, Result, SessionState, SurrealConnection, SurrealError, Table,
+};
 
 /// SurrealDB client. JSON methods transcode through CBOR on the wire; use
 /// [`query_cbor`](Self::query_cbor) when type fidelity matters.
@@ -13,6 +15,10 @@ pub struct SurrealClient {
     session: SessionState,
     incremental_id: Arc<std::sync::atomic::AtomicU64>,
     debug: bool,
+    /// How this client connected, for [`reconnect`](Self::reconnect). `None`
+    /// over a bare engine.
+    pub(crate) connection: Option<SurrealConnection>,
+    pub(crate) interactive_transactions: bool,
 }
 
 impl Clone for SurrealClient {
@@ -23,6 +29,8 @@ impl Clone for SurrealClient {
             session: self.session.clone(),
             incremental_id: self.incremental_id.clone(),
             debug: self.debug,
+            connection: self.connection.clone(),
+            interactive_transactions: self.interactive_transactions,
         }
     }
 }
@@ -42,7 +50,73 @@ impl SurrealClient {
             session,
             incremental_id: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             debug: false,
+            connection: None,
+            interactive_transactions: false,
         }
+    }
+
+    /// Whether this client can run interactive transactions
+    /// ([`begin`](Self::begin)): it was connected by
+    /// [`SurrealConnection::connect`], so it can [`reconnect`](Self::reconnect),
+    /// to a SurrealDB 3 or later server.
+    pub fn supports_transactions(&self) -> bool {
+        self.connection.is_some() && self.interactive_transactions
+    }
+
+    /// A client on a new connection of its own, signed in to the same
+    /// namespace and database. Session parameters set with
+    /// [`let_var`](Self::let_var) don't carry over. Errors for a client over
+    /// a bare engine.
+    pub async fn reconnect(&self) -> Result<SurrealClient> {
+        let connection = self.connection.clone().ok_or_else(|| {
+            SurrealError::Connection("this client has no connection to repeat".to_string())
+        })?;
+        let mut client = connection.open().await?;
+        client.interactive_transactions = self.interactive_transactions;
+        Ok(client)
+    }
+
+    /// Begin an interactive transaction on this connection; returns its id
+    /// for [`query_cbor_in`](Self::query_cbor_in), [`commit`](Self::commit)
+    /// and [`cancel`](Self::cancel). A failed statement inside it doesn't
+    /// end it: the server still commits the statements that succeeded. The
+    /// server cancels it when the connection closes.
+    pub async fn begin(&self) -> Result<CborValue> {
+        let mut engine = self.engine.lock().await;
+        engine
+            .send_message_cbor("begin", CborValue::Array(vec![]))
+            .await
+    }
+
+    /// Commit the transaction `txn`. Another transaction's commit to the same
+    /// records fails it with a conflict (`ServerError` code -32009).
+    pub async fn commit(&self, txn: &CborValue) -> Result<()> {
+        let mut engine = self.engine.lock().await;
+        engine
+            .send_message_cbor("commit", CborValue::Array(vec![txn.clone()]))
+            .await
+            .map(drop)
+    }
+
+    /// Cancel the transaction `txn`, discarding its writes.
+    pub async fn cancel(&self, txn: &CborValue) -> Result<()> {
+        let mut engine = self.engine.lock().await;
+        engine
+            .send_message_cbor("cancel", CborValue::Array(vec![txn.clone()]))
+            .await
+            .map(drop)
+    }
+
+    /// [`query_cbor`](Self::query_cbor) inside the transaction `txn`.
+    pub async fn query_cbor_in(
+        &self,
+        txn: &CborValue,
+        sql: &str,
+        variables: CborValue,
+    ) -> Result<CborValue> {
+        let mut engine = self.engine.lock().await;
+        let params = CborValue::Array(vec![CborValue::Text(sql.to_string()), variables]);
+        engine.send_message_cbor_in(txn, "query", params).await
     }
 
     /// Enable debug mode to log queries

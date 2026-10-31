@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.1.0 — 2026-10-31
+
+Requires vantage-vista 2.6.0 and vantage-table 3.2.0.
+
+- MongoDB takes part in a `Transaction` on a replica set, through the shared `TxSlot`. A
+  standalone server has no transactions and refuses with `"<table>" can't take part in a
+  transaction`.
+
 ## 3.0.2 — 2026-10-26
 
 - Tests of one behaviour are folded into one test each (search, deletes, selects, references,

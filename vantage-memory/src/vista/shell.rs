@@ -1,5 +1,5 @@
-//! `TableShell` for `MemoryTableShell`. Narrowing, writes, references and
-//! live watching live in sibling modules.
+//! `TableShell` for `MemoryTableShell`. Narrowing, writes, references,
+//! live watching and transactions live in sibling modules.
 
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
@@ -7,11 +7,11 @@ use indexmap::IndexMap;
 use vantage_core::Result;
 use vantage_types::Record;
 use vantage_vista::{
-    Condition, Page, Preview, SortDirection, TableShell, Vista, VistaCapabilities,
+    Condition, Page, Preview, SortDirection, TableShell, Transaction, Vista, VistaCapabilities,
     VistaChangeStream, VistaMetadata,
 };
 
-use super::{MemoryTableShell, watch};
+use super::{MemoryTableShell, MemoryTx, watch};
 use crate::Row;
 use crate::eval::matches_all;
 
@@ -42,28 +42,31 @@ impl TableShell for MemoryTableShell {
     }
 
     async fn list(&self) -> Result<IndexMap<String, Rec>> {
-        Ok(unwrap_rows(self.table.query(&self.query)?)
-            .into_iter()
-            .collect())
+        self.on_rows(|s| Ok(unwrap_rows(s.table.query(&s.query)?).into_iter().collect()))
+            .await
     }
 
     async fn get(&self, id: &str) -> Result<Option<Rec>> {
-        match self.table.get(id) {
-            Some(row) if matches_all(&self.query, &row)? => Ok(Some((*row).clone())),
+        self.on_rows(|s| match s.table.get(id) {
+            Some(row) if matches_all(&s.query, &row)? => Ok(Some((*row).clone())),
             _ => Ok(None),
-        }
+        })
+        .await
     }
 
     async fn count(&self) -> Result<i64> {
-        Ok(self.table.count(&self.query)? as i64)
+        self.on_rows(|s| Ok(s.table.count(&s.query)? as i64)).await
     }
 
     /// The store counts the set as cheaply as it cuts the window, so the
     /// page always carries the total.
     async fn fetch_window(&self, offset: usize, limit: usize) -> Result<Page> {
-        let rows = unwrap_rows(self.table.query(&self.windowed(offset, Some(limit)))?);
-        let total = self.table.count(&self.query)? as i64;
-        Ok(Page::new(rows).with_total(total))
+        self.on_rows(|s| {
+            let rows = unwrap_rows(s.table.query(&s.windowed(offset, Some(limit)))?);
+            let total = s.table.count(&s.query)? as i64;
+            Ok(Page::new(rows).with_total(total))
+        })
+        .await
     }
 
     async fn watch(&self) -> Result<VistaChangeStream> {
@@ -84,37 +87,49 @@ impl TableShell for MemoryTableShell {
     }
 
     async fn insert(&self, id: Option<&str>, record: &Rec) -> Result<(String, Rec)> {
-        match id {
-            Some(id) => Ok((id.to_string(), self.insert_row(id, record)?)),
-            None => self.insert_generated(record),
-        }
+        self.on_rows(|s| match id {
+            Some(id) => Ok((id.to_string(), s.insert_row(id, record)?)),
+            None => s.insert_generated(record),
+        })
+        .await
     }
 
     async fn replace(&self, id: &str, record: &Rec) -> Result<Rec> {
-        self.replace_row(id, record)
+        self.on_rows(|s| s.replace_row(id, record)).await
     }
 
     async fn upsert(&self, id: &str, record: &Rec) -> Result<Rec> {
-        self.replace_row(id, record)
+        self.on_rows(|s| s.replace_row(id, record)).await
     }
 
     async fn patch(&self, id: &str, partial: &Rec) -> Result<Rec> {
-        self.patch_row(id, partial)
+        self.on_rows(|s| s.patch_row(id, partial)).await
     }
 
     async fn delete(&self, id: &str) -> Result<()> {
-        self.delete_row(id)
+        self.on_rows(|s| s.delete_row(id)).await
     }
 
     async fn delete_all(&self) -> Result<()> {
-        self.delete_matching()
+        self.on_rows(|s| s.delete_matching()).await
     }
 
     async fn import(&self, rows: &IndexMap<String, Rec>) -> Result<usize> {
-        self.import_rows(rows)
+        self.on_rows(|s| s.import_rows(rows)).await
     }
 
     fn get_ref(&self, relation: &str, row: Option<&Rec>) -> Result<Vista> {
         self.traverse(relation, row)
+    }
+
+    /// Joins the store's transaction; nothing is claimed or copied until
+    /// the first read or write (see the `tx` module).
+    fn rebind(&self, tx: &Transaction) -> Result<Box<dyn TableShell>> {
+        let store = self.catalog.store();
+        let joined = tx.participant(MemoryTx::key(store), || MemoryTx::new(store, tx))?;
+        Ok(Box::new(Self {
+            tx: Some(joined),
+            ..self.clone()
+        }))
     }
 }

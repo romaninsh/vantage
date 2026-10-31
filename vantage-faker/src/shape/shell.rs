@@ -11,8 +11,8 @@ use indexmap::IndexMap;
 use vantage_core::Result;
 use vantage_types::Record;
 use vantage_vista::{
-    Capability, Condition, NativeCondition, Page, SortDirection, Vista, VistaCapabilities,
-    VistaChangeStream, forward_table_shell, unsupported,
+    Capability, Condition, NativeCondition, Page, SortDirection, TableShell, Transaction, Vista,
+    VistaCapabilities, VistaChangeStream, forward_table_shell, unsupported,
 };
 
 use super::{OpClass, ShapedShell};
@@ -128,5 +128,14 @@ forward_table_shell!(ShapedShell, inner, {
     /// references are not followed.
     fn get_ref(&self, _relation: &str, _row: Option<&Rec>) -> Result<Vista> {
         unsupported(Capability::Traverse)
+    }
+
+    /// The wrapped shell takes part, transactional or direct; the shape
+    /// keeps shaping it.
+    fn rebind(&self, tx: &Transaction) -> Result<Box<dyn TableShell>> {
+        Ok(Box::new(Self {
+            inner: self.inner.rebind(tx)?,
+            ..self.clone()
+        }))
     }
 });

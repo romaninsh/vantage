@@ -1,10 +1,12 @@
 //! `vantage_vista::contract` over a local shell-script fixture. The backend
 //! is read-only, so there are no write probes.
 
+use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use vantage_cmd::Cmd;
 use vantage_table::table::Table;
 use vantage_types::EmptyEntity;
+use vantage_vista::contract::{TxFixture, TxTables};
 use vantage_vista::{Vista, contract};
 
 /// Rows `alpha` and `beta`, keyed by `name`.
@@ -30,4 +32,32 @@ async fn cmd_contract_advertised() {
 #[tokio::test]
 async fn cmd_contract_clone() {
     contract::check_clone(&items(), "name", CborValue::Text("beta".into())).await;
+}
+
+/// A command has no transactions, and the backend takes no writes. Both
+/// tables are the items: the probe reads only the first.
+struct Script;
+
+#[async_trait]
+impl TxFixture for Script {
+    async fn fresh(&self) -> TxTables {
+        TxTables::new(items(), items())
+    }
+
+    async fn fresh_pool_of_one(&self) -> TxTables {
+        self.fresh().await
+    }
+
+    fn detects_deadlocks(&self) -> bool {
+        false
+    }
+
+    fn supports_transactions(&self) -> bool {
+        false
+    }
+}
+
+#[tokio::test]
+async fn cmd_transactions_hold_the_contract() {
+    contract::check_transactions(&Script).await
 }

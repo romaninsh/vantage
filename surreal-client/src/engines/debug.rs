@@ -61,6 +61,18 @@ impl Engine for DebugEngine {
         Ok(response)
     }
 
+    async fn send_message_cbor_in(
+        &mut self,
+        txn: &CborValue,
+        method: &str,
+        params: CborValue,
+    ) -> Result<CborValue> {
+        println!("🔍 Surreal CBOR RPC in {:?}: {} {:?}", txn, method, params);
+        let response = self.inner.send_message_cbor_in(txn, method, params).await?;
+        println!("✅ CBOR Response: {:?}", response);
+        Ok(response)
+    }
+
     async fn register_live(
         &mut self,
         query_id: &str,

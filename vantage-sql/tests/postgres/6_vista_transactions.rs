@@ -19,6 +19,9 @@ const PG_URL: &str = "postgres://vantage:vantage@localhost:5433/vantage";
 
 struct PostgresTx {
     db: PostgresDB,
+    /// The same server through its own `connect`: its own pool and
+    /// identity, so a second participant in one transaction.
+    other: PostgresDB,
     prefix: &'static str,
     next: AtomicUsize,
 }
@@ -28,6 +31,7 @@ impl PostgresTx {
     async fn new(prefix: &'static str) -> Self {
         Self {
             db: PostgresDB::connect(PG_URL).await.unwrap(),
+            other: PostgresDB::connect(PG_URL).await.unwrap(),
             prefix,
             next: AtomicUsize::new(0),
         }
@@ -98,6 +102,11 @@ impl TxFixture for PostgresTx {
 
     fn supports_lock(&self) -> bool {
         true
+    }
+
+    async fn fresh_other(&self) -> Option<TxTables> {
+        let names = self.create().await;
+        Some(tables(self.other.clone(), names))
     }
 }
 

@@ -19,8 +19,11 @@ use vantage_types::{Entity, Record};
 
 use crate::condition::MongoCondition;
 use crate::id::{MongoId, eq_filter, id_variants};
+use vantage_vista::Transaction;
+
 use crate::mongodb::MongoDB;
 use crate::mongodb::impls::joins::{imported_columns, join_alias_of, table_joins};
+use crate::mongodb::tx::in_session;
 use crate::mongodb::view::undeclared_view;
 use crate::select::join::{alias_index, filter_uses_joins};
 use crate::select::{JoinColumn, MongoSelect};
@@ -189,14 +192,25 @@ fn is_duplicate_key(e: &mongodb::error::Error) -> bool {
     )
 }
 
+/// `WriteConflict`: inside a transaction, the document is held by another one.
+const WRITE_CONFLICT: i32 = 112;
+
 /// A failed write to `collection`: an undeclared server-side view gets its
-/// own unsupported error, anything else `message` with the driver's details.
+/// own unsupported error, anything else `message` with the driver's details,
+/// marked a conflict when another transaction holds the document.
 fn write_failed(
     e: &mongodb::error::Error,
     collection: &str,
     message: &'static str,
 ) -> vantage_core::VantageError {
-    undeclared_view(e, collection).unwrap_or_else(|| error!(message, details = e.to_string()))
+    undeclared_view(e, collection).unwrap_or_else(|| {
+        let err = error!(message, details = e.to_string());
+        if matches!(&*e.kind, mongodb::error::ErrorKind::Command(c) if c.code == WRITE_CONFLICT) {
+            err.mark_conflict()
+        } else {
+            err
+        }
+    })
 }
 
 impl MongoDB {
@@ -212,7 +226,8 @@ impl MongoDB {
     /// The `_id`s (as `{_id: ..}` documents) of the members of `docs` that
     /// satisfy `filter`, evaluated by the server over `$documents` stages
     /// (MongoDB 5.1+). `docs` are probed in chunks so no command nears the
-    /// server's command size limit.
+    /// server's command size limit. The probe reads no collection, so it runs
+    /// outside any transaction.
     pub(crate) async fn docs_matching(
         &self,
         filter: &bson::Document,
@@ -377,6 +392,17 @@ impl TableSource for MongoDB {
         self.is_stored()
     }
 
+    fn transaction(&self) -> Option<Transaction> {
+        self.tx().and_then(|tx| tx.transaction())
+    }
+
+    fn without_transaction(&self) -> Self {
+        Self {
+            tx: None,
+            ..self.clone()
+        }
+    }
+
     /// Dotted columns read through `$lookup` (see the `joins` module), except
     /// over a pipeline view. The lookup matches `localField` against
     /// `foreignField`. Correlated subqueries are not implemented:
@@ -496,9 +522,7 @@ impl TableSource for MongoDB {
         let coll = self.doc_collection(table.table_name());
         let filter = select.build_filter().await?;
 
-        let Some(d) = coll
-            .find_one(confined(id, filter))
-            .await
+        let Some(d) = in_session!(self, coll.find_one(confined(id, filter)))
             .map_err(|e| error!("MongoDB find_one failed", details = e.to_string()))?
         else {
             return Ok(None);
@@ -532,8 +556,7 @@ impl TableSource for MongoDB {
         if let Some(sort) = select.build_sort() {
             find = find.sort(sort);
         }
-        let d = find
-            .await
+        let d = in_session!(self, find)
             .map_err(|e| error!("MongoDB find_one failed", details = e.to_string()))?;
 
         match d {
@@ -622,9 +645,7 @@ impl TableSource for MongoDB {
         }
         let held_outside =
             || error!("Id is held outside the table's set", id = id.to_string()).mark_conflict();
-        if coll
-            .find_one(doc! { "_id": id })
-            .await
+        if in_session!(self, coll.find_one(doc! { "_id": id }))
             .map_err(|e| error!("MongoDB find_one failed", details = e.to_string()))?
             .is_some()
         {
@@ -638,7 +659,7 @@ impl TableSource for MongoDB {
             .mark_conflict());
         }
 
-        if let Err(e) = coll.insert_one(doc).await {
+        if let Err(e) = in_session!(self, coll.insert_one(doc)) {
             if !is_duplicate_key(&e) {
                 return Err(write_failed(
                     &e,
@@ -685,13 +706,13 @@ impl TableSource for MongoDB {
                 )
                 .mark_conflict());
             }
-            coll.replace_one(confined(id, table_filter), replacement)
-                .await
-                .map_err(|e| write_failed(&e, table.table_name(), "MongoDB replace_one failed"))?;
+            in_session!(
+                self,
+                coll.replace_one(confined(id, table_filter), replacement)
+            )
+            .map_err(|e| write_failed(&e, table.table_name(), "MongoDB replace_one failed"))?;
         } else {
-            if coll
-                .find_one(doc! { "_id": id })
-                .await
+            if in_session!(self, coll.find_one(doc! { "_id": id }))
                 .map_err(|e| error!("MongoDB find_one failed", details = e.to_string()))?
                 .is_some()
             {
@@ -707,8 +728,7 @@ impl TableSource for MongoDB {
                 )
                 .mark_conflict());
             }
-            coll.insert_one(full)
-                .await
+            in_session!(self, coll.insert_one(full))
                 .map_err(|e| write_failed(&e, table.table_name(), "MongoDB insert_one failed"))?;
         }
 
@@ -753,9 +773,7 @@ impl TableSource for MongoDB {
             .mark_conflict());
         }
 
-        let result = coll
-            .update_one(filter, doc! { "$set": set_doc })
-            .await
+        let result = in_session!(self, coll.update_one(filter, doc! { "$set": set_doc }))
             .map_err(|e| write_failed(&e, table.table_name(), "MongoDB update_one failed"))?;
         if result.matched_count == 0 {
             return Err(not_found());
@@ -771,8 +789,7 @@ impl TableSource for MongoDB {
         self.ensure_writable(table.table_name())?;
         let filter = write_filter(table).await?;
         let coll = self.doc_collection(table.table_name());
-        coll.delete_one(confined(id, filter))
-            .await
+        in_session!(self, coll.delete_one(confined(id, filter)))
             .map_err(|e| write_failed(&e, table.table_name(), "MongoDB delete_one failed"))?;
         Ok(())
     }
@@ -784,8 +801,7 @@ impl TableSource for MongoDB {
         self.ensure_writable(table.table_name())?;
         let filter = write_filter(table).await?;
         let coll = self.doc_collection(table.table_name());
-        coll.delete_many(filter)
-            .await
+        in_session!(self, coll.delete_many(filter))
             .map_err(|e| write_failed(&e, table.table_name(), "MongoDB delete_many failed"))?;
         Ok(())
     }
@@ -808,9 +824,7 @@ impl TableSource for MongoDB {
             return Err(error!("Document does not match the table's filter").mark_conflict());
         }
 
-        let result = coll
-            .insert_one(doc)
-            .await
+        let result = in_session!(self, coll.insert_one(doc))
             .map_err(|e| write_failed(&e, table.table_name(), "MongoDB insert_one failed"))?;
 
         MongoId::from_bson(&result.inserted_id)

@@ -1,6 +1,6 @@
 [package]
 name = "vantage-sql"
-version = "0.10.4"
+version = "0.10.5"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -27,7 +27,7 @@ vantage-dataset = { version = "1.1.2", path = "../vantage-dataset" }
 vantage-table = { version = "3.2.0", path = "../vantage-table" }
 # Always on: a datasource joins a `vantage_vista::Transaction` with or
 # without the `vista` shells (vantage-table depends on it anyway).
-vantage-vista = { version = "2.4.0", path = "../vantage-vista" }
+vantage-vista = { version = "2.6.0", path = "../vantage-vista" }
 async-trait = "0.1"
 # Drivers occasionally need to report a data-modelling problem that is not
 # an error (a non-unique id column collapsing rows, say) — a facade, so the
@@ -49,7 +49,7 @@ vantage-rhai = { version = "1.1.0", path = "../vantage-rhai", optional = true }
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
 serde_yaml_ng = "0.10"
-vantage-vista = { version = "2.5.0", path = "../vantage-vista", features = ["contract"] }
+vantage-vista = { version = "2.6.0", path = "../vantage-vista", features = ["contract"] }
 sqlformat = "0.3"
 tempfile = "3"
 vantage-dataset = { version = "1.1.2", path = "../vantage-dataset", features = ["contract"] }

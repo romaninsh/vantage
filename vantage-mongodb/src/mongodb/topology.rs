@@ -34,4 +34,10 @@ impl Topology {
     pub fn supports_change_streams(self) -> bool {
         matches!(self, Self::ReplicaSet | Self::Sharded)
     }
+
+    /// Multi-document transactions need a replica set or a sharded cluster.
+    /// `Unknown` is not ruled out.
+    pub fn supports_transactions(self) -> bool {
+        self != Self::Standalone
+    }
 }

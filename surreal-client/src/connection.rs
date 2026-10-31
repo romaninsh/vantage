@@ -3,6 +3,7 @@
 use crate::{DebugEngine, Engine, Result, SurrealClient, SurrealError, WsCborEngine};
 
 use serde_json::Value;
+use tracing::warn;
 use url::Url;
 
 /// Connection builder for SurrealDB
@@ -310,8 +311,23 @@ impl SurrealConnection {
     }
 
     /// Connect over `ws://`, `wss://` or `cbor://` (an alias for `ws://`), sign
-    /// in, select the namespace and database, and return the client
+    /// in, select the namespace and database, and return the client. Asks
+    /// the server's version once, for
+    /// [`supports_transactions`](SurrealClient::supports_transactions).
     pub async fn connect(self) -> Result<SurrealClient> {
+        let mut client = self.open().await?;
+        client.interactive_transactions = match client.version().await {
+            Ok(version) => has_interactive_transactions(&version),
+            Err(err) => {
+                warn!("SurrealDB version probe failed, transactions write directly: {err}");
+                false
+            }
+        };
+        Ok(client)
+    }
+
+    /// [`connect`](Self::connect) without the version probe.
+    pub(crate) async fn open(self) -> Result<SurrealClient> {
         let url_str = self
             .url
             .as_ref()
@@ -332,7 +348,20 @@ impl SurrealConnection {
             engine = DebugEngine::wrap(engine);
         }
 
-        let client = SurrealClient::new(engine, self.namespace, self.database);
-        Ok(client.with_debug(self.debug))
+        let debug = self.debug;
+        let mut client = SurrealClient::new(engine, self.namespace.clone(), self.database.clone());
+        client.connection = Some(self);
+        Ok(client.with_debug(debug))
     }
+}
+
+/// Whether `version` (`surrealdb-3.2.4+…`) names a server whose RPC has
+/// `begin`/`commit`/`cancel`, which came with SurrealDB 3.
+fn has_interactive_transactions(version: &str) -> bool {
+    let number = version.strip_prefix("surrealdb-").unwrap_or(version);
+    number
+        .split('.')
+        .next()
+        .and_then(|major| major.parse::<u32>().ok())
+        .is_some_and(|major| major >= 3)
 }

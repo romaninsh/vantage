@@ -4,15 +4,48 @@ use indexmap::IndexMap;
 use surreal_client::{LiveStream, SurrealClient};
 use vantage_core::{Context, Result, error};
 use vantage_expressions::{Expression, ExpressionFlattener, Flatten};
+use vantage_vista::{Transaction, TxKey};
 
+use crate::surrealdb::tx::{SurrealBegin, SurrealTx};
 use crate::{AnySurrealType, surrealdb::SurrealDB};
 
 impl SurrealDB {
     /// Wrap a connected client as a datasource.
     pub fn new(client: SurrealClient) -> Self {
         Self {
+            transactions: client.supports_transactions(),
             inner: Arc::new(tokio::sync::Mutex::new(client)),
+            key: Arc::new(()),
+            tx: None,
         }
+    }
+
+    /// Whether this datasource can run interactive transactions: its client
+    /// came from `SurrealConnection::connect` to a SurrealDB 3+ server. A
+    /// client over a bare engine, or an older server, can't.
+    pub fn supports_transactions(&self) -> bool {
+        self.transactions
+    }
+
+    /// This datasource running its statements in an interactive transaction
+    /// on `tx`, on a connection of its own opened on first use.
+    pub fn in_transaction(&self, tx: &Transaction) -> Result<Self> {
+        tx.check_open()?;
+        let joined = tx.participant(self.tx_key(), || {
+            SurrealTx::new(SurrealBegin::new(self.inner.clone()), tx)
+        })?;
+        Ok(Self {
+            tx: Some(joined),
+            ..self.clone()
+        })
+    }
+
+    pub fn tx_key(&self) -> TxKey {
+        TxKey::of(&self.key)
+    }
+
+    pub(crate) fn tx(&self) -> Option<&SurrealTx> {
+        self.tx.as_deref()
     }
 
     /// Start a SurrealDB `LIVE SELECT` on `resource` (a table name) and return

@@ -9,6 +9,7 @@ use vantage_vista::{
     VistaCapabilities, VistaMetadata, contract, mocks::MockShell,
 };
 
+mod direct;
 mod dotted;
 mod window;
 

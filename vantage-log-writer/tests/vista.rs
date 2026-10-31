@@ -10,7 +10,7 @@ use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet};
 use vantage_log_writer::LogWriter;
 use vantage_table::table::Table;
 use vantage_types::Record;
-use vantage_vista::{Capability, FilterOp, Vista, VistaFactory, contract};
+use vantage_vista::{Capability, FilterOp, Transaction, Vista, VistaFactory, contract};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct Event {
@@ -229,6 +229,30 @@ async fn capabilities_report_writes_reach_hooks() {
             .capabilities()
             .has(vantage_vista::Capability::WritesReachHooks)
     );
+}
+
+/// The sink can't be read back, so the contract's direct-write probe can't
+/// run; this is its write half.
+#[tokio::test]
+async fn a_write_inside_a_transaction_lands_and_is_reported() {
+    let (dir, _writer, vista) = events();
+    let mut record = Record::<CborValue>::new();
+    record.insert("name".into(), CborValue::Text("login".into()));
+
+    let tx = Transaction::new();
+    let id = tx
+        .wrap(&vista)
+        .insert_return_id_value(&record)
+        .await
+        .unwrap();
+    let committed = tx.commit().await.unwrap();
+    assert_eq!(committed.unprotected, ["events"]);
+    assert!(committed.written.is_empty(), "{:?}", committed.written);
+
+    sleep(Duration::from_millis(100)).await;
+    let rows = read_lines(&dir.path().join("events.jsonl")).await;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["id"], id);
 }
 
 #[tokio::test]

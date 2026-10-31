@@ -6,13 +6,14 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use tokio::sync::broadcast;
 use vantage_types::Record;
 
 use super::events::{EVENT_CAPACITY, MemoryChange};
 use super::ids::IdGen;
 use super::index::Indexes;
+use super::write::Change;
 use super::{Row, TableDef};
 
 pub(super) struct Rows {
@@ -24,7 +25,11 @@ pub struct MemoryTable {
     pub(super) name: String,
     pub(super) def: TableDef,
     pub(super) rows: RwLock<Rows>,
-    pub(super) ids: IdGen,
+    /// Shared with the table's transaction copies, so an id generated in
+    /// one is never generated again here.
+    pub(super) ids: Arc<IdGen>,
+    /// On a transaction's copy only: its writes, replayed at commit.
+    pub(super) journal: Option<Mutex<Vec<Change>>>,
     events: broadcast::Sender<MemoryChange>,
     quiet: AtomicBool,
     /// Set when a write happens while quiet; cleared by `set_quiet(false)`,
@@ -37,7 +42,8 @@ impl MemoryTable {
     pub(crate) fn new(name: String, def: TableDef) -> Self {
         let (events, _) = broadcast::channel(EVENT_CAPACITY);
         Self {
-            ids: IdGen::new(def.id_prefix.clone()),
+            ids: Arc::new(IdGen::new(def.id_prefix.clone())),
+            journal: None,
             rows: RwLock::new(Rows {
                 map: IndexMap::new(),
                 indexes: Indexes::new(&def.indexed),
@@ -49,6 +55,21 @@ impl MemoryTable {
             missed: AtomicBool::new(false),
             writes: AtomicU64::new(0),
         }
+    }
+
+    /// A private, unindexed copy of the rows for a transaction to work on.
+    /// It records its writes, for [`apply_all`](Self::apply_all) to replay at
+    /// commit, and generates ids from this table's counter.
+    pub(crate) fn fork(&self) -> MemoryTable {
+        let def = TableDef {
+            indexed: Vec::new(),
+            ..self.def.clone()
+        };
+        let mut copy = MemoryTable::new(self.name.clone(), def);
+        copy.ids = self.ids.clone();
+        copy.journal = Some(Mutex::default());
+        copy.rows.get_mut().map = self.rows.read().map.clone();
+        copy
     }
 
     pub fn name(&self) -> &str {

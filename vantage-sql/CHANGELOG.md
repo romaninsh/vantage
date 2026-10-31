@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.5 — 2026-10-31
+
+Requires vantage-vista 2.6.0.
+
+- The SQL transaction sits on the shared `TxSlot`, the same one MongoDB and SurrealDB use. No
+  change in behaviour.
+
 ## 0.10.4 — 2026-10-30
 
 Requires vantage-vista 2.5.0 (dev-dependency).

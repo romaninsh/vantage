@@ -101,6 +101,11 @@ impl TxFixture for SqliteTx {
     fn supports_lock(&self) -> bool {
         true
     }
+
+    /// Another database file: another `SqliteDB`, so another participant.
+    async fn fresh_other(&self) -> Option<TxTables> {
+        Some(self.fresh().await)
+    }
 }
 
 #[tokio::test]

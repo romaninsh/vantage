@@ -19,7 +19,7 @@ runs:
         SERVICES: ${{ inputs.services }}
         MYSQL_IMAGE: ${{ inputs.mysql-image }}
       run: |
-        has() { jq -e --arg s "$1" 'index($s) != null' <<<"$SERVICES" > /dev/null; }
+        has() { local service="$1"; jq -e --arg s "$service" 'index($s) != null' <<<"$SERVICES" > /dev/null; }
         if has postgres; then
           docker run -d --name postgres -p 5433:5432 \
             -e POSTGRES_USER=vantage -e POSTGRES_PASSWORD=vantage -e POSTGRES_DB=vantage \
@@ -36,7 +36,8 @@ runs:
             start --user root --pass root memory
         fi
         if has mongo; then
-          docker run -d --name mongo-vantage -p 27017:27017 mongo:7 --replSet rs0 --bind_ip_all
+          docker run -d --name mongo-vantage -p 27017:27017 --ulimit nofile=64000:64000 \
+            mongo:7 --replSet rs0 --bind_ip_all
         fi
 
     - name: Seed
@@ -44,8 +45,12 @@ runs:
       env:
         SERVICES: ${{ inputs.services }}
       run: |
-        has() { jq -e --arg s "$1" 'index($s) != null' <<<"$SERVICES" > /dev/null; }
-        wait_for() { for _ in $(seq 1 90); do eval "$1" > /dev/null 2>&1 && return 0; sleep 1; done; echo "$2 did not start" >&2; return 1; }
+        has() { local service="$1"; jq -e --arg s "$service" 'index($s) != null' <<<"$SERVICES" > /dev/null; }
+        wait_for() {
+          local check="$1" name="$2"
+          for _ in $(seq 1 90); do eval "$check" > /dev/null 2>&1 && return 0; sleep 1; done
+          echo "$name did not start" >&2; return 1
+        }
 
         if has sqlite; then
           bash vantage-sql/scripts/sqlite/ingress.sh

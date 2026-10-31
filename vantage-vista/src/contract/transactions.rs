@@ -7,12 +7,12 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use tokio::sync::Barrier;
 use tokio::time::{sleep, timeout};
-use vantage_core::{Result, error};
+use vantage_core::{ErrorKind, Result, error};
 use vantage_dataset::traits::{ReadableValueSet, WritableValueSet};
 use vantage_types::Record;
 
 use super::Probe;
-use crate::{CborValue, FilterOp, Transaction, Vista};
+use crate::{Capability, CborValue, FilterOp, Transaction, Vista};
 
 type Rec = Record<CborValue>;
 
@@ -52,19 +52,62 @@ pub trait TxFixture: Send + Sync {
     async fn fresh_pool_of_one(&self) -> TxTables;
     /// Postgres/MySQL report a deadlock; SQLite serialises writers instead.
     fn detects_deadlocks(&self) -> bool;
+    /// Whether a write to a row another transaction holds fails at once
+    /// instead of waiting (MongoDB's `WriteConflict`). Two crossed writers
+    /// may then both fail; `writers_collide` asks only that they don't both
+    /// commit, that each failure is a conflict (`ErrorKind::Conflict`), and
+    /// that neither leaves a write behind. Read with
+    /// [`detects_deadlocks`](Self::detects_deadlocks) `true`.
+    fn conflicts_fail_fast(&self) -> bool {
+        false
+    }
     /// Whether a wrapped Vista's `lock()` locks the rows it reads.
     fn supports_lock(&self) -> bool {
         false
+    }
+    /// `false` for a datasource whose shells are [`direct`](crate::direct):
+    /// only the direct-write probes run, or the direct-read ones when the
+    /// tables take no inserts. A read-only fixture's tables may be any two
+    /// it has, not empty ones.
+    fn supports_transactions(&self) -> bool {
+        true
+    }
+    /// New, empty tables on a second datasource, a separate participant in
+    /// the same transaction, for the several-datasources probes.
+    async fn fresh_other(&self) -> Option<TxTables> {
+        None
     }
 }
 
 /// Runs every transaction probe on fresh tables, one after another, then
 /// panics once, listing the probes that broke the contract, hung past their
 /// deadline, or didn't run because the check's time budget was spent. Reads
-/// "outside" the transaction go through the unwrapped Vistas.
+/// "outside" the transaction go through the unwrapped Vistas. A fixture
+/// without transactions runs only the direct-write probe; one with
+/// [`fresh_other`](TxFixture::fresh_other) also the several-datasources ones.
 pub async fn check_transactions(fixture: &impl TxFixture) {
     let mut runner = Runner::new();
     let fx = fixture;
+    if !fx.supports_transactions() {
+        if writable(fx).await {
+            run(
+                &mut runner,
+                "direct_writes_land_and_are_reported",
+                PROBE_DEADLINE,
+                direct_writes_land_and_are_reported(fx),
+            )
+            .await;
+        } else {
+            run(
+                &mut runner,
+                "direct_reads_pass_through",
+                PROBE_DEADLINE,
+                direct_reads_pass_through(fx),
+            )
+            .await;
+        }
+        return runner.finish();
+    }
     run(
         &mut runner,
         "commit_lands_every_write",
@@ -165,6 +208,20 @@ pub async fn check_transactions(fixture: &impl TxFixture) {
         )
         .await;
     }
+    run(
+        &mut runner,
+        "two_databases_commit_together",
+        PROBE_DEADLINE,
+        two_databases_commit_together(fx),
+    )
+    .await;
+    run(
+        &mut runner,
+        "a_throw_rolls_both_back",
+        PROBE_DEADLINE,
+        a_throw_rolls_both_back(fx),
+    )
+    .await;
     runner.finish();
 }
 
@@ -293,10 +350,14 @@ async fn narrowed_vista_keeps_narrowing(fx: &impl TxFixture) -> Result<()> {
     let tx = Transaction::new();
     let listed = tx.wrap(&narrowed).list_values().await;
     tx.rollback().await?;
-    let ids: Vec<String> = listed?.into_keys().collect();
+    // By the rows' `n`, not their ids: SurrealDB lists `a:x`, not `x`.
+    let ns: Vec<CborValue> = listed?
+        .into_values()
+        .map(|row| row.get("n").cloned().unwrap_or(CborValue::Null))
+        .collect();
     ensure(
-        ids == ["x"],
-        format!("a wrapped list narrowed to n = 1 returns {ids:?}, not [\"x\"]"),
+        ns == [int(1)],
+        format!("a wrapped list narrowed to n = 1 returns rows with n {ns:?}, not [1]"),
     )
 }
 
@@ -366,6 +427,19 @@ async fn writers_collide(fx: &impl TxFixture) -> Result<()> {
             (Ok(()), Ok(())) => Err(error!(
                 "both crossed writers committed; one should have failed on the deadlock"
             )),
+            (Err(e1), Err(e2))
+                if fx.conflicts_fail_fast()
+                    && matches!(e1.kind(), ErrorKind::Conflict)
+                    && matches!(e2.kind(), ErrorKind::Conflict) =>
+            {
+                let (x, z) = (n_of(&t.a, "x").await?, n_of(&t.a, "z").await?);
+                ensure(
+                    x == int(1) && z == int(1),
+                    format!(
+                        "after both crossed writers failed x.n = {x:?} and z.n = {z:?}, not 1 and 1"
+                    ),
+                )
+            }
             (Err(e1), Err(e2)) => Err(error!(format!(
                 "neither crossed writer committed: tx1: {e1}; tx2: {e2}"
             ))),
@@ -450,6 +524,84 @@ async fn lock_makes_a_reader_wait(fx: &impl TxFixture) -> Result<()> {
         n == int(2),
         format!("tx2's locked read after tx1 committed n = 2 reads {n:?}"),
     )
+}
+
+/// A write through a direct shell lands at once, outside the transaction,
+/// and the commit names its table as unprotected.
+async fn direct_writes_land_and_are_reported(fx: &impl TxFixture) -> Result<()> {
+    let t = fx.fresh().await;
+    let tx = Transaction::new();
+    tx.wrap(&t.a).insert_value("x", &rec(1)).await?;
+    present(&t.a, "x", "before commit, written directly").await?;
+    let committed = tx.commit().await?;
+    ensure(
+        committed.unprotected == [t.a.name()] && committed.written.is_empty(),
+        format!(
+            "a direct write to {} commits as written {:?}, unprotected {:?}",
+            t.a.name(),
+            committed.written,
+            committed.unprotected
+        ),
+    )
+}
+
+/// Whether the fixture's tables take writes. A read-only datasource without
+/// transactions gets [`direct_reads_pass_through`] in place of the write probe.
+pub(super) async fn writable(fx: &impl TxFixture) -> bool {
+    fx.fresh().await.a.capabilities().has(Capability::Insert)
+}
+
+/// A read through a direct shell over a read-only datasource answers as one
+/// outside does, and the commit reports nothing written.
+async fn direct_reads_pass_through(fx: &impl TxFixture) -> Result<()> {
+    let t = fx.fresh().await;
+    let tx = Transaction::new();
+    let inside = tx.wrap(&t.a).count().await?;
+    let outside = t.a.count().await?;
+    let committed = tx.commit().await?;
+    ensure(
+        inside == outside,
+        format!(
+            "{} counts {inside} through the transaction, {outside} outside",
+            t.a.name()
+        ),
+    )?;
+    ensure(
+        committed.written.is_empty() && committed.unprotected.is_empty(),
+        format!(
+            "a read of {} commits as written {:?}, unprotected {:?}",
+            t.a.name(),
+            committed.written,
+            committed.unprotected
+        ),
+    )
+}
+
+async fn two_databases_commit_together(fx: &impl TxFixture) -> Result<()> {
+    let Some(o) = fx.fresh_other().await else {
+        return Ok(());
+    };
+    let t = fx.fresh().await;
+    let tx = Transaction::new();
+    tx.wrap(&t.a).insert_value("x", &rec(1)).await?;
+    tx.wrap(&o.a).insert_value("x", &rec(1)).await?;
+    absent(&o.a, "x", "before commit").await?;
+    tx.commit().await?;
+    present(&t.a, "x", "after commit").await?;
+    present(&o.a, "x", "after commit").await
+}
+
+async fn a_throw_rolls_both_back(fx: &impl TxFixture) -> Result<()> {
+    let Some(o) = fx.fresh_other().await else {
+        return Ok(());
+    };
+    let t = fx.fresh().await;
+    let tx = Transaction::new();
+    tx.wrap(&t.a).insert_value("x", &rec(1)).await?;
+    tx.wrap(&o.a).insert_value("x", &rec(1)).await?;
+    tx.rollback().await?;
+    absent(&t.a, "x", "after rollback").await?;
+    absent(&o.a, "x", "after rollback").await
 }
 
 /// One of two crossed writers: patch `first`, meet the other at `barrier`,
