@@ -30,7 +30,7 @@ use std::sync::Arc;
 use tokio::sync::broadcast;
 #[cfg(feature = "test-util")]
 use tokio::task::JoinHandle;
-use vantage_vista::{Vista, VistaQuery};
+use vantage_vista::{Capability, Vista, VistaQuery};
 
 pub(crate) use abort_on_drop::AbortOnDrop;
 pub(crate) use augmented::AugmentedClause;
@@ -115,13 +115,27 @@ impl WeakDio {
 /// Defaults to the master Vista's own capabilities; a Lens
 /// [`writer`](crate::LensBuilder::writer) lifts all three, because the
 /// writer — not the master — then takes the writes (a read-only CSV becomes editable, with
-/// changes landing wherever the route sends them).
+/// changes landing wherever the route sends them). A capability the master's
+/// [`denials`](Vista::denials) name stays off: no writer lifts a denial.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct WriteCapabilities {
     pub can_insert: bool,
     pub can_update: bool,
     pub can_delete: bool,
+}
+
+impl WriteCapabilities {
+    /// Whether these grant `capability`. Only the write capabilities can be
+    /// granted; any other is not.
+    pub(crate) fn grants(&self, capability: Capability) -> bool {
+        match capability {
+            Capability::Insert => self.can_insert,
+            Capability::Update => self.can_update,
+            Capability::Delete => self.can_delete,
+            _ => false,
+        }
+    }
 }
 
 impl Dio {
@@ -172,7 +186,8 @@ impl Dio {
     }
 
     /// The Dio's effective write capabilities — master caps, lifted to
-    /// fully writable when the Lens has a writer. UI chrome
+    /// fully writable when the Lens has a writer, less what the master's
+    /// denials refuse. UI chrome
     /// gates its add/edit/delete affordances on this, nothing else.
     pub fn write_capabilities(&self) -> WriteCapabilities {
         self.inner.write_capabilities()

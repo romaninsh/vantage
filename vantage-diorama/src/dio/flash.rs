@@ -23,7 +23,7 @@ use vantage_core::{Result, error};
 use vantage_dataset::traits::ReadableValueSet as _;
 use vantage_table::write_context::WriteContext;
 use vantage_types::Record;
-use vantage_vista::VistaQuery;
+use vantage_vista::{Capability, ColumnFlag, VistaQuery, forbidden, forbidden_column, unsupported};
 
 use super::worker::QueuedFlash;
 use super::{Dio, DioEvent, DioInner, DioShell};
@@ -36,6 +36,15 @@ use unstage::Unstage;
 impl Dio {
     /// Write `flash` and wait until it settles.
     ///
+    /// 0. **Refusal.** A write the master's denials name is `Forbidden`, and
+    ///    one the [`write_capabilities`](Self::write_capabilities) don't
+    ///    grant is unsupported, before anything is staged and with no event
+    ///    published. A Lens writer doesn't lift a denial. A `Clear` needs
+    ///    `Delete`, an `Upsert` needs `Insert` too, and so does a `Replace`
+    ///    of a row neither the cache nor the master holds. A patch of a denied
+    ///    column is `Forbidden`; a `Replace` or `Upsert` keeps a denied
+    ///    column's stored value and drops a denied calculated one, so neither
+    ///    the write route nor the cache sees the caller's value.
     /// 1. **Confinement.** The write must stay inside the Dio's set, the
     ///    master's narrowing plus the [`residual`](Self::residual): a record gets the set's
     ///    equality conditions filled in, and a record or patch result outside
@@ -78,6 +87,7 @@ impl Dio {
             ));
         }
         flash.ensure_context();
+        inner.refuse(&flash)?;
         let set = inner.write_set();
         let rule = SetRule::new(set, inner);
         if *flash.kind() == FlashKind::Clear && rule.narrows() {
@@ -106,6 +116,18 @@ impl Dio {
                 Confined::Write(row) => held = row,
             }
             flash.ensure_before(held.as_ref());
+        }
+        if matches!(*flash.kind(), FlashKind::Replace | FlashKind::Upsert) {
+            let base = pre.as_ref().or(held.as_ref());
+            if let Some(id) = &id
+                && *flash.kind() == FlashKind::Replace
+                && base.is_none()
+                && let Err(refusal) = inner.refuse_capabilities(&[Capability::Insert])
+                && inner.master.get_value(id.as_str()).await?.is_none()
+            {
+                return Err(refusal);
+            }
+            inner.keep_denied_columns(&mut flash, base);
         }
 
         let permit = inner
@@ -231,6 +253,89 @@ enum Confined {
 }
 
 impl DioInner {
+    /// Refuse `flash` when the Dio may not write it, before anything is
+    /// staged or published.
+    ///
+    /// A capability the master's denials name is `Forbidden` with the
+    /// denying rule, even under a Lens writer. One the Dio's
+    /// [`write_capabilities`](Self::write_capabilities) don't grant is
+    /// unsupported. A patch naming a column denied by a rule is `Forbidden`.
+    /// A `Clear` needs `Delete`, and an `Upsert` needs `Insert` as well as
+    /// `Update`.
+    pub(crate) fn refuse(&self, flash: &ChangeFlash) -> Result<()> {
+        let kind = *flash.kind();
+        let capabilities: &[Capability] = match kind {
+            FlashKind::Insert => &[Capability::Insert],
+            FlashKind::Replace | FlashKind::Patch => &[Capability::Update],
+            FlashKind::Upsert => &[Capability::Update, Capability::Insert],
+            FlashKind::Delete | FlashKind::Clear => &[Capability::Delete],
+        };
+        self.refuse_capabilities(capabilities)?;
+        if kind == FlashKind::Patch {
+            let denials = self.master.denials();
+            for column in flash.patch().keys() {
+                if let Some(rule) = denials.column_rule(column) {
+                    return forbidden_column(column, rule, self.master.name());
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Refuse a write needing `capabilities`: `Forbidden` when a rule denies
+    /// any of them, unsupported when the Dio doesn't grant one.
+    fn refuse_capabilities(&self, capabilities: &[Capability]) -> Result<()> {
+        let denials = self.master.denials();
+        for &capability in capabilities {
+            if let Some(rule) = denials.rule_for(capability) {
+                return forbidden(capability, rule, self.master.name());
+            }
+        }
+        let granted = self.write_capabilities();
+        for &capability in capabilities {
+            if !granted.grants(capability) {
+                return unsupported(capability);
+            }
+        }
+        Ok(())
+    }
+
+    /// Hold a whole-row write's denied columns to `base`, the row it
+    /// replaces, as the master does: a denied stored column keeps its
+    /// stored value (and is left out when no row is known), a denied
+    /// calculated column is left out. Neither a Lens writer nor the cache
+    /// then sees a value the caller may not set.
+    fn keep_denied_columns(&self, flash: &mut ChangeFlash, base: Option<&Record<CborValue>>) {
+        let denials = self.master.denials();
+        let base_columns = base.into_iter().flat_map(|row| row.keys());
+        let denied: Vec<String> = flash
+            .patch()
+            .keys()
+            .chain(base_columns)
+            .filter(|column| denials.column_rule(column).is_some())
+            .cloned()
+            .collect();
+        if denied.is_empty() {
+            return;
+        }
+        let columns = self.master.columns();
+        let mut record = flash.patch().clone();
+        for column in denied {
+            let calculated = columns
+                .get(&column)
+                .is_some_and(|c| c.has_flag(ColumnFlag::Calculated));
+            match base.and_then(|row| row.get(&column)) {
+                Some(stored) if !calculated => {
+                    record.insert(column, stored.clone());
+                }
+                _ => {
+                    record.shift_remove(&column);
+                }
+            }
+        }
+        flash.set_patch(record);
+    }
+
     /// The set a write must stay inside, beyond what its route enforces.
     ///
     /// Through the master, the narrowed master confines writes to the clauses
