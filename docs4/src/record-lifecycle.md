@@ -120,8 +120,10 @@ from a new row. Such a backend documents what it does instead; vantage never ove
 DynamoDB inserts with a conditional put, so it does detect the clash.
 ```
 
-There are no transactions. `replace` and `patch` check the row and then write it, so a concurrent
-writer can change the row between the two. MySQL can't run an `UPDATE` or `DELETE` whose
+Each write lands on its own unless it runs inside a [transaction](./transactions.md). `replace`
+and `patch` check the row and then write it, so a concurrent writer can change the row between the
+two. On Postgres and MySQL, a locked read inside a transaction
+([`Vista::lock`](vantage_vista::Vista::lock)) holds the row from your read to the commit. MySQL can't run an `UPDATE` or `DELETE` whose
 condition subqueries the table being written (error 1093), so a set defined that way can't be
 written through on MySQL.
 
@@ -305,9 +307,15 @@ the datasource — enough for cross-row validation and after-effects. `context` 
   per-row delete hooks. The hook gets the table, whose `conditions()` describe the set; an error
   from the before hook cancels it. A soft-delete `BeforeDelete` doesn't cover it: `delete_all`
   still removes the rows, so a soft-deleting table needs a `BeforeDeleteAll` that refuses it.
-- After-hooks run for side-effects only. Vantage favours idempotence over transactions: an
-  after-hook failure surfaces an error but does not roll back the committed write — design
-  after-effects to be safe to retry.
+- After-hooks run for side-effects only. Outside a transaction they run right after the write, and
+  a failing after-hook returns its error without undoing the write. Inside a
+  [transaction](./transactions.md#after-hooks-wait-for-the-commit) they wait for the commit: they
+  run once it succeeds, under the writer's `WriteContext`, a rollback drops them, and a failure is
+  logged rather than returned, since the rows are already committed.
+- Design after-effects to be safe to run again anyway. A transaction doesn't cover writes to a
+  datasource without transactions (SpacetimeDB, the log writer, MongoDB standalone, SurrealDB before 3 write directly), and a retry
+  after an after-hook failure, or after a commit that failed part-way across databases, runs
+  them a second time.
 
 ### Read hooks
 

@@ -46,6 +46,7 @@ chapters! {
     Migration20DownstreamChapter => "migration-2.0/downstream.md",
     ExpressionsChapter => "expressions.md",
     RecordLifecycleChapter => "record-lifecycle.md",
+    TransactionsChapter => "transactions.md",
     RelationsChapter => "relations.md",
     RelationsTraversalChapter => "relations/traversal.md",
     RelationsExpressionsChapter => "relations/expressions.md",
