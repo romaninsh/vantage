@@ -296,6 +296,44 @@ async fn a_condition_the_source_cannot_evaluate_refuses_by_id_writes() {
     assert!(set.delete("1").await.unwrap_err().is_unsupported());
 }
 
+// --- expression columns -------------------------------------------------------
+
+#[tokio::test]
+async fn replace_round_trip_drops_expression_column() {
+    let table = with_rows(vec![json!({"id": "1", "name": "a"})])
+        .await
+        .with_expression("label", |_| vantage_expressions::expr_any!("upper(name)"));
+    // The mock stores rows and evaluates no expressions; a SQL read would
+    // return `label` with the row.
+    let mut row = table.get_value("1").await.unwrap().unwrap();
+    row.insert("label".to_string(), json!("A"));
+    row.insert("name".to_string(), json!("b"));
+    table.replace_value("1", &row).await.unwrap();
+    let stored = table.get_value("1").await.unwrap().unwrap();
+    assert_eq!(stored["name"], json!("b"));
+    assert!(stored.get("label").is_none());
+    let err = table
+        .patch_value("1", &rec(json!({"label": "x"})))
+        .await
+        .unwrap_err();
+    assert!(err.is_forbidden(), "{err}");
+}
+
+#[tokio::test]
+async fn an_expression_column_a_hook_sets_never_reaches_the_patch() {
+    let table = with_rows(vec![json!({"id": "1", "name": "a"})])
+        .await
+        .with_expression("label", |_| vantage_expressions::expr_any!("upper(name)"))
+        .with_hook(Hook::BeforeUpdate(Phase::Populate, setting("label", "x")));
+    table
+        .patch_value("1", &rec(json!({"name": "b"})))
+        .await
+        .unwrap();
+    let stored = table.get_value("1").await.unwrap().unwrap();
+    assert_eq!(stored["name"], json!("b"));
+    assert!(stored.get("label").is_none());
+}
+
 // --- invariants ---------------------------------------------------------------
 
 async fn scoped() -> MockTable {

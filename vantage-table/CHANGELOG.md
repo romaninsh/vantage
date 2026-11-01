@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.2.1 — 2026-11-01
+
+- Requires vantage-core 1.2.0.
+- Expression and lazy columns no longer reach stored data: insert and replace drop them, and a
+  patch that sets one is refused with `ErrorKind::Forbidden` naming the column (VAN-460). One a
+  before-update hook sets is dropped before the write.
+
 ## 3.2.0 — 2026-10-29
 
 - Requires vantage-vista 2.4.0.

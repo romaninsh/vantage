@@ -61,6 +61,7 @@ where
         )
         .await?;
         self.strip_imported_columns(&mut record);
+        self.strip_expression_columns(&mut record);
         enforce_invariants(&mut record, self.invariants())?;
         let result = self
             .data_source()
@@ -94,6 +95,7 @@ where
                 column = name.as_str()
             ));
         }
+        self.refuse_expression_columns(partial)?;
         let erased = self.as_entity_erased();
         let mut partial = partial.clone();
         let former = self.former_for_update_hooks(&id).await?;
@@ -110,6 +112,8 @@ where
         )
         .await?;
         self.strip_imported_columns(&mut partial);
+        // A before-update hook may have set one; it isn't stored either way.
+        self.strip_expression_columns(&mut partial);
         validate_invariants(&partial, self.invariants())?;
         let result = self
             .data_source()
