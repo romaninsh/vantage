@@ -16,6 +16,7 @@ use vantage_table::table::{
 };
 use vantage_table::write_context::WriteContext;
 use vantage_types::{EmptyEntity, Record};
+use vantage_vista::Capability;
 
 type MockTable = Table<MockTableSource, EmptyEntity>;
 type Log = Arc<Mutex<Vec<String>>>;
@@ -296,22 +297,69 @@ async fn a_condition_the_source_cannot_evaluate_refuses_by_id_writes() {
     assert!(set.delete("1").await.unwrap_err().is_unsupported());
 }
 
+// --- denials ------------------------------------------------------------------
+
+#[tokio::test]
+async fn a_denied_table_write_is_forbidden() {
+    let mut table = with_rows(vec![
+        json!({"id": "1", "name": "a"}),
+        json!({"id": "2", "name": "b"}),
+    ])
+    .await;
+    table.deny(Capability::Delete, "policy/crm.yaml#no-delete");
+    let err = table.delete_all().await.unwrap_err();
+    assert!(err.is_forbidden(), "{err}");
+    assert_eq!(
+        err.context.get("rule").map(String::as_str),
+        Some("policy/crm.yaml#no-delete")
+    );
+    assert!(table.delete("1").await.unwrap_err().is_forbidden());
+    assert_eq!(table.list_values().await.unwrap().len(), 2);
+
+    // A replace of a missing row would create it.
+    table.deny(Capability::Insert, "policy/crm.yaml#no-new");
+    let row = rec(json!({"id": "3", "name": "c"}));
+    let err = table.replace_value("3", &row).await.unwrap_err();
+    assert!(err.is_forbidden(), "{err}");
+    assert!(table.get_value("3").await.unwrap().is_none());
+    table
+        .replace_value("2", &rec(json!({"id": "2", "name": "B"})))
+        .await
+        .unwrap();
+}
+
+#[test]
+fn denials_reach_vista_metadata() {
+    let mut table = MockTable::new("t", MockTableSource::new())
+        .with_expression("label", |_| vantage_expressions::expr_any!("upper(name)"));
+    table.deny_column("ssn", "r");
+    let metadata = table.vista_metadata(Default::default());
+    assert_eq!(metadata.denials.column_rule("ssn"), Some("r"));
+    assert_eq!(
+        metadata.denials.column_rule("label"),
+        Some("expression column")
+    );
+}
+
 // --- expression columns -------------------------------------------------------
 
 #[tokio::test]
 async fn replace_round_trip_drops_expression_column() {
-    let table = with_rows(vec![json!({"id": "1", "name": "a"})])
+    let mut table = with_rows(vec![json!({"id": "1", "name": "a", "ssn": "123"})])
         .await
         .with_expression("label", |_| vantage_expressions::expr_any!("upper(name)"));
+    table.deny_column("ssn", "r");
     // The mock stores rows and evaluates no expressions; a SQL read would
     // return `label` with the row.
     let mut row = table.get_value("1").await.unwrap().unwrap();
     row.insert("label".to_string(), json!("A"));
     row.insert("name".to_string(), json!("b"));
+    row.insert("ssn".to_string(), json!("x"));
     table.replace_value("1", &row).await.unwrap();
     let stored = table.get_value("1").await.unwrap().unwrap();
     assert_eq!(stored["name"], json!("b"));
     assert!(stored.get("label").is_none());
+    assert_eq!(stored["ssn"], json!("123"));
     let err = table
         .patch_value("1", &rec(json!({"label": "x"})))
         .await

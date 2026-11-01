@@ -48,6 +48,9 @@ pub struct VistaMetadataOptions {
 impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// Vista metadata for this table. Computed columns go in after the
     /// flags: the Vista holds their values and their spec carries their flags.
+    /// The table's denials always go along, with expression and lazy columns
+    /// denied as `"expression column"`, so the Vista refuses what the table
+    /// would.
     pub fn vista_metadata(&self, options: VistaMetadataOptions) -> VistaMetadata {
         let id = self.id_field().map(|f| f.name().to_string());
         let titles = self.title_fields();
@@ -84,7 +87,11 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
                 metadata = metadata.with_reference(reference);
             }
         }
-        metadata
+        let mut denials = self.denials().clone();
+        for name in self.expressions.keys().chain(self.lazy_expressions.keys()) {
+            denials.deny_column(name.as_str(), "expression column");
+        }
+        metadata.with_denials(denials)
     }
 
     fn vista_column(

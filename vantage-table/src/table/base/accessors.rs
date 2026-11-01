@@ -1,7 +1,8 @@
-//! The table's name, source, key fields, pagination and invariants.
+//! The table's name, source, key fields, pagination, invariants and denials.
 
 use indexmap::IndexMap;
 use vantage_types::Entity;
+use vantage_vista::{Capability, Denials, forbidden};
 
 use super::Table;
 use crate::{
@@ -79,6 +80,31 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
 
     pub fn is_locked(&self) -> bool {
         self.lock
+    }
+
+    /// Refuse `capability` on this table, naming `rule` in the `Forbidden`
+    /// error. Nothing lifts a denial; the first rule given for a capability
+    /// is the one reported.
+    pub fn deny(&mut self, capability: Capability, rule: impl Into<String>) {
+        self.denials.deny(capability, rule);
+    }
+
+    /// Make `column` read-only: a patch that sets it is refused `Forbidden`,
+    /// a whole-row replace keeps its stored value.
+    pub fn deny_column(&mut self, column: impl Into<String>, rule: impl Into<String>) {
+        self.denials.deny_column(column, rule);
+    }
+
+    pub fn denials(&self) -> &Denials {
+        &self.denials
+    }
+
+    /// Refuse `capability` when a rule denies it.
+    pub(crate) fn require_allowed(&self, capability: Capability) -> vantage_core::Result<()> {
+        match self.denials.rule_for(capability) {
+            Some(rule) => forbidden(capability, rule, self.table_name()),
+            None => Ok(()),
+        }
     }
 
     /// Get the title field column if set

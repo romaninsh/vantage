@@ -4,9 +4,10 @@
 
 use std::sync::Arc;
 
-use vantage_core::{Result, error};
+use vantage_core::Result;
 use vantage_expressions::Expression;
 use vantage_types::{Entity, Record};
+use vantage_vista::forbidden_column;
 
 use super::Table;
 use crate::traits::table_source::TableSource;
@@ -53,25 +54,22 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         record.retain(|name, _| !self.is_expression_column(name));
     }
 
-    /// A patch is explicit intent per key, so one that sets an expression or
-    /// lazy column is refused rather than dropped. Context values are plain
-    /// text, not `Debug`-quoted as `error!` would write them.
-    pub(in crate::table) fn refuse_expression_columns(
+    /// A patch is explicit intent per key, so a column it can't write is
+    /// refused rather than dropped: one a rule made read-only, or an
+    /// expression or lazy column.
+    pub(in crate::table) fn refuse_read_only_columns(
         &self,
         partial: &Record<T::Value>,
     ) -> Result<()> {
-        let Some(column) = partial.keys().find(|k| self.is_expression_column(k)) else {
-            return Ok(());
-        };
-        let mut e = error!("column is read-only").mark_forbidden();
-        for (key, value) in [
-            ("forbidden", self.table_name()),
-            ("rule", "expression column"),
-            ("column", column.as_str()),
-        ] {
-            e.context.insert(key.to_string(), value.to_string());
+        for name in partial.keys() {
+            if let Some(rule) = self.denials.column_rule(name) {
+                return forbidden_column(name, rule, self.table_name());
+            }
+            if self.is_expression_column(name) {
+                return forbidden_column(name, "expression column", self.table_name());
+            }
         }
-        Err(e)
+        Ok(())
     }
 
     /// Whether `name` is a server-side expression or lazy column.

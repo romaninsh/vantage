@@ -4,6 +4,7 @@ use std::sync::Arc;
 use indexmap::IndexMap;
 use vantage_expressions::Expression;
 use vantage_types::{EmptyEntity, Entity};
+use vantage_vista::Denials;
 
 use crate::{
     pagination::Pagination, references::Reference, sorting::SortDirection, table::hooks::Hooks,
@@ -75,6 +76,8 @@ where
     pub(super) hooks: Hooks<T>,
     /// See [`Self::set_lock`].
     pub(super) lock: bool,
+    /// See [`Self::deny`].
+    pub(super) denials: Denials,
 }
 
 impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
@@ -105,6 +108,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             invariants: IndexMap::new(),
             hooks: Hooks::default(),
             lock: false,
+            denials: Denials::default(),
         }
     }
 
@@ -139,6 +143,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             invariants: self.invariants,
             hooks: self.hooks,
             lock: self.lock,
+            denials: self.denials,
         }
     }
 

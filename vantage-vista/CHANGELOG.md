@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.7.0 — 2026-11-01
+
+- Write denials: `Denials` on `VistaMetadata.denials`, added with `Vista::deny()` and read with
+  `Vista::denials()`. A denied write is refused with an `ErrorKind::Forbidden` error (`forbidden`,
+  `forbidden_column`) whose context leads with `forbidden: <table>` and `rule: <rule>`, plain text.
+  Denials only accumulate: clones and narrowed copies keep them.
+- `Vista::capabilities()` leaves out the capabilities a rule denies.
+- A patch that sets a denied column is refused; replace and upsert keep its stored value instead
+  (a calculated one is dropped). With `Insert` denied, `upsert_value` is refused, and so is a
+  `replace_value` of a row that doesn't exist.
+- A contained target inherits its parent's update denial, and a denial of its host column; under
+  a parent without `Update` its writes are refused `Forbidden`.
+- Mocks: `MockShell::with_denials`.
+
 ## 2.6.1 — 2026-11-01
 
 Requires vantage-core 1.2.0: a transaction keeps a `Forbidden` refusal's kind when it reissues it.

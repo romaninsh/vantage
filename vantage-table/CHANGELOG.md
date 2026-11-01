@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.3.0 — 2026-11-01
+
+- Requires vantage-vista 2.7.0.
+- `Table::deny`, `Table::deny_column` and `Table::denials`: write denials a rule puts on the table.
+  A denied insert, replace, patch, delete or `delete_all` (under `Delete`) is refused `Forbidden`,
+  naming the rule. A patch that sets a denied column is refused; a replace keeps its stored value.
+  With `Insert` denied, a replace of a missing row is refused.
+- `vista_metadata()` carries the denials, with expression and lazy columns denied as
+  `"expression column"`, so the vista refuses what the table would.
+
 ## 3.2.1 — 2026-11-01
 
 - Requires vantage-core 1.2.0.
