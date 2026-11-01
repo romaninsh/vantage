@@ -63,7 +63,7 @@ async fn the_derived_vista_honours_the_capabilities_it_advertises() -> Result<()
     let src = source(shell.clone()).await;
     let derived = src.aggregate(GroupBy::column("status", revenue())).await?;
 
-    let caps = *derived.master().capabilities();
+    let caps = derived.master().capabilities();
     assert!(caps.has(Capability::Order) && caps.has(Capability::Search));
     assert!(
         !caps.has(Capability::Insert)

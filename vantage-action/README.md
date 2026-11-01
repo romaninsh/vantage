@@ -8,7 +8,7 @@ schema, and a Rhai host can register it as a function.
 
 ```toml
 [dependencies]
-vantage-action = "0.6.1"
+vantage-action = "0.7.0"
 ```
 
 ## `#[actions]`

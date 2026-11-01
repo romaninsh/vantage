@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.0.0 — 2026-11-01
+
+- Requires vantage-core 2.0.0, vantage-vista 3.0.0 and vantage-table 4.0.0.
+- **Breaking:** `WriteCapabilities.can_delete_all`, from the master's `DeleteAll`.
+- **Breaking:** a Lens writer no longer lifts a capability the master denies.
+- `Dio::flash` refuses a denied write before staging it, so a refused write leaves no
+  `WritePending` behind.
+- The Dio facade advertises `DeleteAll` and carries the master's denials.
+
 ## 1.3.1 — 2026-10-25
 
 - A test whose assertions another test already makes is dropped. No API or behaviour change.

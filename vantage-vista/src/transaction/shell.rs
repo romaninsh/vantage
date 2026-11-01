@@ -92,7 +92,8 @@ fn reissue(err: &VantageError) -> VantageError {
         ErrorKind::IncorrectUsage => fresh.mark_incorrect_usage(),
         ErrorKind::NotFound => fresh.mark_not_found(),
         ErrorKind::Conflict => fresh.mark_conflict(),
-        ErrorKind::Generic => fresh,
+        ErrorKind::Forbidden => fresh.mark_forbidden(),
+        _ => fresh,
     }
 }
 

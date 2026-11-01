@@ -6,7 +6,7 @@ drives a `Vista` from command-line tokens.
 
 ```toml
 [dependencies]
-vantage-cli-util = "0.6.3"
+vantage-cli-util = "0.7.0"
 ```
 
 ## Printing tables

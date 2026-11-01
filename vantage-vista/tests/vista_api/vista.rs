@@ -403,6 +403,15 @@ async fn a_write_is_refused_unless_the_shell_advertises_it() {
 }
 
 #[tokio::test]
+async fn delete_all_needs_its_own_capability() {
+    let vista = limited(&[Capability::Delete]);
+    vista.delete("p1".to_string()).await.unwrap();
+    let err = vista.delete_all().await.unwrap_err();
+    assert!(err.is_unsupported(), "{err:?}");
+    assert_eq!(vista.count().await.unwrap(), 2);
+}
+
+#[tokio::test]
 async fn an_advertised_write_still_runs() {
     let vista = people();
     let id = vista

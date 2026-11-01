@@ -147,7 +147,7 @@ impl TableShell for ContainedShell {
         self.flush(writeback).await
     }
     async fn delete_all(&self) -> Result<()> {
-        let writeback = self.writeback(Capability::Delete)?;
+        let writeback = self.writeback(Capability::DeleteAll)?;
         self.im.delete_all().await?;
         self.flush(writeback).await
     }

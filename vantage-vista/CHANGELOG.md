@@ -1,5 +1,23 @@
 # Changelog
 
+## 3.0.0 — 2026-11-01
+
+Requires vantage-core 2.0.0.
+
+- **Breaking:** `Capability::DeleteAll`. `delete_all` needs it, and `Delete` no longer covers it; a
+  shell that supports `delete_all` has to advertise `DeleteAll`.
+- Write denials: `Denials` on `VistaMetadata.denials`, set with `Vista::deny()` and read with
+  `Vista::denials()`. A denied write is refused with an `ErrorKind::Forbidden` error (`forbidden`,
+  `forbidden_column`).
+- **Breaking:** `Vista::capabilities()` returns an owned `VistaCapabilities`, with the denied
+  capabilities taken out.
+- A patch that sets a denied column is refused; replace and upsert keep its stored value instead
+  (a calculated one is dropped). `Denials::columns()` lists the denied columns.
+- With `Insert` denied, `upsert_value` is refused, and so is a `replace_value` of a row that
+  doesn't exist.
+- A contained target inherits its parent's update denial, and a denial of its host column.
+- Mocks: `MockShell::with_denials`. The default capability set includes `DeleteAll`.
+
 ## 2.6.0 — 2026-10-31
 
 Requires vantage-rhai 1.4.0.

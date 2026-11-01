@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.0 — 2026-11-01
+
+- Depends on vantage-core 2.0 / vantage-table 4.0 (no change of its own).
+
 ## 0.8.2 — 2026-10-26
 
 - Tests of one behaviour are folded into one test each (reopening a file, insert ids, deletes,

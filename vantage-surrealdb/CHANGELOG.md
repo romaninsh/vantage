@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.0.0 — 2026-11-01
+
+Requires vantage-core 2.0.0, vantage-vista 3.0.0, vantage-table 4.0.0 and surreal-client 2.0.0.
+
+- The vista advertises `DeleteAll`.
+- **Breaking:** `from_table` makes a query-sourced table (`rhai:` or `base:`) read-only, so a
+  reference whose target is a query table refuses writes (VAN-461).
+- **Breaking:** a patch that sets an `expr:` column is refused (VAN-460).
+
 ## 2.2.0 — 2026-10-31
 
 Requires vantage-vista 2.6.0, vantage-table 3.2.0 and surreal-client 1.1.0.

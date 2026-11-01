@@ -233,11 +233,11 @@ Live data and tooling:
 
 ```toml
 [dependencies]
-vantage-core = "1"
-vantage-types = "1"
-vantage-dataset = "1"
-vantage-table = "1"
-vantage-sql = { version = "0.8", features = ["sqlite"] }  # also "postgres", "mysql", "vista", "rhai"
+vantage-core = "2"
+vantage-types = "2"
+vantage-dataset = "2"
+vantage-table = "4"
+vantage-sql = { version = "0.11", features = ["sqlite"] }  # also "postgres", "mysql", "vista", "rhai"
 tokio = { version = "1", features = ["full"] }
 ```
 

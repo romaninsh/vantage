@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use vantage_core::Result;
 use vantage_dataset::{ReadableValueSet, WritableValueSet};
 use vantage_types::{Entity, InvariantValue, Record};
+use vantage_vista::{Capability, forbidden, forbidden_column};
 
 use crate::{
     prelude::TableSource,
@@ -43,11 +44,37 @@ where
         id: impl Into<Self::Id> + Send,
         record: &Record<Self::Value>,
     ) -> Result<Record<Self::Value>> {
+        self.require_allowed(Capability::Update)?;
         self.require_confined_writes("replace")?;
+        self.refuse_removed_columns(record)?;
         let id = id.into();
         let erased = self.as_entity_erased();
         let mut record = record.clone();
-        let former = self.former_for_update_hooks(&id).await?;
+        let kept: Vec<&str> = self
+            .denials()
+            .columns()
+            .map(|(name, _)| name)
+            .filter(|name| !self.is_calculated_column(name))
+            .collect();
+        let insert_rule = self.denials().rule_for(Capability::Insert);
+        let former = self
+            .former_for_update(&id, !kept.is_empty() || insert_rule.is_some())
+            .await?;
+        // A replace of a row that isn't there creates it.
+        if let (Some(rule), None) = (insert_rule, &former) {
+            return forbidden(Capability::Insert, rule, self.table_name());
+        }
+        // A whole row read and saved back carries the read-only columns too:
+        // each keeps its stored value, so an unchanged round-trip saves and a
+        // backend that rewrites the whole row doesn't erase it.
+        record.retain(|name, _| self.denials().column_rule(name).is_none());
+        if let Some(former) = &former {
+            for name in kept {
+                if let Some(value) = former.get(name) {
+                    record.insert(name.to_string(), value.clone());
+                }
+            }
+        }
         let update = UpdateOf {
             id: &id,
             stored: former.as_ref(),
@@ -61,6 +88,7 @@ where
         )
         .await?;
         self.strip_imported_columns(&mut record);
+        self.strip_expression_columns(&mut record);
         enforce_invariants(&mut record, self.invariants())?;
         let result = self
             .data_source()
@@ -82,6 +110,7 @@ where
         id: impl Into<Self::Id> + Send,
         partial: &Record<Self::Value>,
     ) -> Result<Record<Self::Value>> {
+        self.require_allowed(Capability::Update)?;
         self.require_confined_writes("patch")?;
         let id = id.into();
         // A patch is explicit intent per key — unlike a full-record round-trip
@@ -94,9 +123,10 @@ where
                 column = name.as_str()
             ));
         }
+        self.refuse_read_only_columns(partial)?;
         let erased = self.as_entity_erased();
         let mut partial = partial.clone();
-        let former = self.former_for_update_hooks(&id).await?;
+        let former = self.former_for_update(&id, false).await?;
         let update = UpdateOf {
             id: &id,
             stored: former.as_ref(),
@@ -127,6 +157,7 @@ where
     }
 
     async fn delete(&self, id: impl Into<Self::Id> + Send) -> Result<()> {
+        self.require_allowed(Capability::Delete)?;
         self.require_confined_writes("delete")?;
         let id = id.into();
         let has_hooks =
@@ -150,6 +181,7 @@ where
     }
 
     async fn delete_all(&self) -> Result<()> {
+        self.require_allowed(Capability::DeleteAll)?;
         let erased = self.as_entity_erased();
         run_delete_all(self.before_delete_all_hooks(), erased).await?;
         self.data_source().delete_table_all_values(self).await?;
@@ -162,12 +194,46 @@ where
     T::Value: InvariantValue,
 {
     /// The row as it stands before an update, read once through the set, when
-    /// any before- or after-update hook will want it; `None` when there are
-    /// none (no extra read) or the set doesn't hold the row.
-    async fn former_for_update_hooks(&self, id: &T::Id) -> Result<Option<Record<T::Value>>> {
-        if self.before_update_hooks().is_empty() && self.after_update_hooks().is_empty() {
+    /// the caller `needs` it or any before- or after-update hook will want it;
+    /// `None` when neither does (no extra read) or the set doesn't hold the
+    /// row.
+    async fn former_for_update(&self, id: &T::Id, needs: bool) -> Result<Option<Record<T::Value>>> {
+        if !needs && self.before_update_hooks().is_empty() && self.after_update_hooks().is_empty() {
             return Ok(None);
         }
         self.get_value(id.clone()).await
+    }
+
+    /// A patch is explicit intent per key, so a column it can't write is
+    /// refused rather than dropped: one a rule made read-only, an expression
+    /// or lazy column, or a removed one.
+    fn refuse_read_only_columns(&self, partial: &Record<T::Value>) -> Result<()> {
+        for name in partial.keys() {
+            if let Some(rule) = self.denials().column_rule(name) {
+                return forbidden_column(name, rule, self.table_name());
+            }
+            if self.is_expression_column(name) {
+                return forbidden_column(name, "expression column", self.table_name());
+            }
+        }
+        self.refuse_removed_columns(partial)
+    }
+
+    /// Refuse a write that sets a removed column, unless the value is the
+    /// column's invariant (or a null that a full-record write fills from it).
+    pub(super) fn refuse_removed_columns(&self, record: &Record<T::Value>) -> Result<()> {
+        for name in &self.removed_columns {
+            let Some(value) = record.get(name) else {
+                continue;
+            };
+            let invariant = self
+                .invariants()
+                .get(name)
+                .is_some_and(|expected| value.is_null() || value.value_eq(expected));
+            if !invariant {
+                return forbidden_column(name, "removed column", self.table_name());
+            }
+        }
+        Ok(())
     }
 }

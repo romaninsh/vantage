@@ -98,7 +98,7 @@ impl TableSceneryBuilder {
                     base: filters.clone(),
                     page_size,
                     titles_only,
-                    paged: pages_lazily(&dio, dio.master.capabilities()),
+                    paged: pages_lazily(&dio, &dio.master.capabilities()),
                     read_cache,
                     sugar_columns,
                 };
@@ -133,7 +133,7 @@ impl TableSceneryBuilder {
             sugared,
             ticket,
             signal,
-            master_capabilities: *dio.master.capabilities(),
+            master_capabilities: dio.master.capabilities(),
             repointing: Mutex::new(()),
         });
         dio.register_view(&view);

@@ -94,7 +94,7 @@ impl SpacetimeTableShell {
 
     /// Deletes exactly the set: a narrowed shell doesn't empty the table.
     pub(super) async fn delete_rows(&self) -> Result<()> {
-        self.require(Capability::Delete)?;
+        self.require(Capability::DeleteAll)?;
         let sql = Delete::new(self.relation_ident()?)
             .where_all(self.narrowing())
             .render();

@@ -29,22 +29,68 @@ fn removed_column_is_not_selected() {
     assert!(!table.columns().contains_key("bakery_id"));
 }
 
-#[tokio::test]
-async fn removed_column_keeps_its_invariant() {
+async fn stored_client() -> MockTable {
     let src = MockTableSource::new().with_data("client", vec![]).await;
-    let mut table = MockTable::new("client", src)
+    MockTable::new("client", src)
         .with_id_column("id")
         .with_column_of::<String>("name")
         .with_column_of::<i64>("bakery_id")
-        .with_invariant("bakery_id", json!(3));
+}
+
+fn rec(value: Value) -> Record<Value> {
+    Record::from(value)
+}
+
+#[tokio::test]
+async fn removed_invariant_column_is_filled_not_refused() {
+    let mut table = stored_client().await.with_invariant("bakery_id", json!(3));
     table.remove_column("bakery_id").unwrap();
     assert_eq!(table.invariants().get("bakery_id"), Some(&json!(3)));
     let id = table
-        .insert_return_id_value(&Record::<Value>::from(json!({"name": "alice"})))
+        .insert_return_id_value(&rec(json!({"name": "alice"})))
         .await
         .unwrap();
     let row = table.get_value(id).await.unwrap().unwrap();
     assert_eq!(row["bakery_id"], json!(3));
+    table
+        .insert_value("9", &rec(json!({"name": "bob", "bakery_id": 3})))
+        .await
+        .unwrap();
+    let err = table
+        .insert_value("10", &rec(json!({"name": "eve", "bakery_id": 4})))
+        .await
+        .unwrap_err();
+    assert!(err.is_forbidden(), "{err}");
+}
+
+#[tokio::test]
+async fn a_removed_column_refuses_writes() {
+    let src = MockTableSource::new()
+        .with_data(
+            "client",
+            vec![json!({"id": "1", "name": "a", "bakery_id": 2})],
+        )
+        .await;
+    let mut table = MockTable::new("client", src)
+        .with_id_column("id")
+        .with_column_of::<String>("name")
+        .with_column_of::<i64>("bakery_id");
+    table.remove_column("bakery_id").unwrap();
+    let r = rec(json!({"name": "b", "bakery_id": 3}));
+    let err = table.insert_value("9", &r).await.unwrap_err();
+    assert!(err.is_forbidden(), "{err}");
+    assert_eq!(
+        err.context.get("column").map(String::as_str),
+        Some("bakery_id")
+    );
+    let err = table.replace_value("1", &r).await.unwrap_err();
+    assert!(err.is_forbidden(), "{err}");
+    let err = table.patch_value("1", &r).await.unwrap_err();
+    assert!(err.is_forbidden(), "{err}");
+    let rows = table.list_values().await.unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows["1"]["name"], json!("a"));
+    assert_eq!(rows["1"]["bakery_id"], json!(2));
 }
 
 #[test]

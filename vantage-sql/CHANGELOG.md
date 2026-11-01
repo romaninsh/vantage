@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.11.0 — 2026-11-01
+
+Requires vantage-core 2.0.0, vantage-vista 3.0.0 and vantage-table 4.0.0.
+
+- The SQLite, Postgres and MySQL vistas advertise `DeleteAll`.
+- **Breaking:** `from_table` makes a query-sourced table (`rhai:` or `base:`) read-only, so a
+  reference whose target is a query table refuses writes (VAN-461).
+
 ## 0.10.5 — 2026-10-31
 
 Requires vantage-vista 2.6.0.

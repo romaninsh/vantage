@@ -4,6 +4,7 @@ use vantage_core::{Result, error};
 use crate::{
     capabilities::{Capability, VistaCapabilities, unsupported},
     column::{Column, ColumnFlag},
+    denials::{Denials, forbidden},
     id_generator::{IdGenerator, IdGeneratorShell},
     metadata::VistaMetadata,
     page::Preview,
@@ -32,6 +33,8 @@ pub struct Vista {
     name: String,
     shell: Box<dyn TableShell>,
     applied: VistaQuery,
+    /// Added through [`deny`](Self::deny), on top of the shell metadata's.
+    denials: Denials,
 }
 
 impl Vista {
@@ -44,6 +47,7 @@ impl Vista {
             name,
             shell,
             applied: VistaQuery::default(),
+            denials: Denials::default(),
         }
     }
 
@@ -88,9 +92,46 @@ impl Vista {
         self.applied.narrows()
     }
 
-    /// The shell's capabilities, read live.
-    pub fn capabilities(&self) -> &VistaCapabilities {
-        self.shell.capabilities()
+    /// The shell's capabilities, read live, less those a rule denies.
+    pub fn capabilities(&self) -> VistaCapabilities {
+        let mut capabilities = *self.shell.capabilities();
+        for denials in [&self.metadata().denials, &self.denials] {
+            for denied in denials.capabilities().iter() {
+                capabilities = capabilities.without(denied);
+            }
+        }
+        capabilities
+    }
+
+    /// What rules forbid here: the shell metadata's denials and those added
+    /// through [`deny`](Self::deny).
+    pub fn denials(&self) -> Denials {
+        let mut denials = self.metadata().denials.clone();
+        denials.merge(&self.denials);
+        denials
+    }
+
+    /// This Vista with `denials` added. Clones and narrowed copies carry
+    /// them, and nothing takes one back.
+    pub fn deny(mut self, denials: Denials) -> Self {
+        self.denials.merge(&denials);
+        self
+    }
+
+    /// The rule denying `capability`, if one does.
+    pub(crate) fn denied(&self, capability: Capability) -> Option<&str> {
+        self.metadata()
+            .denials
+            .rule_for(capability)
+            .or_else(|| self.denials.rule_for(capability))
+    }
+
+    /// The rule that made `column` read-only, if one did.
+    pub(crate) fn denied_column(&self, column: &str) -> Option<&str> {
+        self.metadata()
+            .denials
+            .column_rule(column)
+            .or_else(|| self.denials.column_rule(column))
     }
 
     pub fn driver_name(&self) -> &'static str {
@@ -150,9 +191,13 @@ impl Vista {
         self.references().get(name)
     }
 
-    /// `unsupported(capability)` unless the shell advertises it: how `Vista`
-    /// gates a read or write before the shell is called.
+    /// `forbidden` when a rule denies `capability`, else `unsupported` unless
+    /// the shell advertises it: how `Vista` gates a read or write before the
+    /// shell is called.
     pub(crate) fn require(&self, capability: Capability) -> Result<()> {
+        if let Some(rule) = self.denied(capability) {
+            return forbidden(capability, rule, &self.name);
+        }
         if self.capabilities().has(capability) {
             Ok(())
         } else {

@@ -2,6 +2,12 @@
 
 All notable changes to `vantage-spacetimedb` are documented here.
 
+## 0.8.0 — 2026-11-01
+
+- Requires vantage-core 2.0.0 and vantage-vista 3.0.0.
+- **Breaking:** `delete_all` needs `DeleteAll` rather than `Delete`. The vista advertises
+  `DeleteAll` wherever it advertises `Delete`.
+
 ## 0.7.1 — 2026-10-31
 
 - Requires vantage-vista 2.6.0. Inside an `atomic` block the SpacetimeDB vista writes directly and

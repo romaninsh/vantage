@@ -103,6 +103,7 @@ impl MemoryTableShell {
             Capability::Insert,
             Capability::Update,
             Capability::Delete,
+            Capability::DeleteAll,
             Capability::Import,
             Capability::Subscribe,
             Capability::Order,

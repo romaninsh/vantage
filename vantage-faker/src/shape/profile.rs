@@ -102,6 +102,7 @@ impl Default for BackendShape {
                 Capability::Insert,
                 Capability::Update,
                 Capability::Delete,
+                Capability::DeleteAll,
                 Capability::Order,
                 Capability::Search,
                 Capability::Subscribe,

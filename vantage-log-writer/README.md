@@ -6,7 +6,7 @@ audit trails, event logs, or as the write side of a composed data source.
 
 ```toml
 [dependencies]
-vantage-log-writer = { version = "0.6.5", features = ["vista"] }
+vantage-log-writer = { version = "0.8.0", features = ["vista"] }
 ```
 
 ```rust,ignore

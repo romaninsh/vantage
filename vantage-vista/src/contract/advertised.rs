@@ -20,7 +20,7 @@ use crate::{Capability, Vista};
 /// - `Traverse`: `get_ref` on every reference, joined or contained, with a
 ///   row of the set and with none, must not be refused; a join with keys
 ///   traversed from a row must come back narrowed (`is_narrowed()`).
-/// - `Insert`, `Update`, `Delete`, `Import`, `ConfineWrites`: left to
+/// - `Insert`, `Update`, `Delete`, `DeleteAll`, `Import`, `ConfineWrites`: left to
 ///   [`check_advertised_writes`](super::check_advertised_writes), which
 ///   needs a disposable fixture.
 pub async fn check_advertised(vista: &Vista) {
@@ -49,6 +49,7 @@ pub async fn check_advertised(vista: &Vista) {
             | Capability::Insert
             | Capability::Update
             | Capability::Delete
+            | Capability::DeleteAll
             | Capability::Import
             | Capability::ConfineWrites
             | Capability::WritesReachHooks => {}

@@ -185,7 +185,7 @@ pub trait TableShell: CloneTableShell + Send + Sync + 'static {
 
     /// Remove exactly the rows in the set.
     async fn delete_all(&self) -> Result<()> {
-        unsupported(Capability::Delete)
+        unsupported(Capability::DeleteAll)
     }
 
     /// Store `rows` in one all-or-nothing, driver-native operation and return

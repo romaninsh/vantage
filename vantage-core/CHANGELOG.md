@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.0 — 2026-11-01
+
+- `ErrorKind::Forbidden`, `mark_forbidden()`, `is_forbidden()`: a write that a policy denies.
+- **Breaking:** `ErrorKind` is `#[non_exhaustive]`. A `match` on it needs a wildcard arm, so the
+  next new kind isn't another major.
+
 ## 1.1.1 — 2026-10-14
 
 - The in-crate unit tests move to the blackbox suite under `tests/`; module docs added. No API or

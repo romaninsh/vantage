@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.0 — 2026-11-01
+
+- Depends on vantage-core 2.0 / vantage-vista 3.0 / vantage-table 4.0 (no change of its own).
+
 ## 0.7.2 — 2026-10-31
 
 - Requires vantage-vista 2.6.0. Inside an `atomic` block the Kubernetes vista writes directly and

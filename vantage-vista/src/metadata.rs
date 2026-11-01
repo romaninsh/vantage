@@ -2,6 +2,7 @@ use indexmap::IndexMap;
 
 use crate::{
     column::{Column, ColumnFlag},
+    denials::Denials,
     id_generator::IdGenerator,
     reference::Reference,
 };
@@ -20,6 +21,8 @@ pub struct VistaMetadata {
     pub id_column: Option<String>,
     /// How writers mint the id of a new record; `None` mints a UUIDv7.
     pub id_generator: Option<IdGenerator>,
+    /// Writes a rule forbids on this table; the `Vista` refuses them.
+    pub denials: Denials,
 }
 
 impl VistaMetadata {
@@ -65,6 +68,11 @@ impl VistaMetadata {
 
     pub fn with_id_generator(mut self, generator: IdGenerator) -> Self {
         self.id_generator = Some(generator);
+        self
+    }
+
+    pub fn with_denials(mut self, denials: Denials) -> Self {
+        self.denials = denials;
         self
     }
 

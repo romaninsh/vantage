@@ -1392,12 +1392,12 @@ axum = "0.8.9"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
-vantage-core = "1.1"
-vantage-dataset = "1.1"
-vantage-expressions = "1.2"
-vantage-mongodb = "2.0"
-vantage-table = "2.0"
-vantage-types = { version = "1.0", features = ["serde"] }
+vantage-core = "2.0"
+vantage-dataset = "2.0"
+vantage-expressions = "2.0"
+vantage-mongodb = "4.0"
+vantage-table = "4.0"
+vantage-types = { version = "2.0", features = ["serde"] }
 ```
 
 ### Entities

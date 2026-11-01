@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.0 — 2026-11-01
+
+- Depends on vantage-core 2.0 (no change of its own).
+
 ## 0.6.2 — 2026-10-14
 
 - The in-crate unit tests move to the blackbox suite under `tests/`; comments trimmed. No API or

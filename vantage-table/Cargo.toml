@@ -1,6 +1,6 @@
 [package]
 name = "vantage-table"
-version = "3.2.0"
+version = "4.0.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Table, Column, and operation traits for the Vantage data framework"
@@ -16,11 +16,11 @@ doctest = false
 
 
 [dependencies]
-vantage-core = { version = "1.1.0", path = "../vantage-core" }
-vantage-types = { version = "1.0.0", path = "../vantage-types" }
-vantage-expressions = { version = "1.2.0", path = "../vantage-expressions" }
-vantage-vista = { version = "2.4.0", path = "../vantage-vista" }
-vantage-dataset = { version = "1.1.2", path = "../vantage-dataset" }
+vantage-core = { version = "2.0.0", path = "../vantage-core" }
+vantage-types = { version = "2.0.0", path = "../vantage-types" }
+vantage-expressions = { version = "2.0.0", path = "../vantage-expressions" }
+vantage-vista = { version = "3.0.0", path = "../vantage-vista" }
+vantage-dataset = { version = "2.0.0", path = "../vantage-dataset" }
 async-stream = "0.3"
 async-trait = "0.1"
 futures-core = "0.3"
@@ -44,11 +44,11 @@ rhai = ["vantage-vista/rhai"]
 [dev-dependencies]
 tokio = { version = "1.52", features = ["macros", "rt-multi-thread", "sync"] }
 serde_json = "1.0"
-vantage-expressions = { version = "1.2.0", path = "../vantage-expressions" }
-vantage-dataset = { version = "1.1.2", path = "../vantage-dataset", features = ["contract"] }
-vantage-vista = { version = "2.4.0", path = "../vantage-vista", features = ["mocks"] }
+vantage-expressions = { version = "2.0.0", path = "../vantage-expressions" }
+vantage-dataset = { version = "2.0.0", path = "../vantage-dataset", features = ["contract"] }
+vantage-vista = { version = "3.0.0", path = "../vantage-vista", features = ["mocks"] }
 # vantage-surrealdb = { path = "../vantage-surrealdb" }
-surreal-client = { version = "1.0.0", path = "../surreal-client" }
+surreal-client = { version = "2.0.0", path = "../surreal-client" }
 async-trait = "0.1"
 ciborium = { version = "0.2", features = ["std"] }
 url = { version = "2.5", features = ["serde"] }

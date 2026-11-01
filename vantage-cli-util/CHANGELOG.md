@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.0 — 2026-11-01
+
+- Depends on vantage-core 2.0 / vantage-vista 3.0 / vantage-table 4.0 (no change of its own).
+
 ## 0.6.7 — 2026-10-26
 
 - Tests of one behaviour are folded into one test each (an `id=` condition rendered as cbor-diag,

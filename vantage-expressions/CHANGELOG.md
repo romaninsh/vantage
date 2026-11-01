@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.0 — 2026-11-01
+
+- Depends on vantage-core 2.0 (no change of its own).
+
 ## 1.2.3 — 2026-10-26
 
 - Tests for `Order::suffix` and the `Selectable` builder, inspection and aggregate methods, driven

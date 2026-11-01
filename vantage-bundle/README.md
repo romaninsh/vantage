@@ -11,7 +11,7 @@ application.
 
 ```toml
 [dependencies]
-vantage-bundle = "0.6.1"
+vantage-bundle = "0.7.0"
 ```
 
 ```rust,ignore

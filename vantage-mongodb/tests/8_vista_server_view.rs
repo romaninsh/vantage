@@ -159,7 +159,7 @@ async fn declared_view_is_read_only_without_streams() -> TestResult {
     let db = setup().await;
     let vista = open_tasks(&db, "{ collection: open_tasks, view: true }");
 
-    let caps = *vista.capabilities();
+    let caps = vista.capabilities();
     for capability in [
         Capability::Order,
         Capability::Search,

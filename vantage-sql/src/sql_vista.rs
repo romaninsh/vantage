@@ -22,6 +22,7 @@ pub(crate) use spec_table::{SourceBlock, SqlSpecDialect, build_spec_table, lower
 
 use vantage_core::{Result, error};
 use vantage_table::column::core::{Column, ColumnType};
+use vantage_table::source::SelectSource;
 use vantage_table::table::{Orderable, VistaMetadataOptions};
 use vantage_vista::{Capability, VistaCapabilities};
 
@@ -73,6 +74,7 @@ pub(crate) fn sql_capabilities(read_only: bool) -> VistaCapabilities {
         Capability::Insert,
         Capability::Update,
         Capability::Delete,
+        Capability::DeleteAll,
         Capability::ConfineWrites,
         Capability::WritesReachHooks,
     ];
@@ -81,6 +83,13 @@ pub(crate) fn sql_capabilities(read_only: bool) -> VistaCapabilities {
         return caps;
     }
     writes.into_iter().fold(caps, VistaCapabilities::with)
+}
+
+/// Whether a table reads from a sub-select rather than a stored table, so a
+/// vista over it must be `read_only`. `from_table` asks this of every table,
+/// reference targets included.
+pub(crate) fn is_query_sourced<S>(source: &SelectSource<S>) -> bool {
+    matches!(source, SelectSource::Query { .. })
 }
 
 /// YAML type alias → typed `Column`, erased to the dialect's value type.

@@ -103,7 +103,7 @@ impl SharedRows {
             placed: AtomicBool::new(false),
             omits_failed_rows: AtomicBool::new(false),
             paged: init.paged,
-            master_capabilities: *dio.master.capabilities(),
+            master_capabilities: dio.master.capabilities(),
             two_pass,
             view_plan: RwLock::new(None),
             serving: RwLock::new(copy.map_or(Serving::Windows, SharedRows::serving)),

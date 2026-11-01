@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.0 — 2026-11-01
+
+- Depends on vantage-core 2.0 / vantage-diorama 2.0 (no change of its own).
+
 ## 0.7.2 — 2026-10-15
 
 - Depends on `vantage-diorama` 1.0.0, the proper version of the 0.15.0 rework. No change here.

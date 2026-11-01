@@ -1,6 +1,6 @@
 [package]
 name = "vantage-sql"
-version = "0.10.5"
+version = "0.11.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -18,16 +18,16 @@ vista = []
 rhai = ["dep:vantage-rhai", "vantage-vista/rhai"]
 
 [dependencies]
-vantage-core = { version = "1.1.0", path = "../vantage-core" }
-vantage-types = { version = "1.0.0", path = "../vantage-types", features = ["serde"] }
-vantage-expressions = { version = "1.2.0", path = "../vantage-expressions" }
+vantage-core = { version = "2.0.0", path = "../vantage-core" }
+vantage-types = { version = "2.0.0", path = "../vantage-types", features = ["serde"] }
+vantage-expressions = { version = "2.0.0", path = "../vantage-expressions" }
 paste = "1.0"
 
-vantage-dataset = { version = "1.1.2", path = "../vantage-dataset" }
-vantage-table = { version = "3.2.0", path = "../vantage-table" }
+vantage-dataset = { version = "2.0.0", path = "../vantage-dataset" }
+vantage-table = { version = "4.0.0", path = "../vantage-table" }
 # Always on: a datasource joins a `vantage_vista::Transaction` with or
 # without the `vista` shells (vantage-table depends on it anyway).
-vantage-vista = { version = "2.6.0", path = "../vantage-vista" }
+vantage-vista = { version = "3.0.0", path = "../vantage-vista" }
 async-trait = "0.1"
 # Drivers occasionally need to report a data-modelling problem that is not
 # an error (a non-unique id column collapsing rows, say) — a facade, so the
@@ -49,10 +49,10 @@ vantage-rhai = { version = "1.1.0", path = "../vantage-rhai", optional = true }
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
 serde_yaml_ng = "0.10"
-vantage-vista = { version = "2.6.0", path = "../vantage-vista", features = ["contract"] }
+vantage-vista = { version = "3.0.0", path = "../vantage-vista", features = ["contract"] }
 sqlformat = "0.3"
 tempfile = "3"
-vantage-dataset = { version = "1.1.2", path = "../vantage-dataset", features = ["contract"] }
+vantage-dataset = { version = "2.0.0", path = "../vantage-dataset", features = ["contract"] }
 
 # The name must be unique across the workspace: cargo writes every
 # example to the same target/debug/examples directory, and two targets

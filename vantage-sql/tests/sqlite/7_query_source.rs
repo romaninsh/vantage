@@ -13,7 +13,15 @@ use vantage_sql::sqlite_expr;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, entity};
 
+#[cfg(feature = "vista")]
+use ciborium::Value as CborValue;
 use vantage_dataset::ReadableValueSet;
+#[cfg(feature = "vista")]
+use vantage_dataset::WritableValueSet;
+#[cfg(feature = "vista")]
+use vantage_types::Record;
+#[cfg(feature = "vista")]
+use vantage_vista::Capability;
 
 async fn setup() -> SqliteDB {
     let db = SqliteDB::connect("sqlite::memory:").await.unwrap();
@@ -143,4 +151,50 @@ async fn derive_from_inherits_relation() {
          (SELECT \"id\" FROM (SELECT \"id\", \"name\", \"is_paying_client\" \
          FROM \"client\" WHERE is_paying_client = 1) AS \"debtors\")"
     );
+}
+
+/// A reference whose target is query-sourced: the target vista is built by
+/// `from_table`, which must see the query source and make it read-only, as
+/// `build_from_spec` does for a `rhai:` or `base:` spec (VAN-461).
+#[cfg(feature = "vista")]
+#[tokio::test]
+async fn a_query_source_reached_by_reference_refuses_insert() {
+    let db = setup().await;
+    db.execute(&sqlite_expr!(
+        "INSERT INTO client_order VALUES ({}, {})",
+        "o1",
+        "1"
+    ))
+    .await
+    .unwrap();
+    // Named after the real table, so a write that got through would land.
+    let clients = client_table(db.clone()).with_many("order_view", "client_id", |db| {
+        let query = SqliteSelect::new()
+            .with_source("client_order")
+            .with_field("id")
+            .with_field("client_id");
+        Table::<SqliteDB, EmptyEntity>::from_select(db, "client_order", query)
+            .with_id_column("id")
+            .with_column_of::<String>("client_id")
+    });
+    let vista = db.vista_factory().from_table(clients).unwrap();
+    let alice = vista.get_value("1").await.unwrap().expect("client 1");
+
+    let target = vista.get_ref("order_view", Some(&alice)).unwrap();
+    assert!(!target.capabilities().has(Capability::Insert));
+    let client = |id: &str| -> Record<CborValue> {
+        [("client_id".to_string(), CborValue::Text(id.into()))]
+            .into_iter()
+            .collect()
+    };
+    let err = target.insert_value("o9", &client("1")).await.unwrap_err();
+    assert!(err.is_forbidden() || err.is_unsupported(), "{err:?}");
+    let err = target.patch_value("o1", &client("2")).await.unwrap_err();
+    assert!(err.is_forbidden() || err.is_unsupported(), "{err:?}");
+
+    let rows: Vec<(String, String)> = sqlx::query_as("SELECT id, client_id FROM client_order")
+        .fetch_all(db.pool())
+        .await
+        .unwrap();
+    assert_eq!(rows, vec![("o1".to_string(), "1".to_string())]);
 }

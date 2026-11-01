@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.0 — 2026-11-01
+
+- Depends on vantage-core 2.0 (no change of its own).
+
 ## 1.1.0 — 2026-10-31
 
 - Interactive transactions over the WebSocket CBOR engine: `begin`, `commit`, `cancel` and

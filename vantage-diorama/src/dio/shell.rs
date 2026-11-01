@@ -58,12 +58,14 @@ impl DioShell {
         metadata.references = master.references().clone();
         metadata.id_column = Some(dio.id_column.clone());
         metadata.id_generator = master.id_generator().cloned();
+        metadata.denials = master.denials();
         let write_caps = dio.write_capabilities();
 
         // The facade advertises what `DioShell` itself answers, and nothing
         // it would refuse:
-        // - writes follow `Dio::write_capabilities` (master OR Lens writer),
-        //   and every write keeps to the handle's narrowing;
+        // - writes follow `Dio::write_capabilities` (master OR Lens writer,
+        //   never a denied one), and every write keeps to the handle's
+        //   narrowing; the master's denials ride along in the metadata;
         // - `Subscribe`: the event bus backs `watch`;
         // - `Search`, `FilterOps`, `Order`: pushed into the master when it
         //   takes them, evaluated over the rows read when it doesn't;
@@ -76,6 +78,7 @@ impl DioShell {
             (write_caps.can_insert, Capability::Insert),
             (write_caps.can_update, Capability::Update),
             (write_caps.can_delete, Capability::Delete),
+            (write_caps.can_delete_all, Capability::DeleteAll),
             (true, Capability::Subscribe),
             (true, Capability::Search),
             (true, Capability::FilterOps),

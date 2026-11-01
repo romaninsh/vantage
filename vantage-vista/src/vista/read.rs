@@ -10,6 +10,7 @@ use crate::{
     capabilities::Capability,
     change::{VistaChange, VistaChangeStream},
     computed,
+    denials::Denials,
     page::Page,
 };
 
@@ -86,8 +87,35 @@ impl Vista {
     /// [`Vista::add_condition`] on the target refuses a computed column, so
     /// the traversal fails as `Unsupported` naming the relation and column.
     /// The bare target (`None`) is only described, so it is not refused.
+    ///
+    /// A contained target writes through the parent row, so under a parent
+    /// that takes no updates, or whose host column a rule made read-only, it
+    /// takes no writes either: they are refused `Forbidden`, naming the
+    /// parent's rule.
     pub fn get_ref(&self, relation: &str, row: Option<&Record<CborValue>>) -> Result<Vista> {
-        self.shell().get_ref(relation, row)
+        let target = self.shell().get_ref(relation, row)?;
+        let Some(reference) = self.reference(relation).filter(|r| r.kind.is_contained()) else {
+            return Ok(target);
+        };
+        let host_rule = reference
+            .host_column
+            .as_deref()
+            .and_then(|host| self.denied_column(host));
+        let rule = match (self.denied(Capability::Update), host_rule) {
+            (Some(rule), _) | (None, Some(rule)) => rule.to_string(),
+            (None, None) if self.capabilities().has(Capability::Update) => return Ok(target),
+            (None, None) => format!("parent {} takes no updates", self.name()),
+        };
+        let mut denials = Denials::new();
+        for write in [
+            Capability::Insert,
+            Capability::Update,
+            Capability::Delete,
+            Capability::DeleteAll,
+        ] {
+            denials.deny(write, rule.as_str());
+        }
+        Ok(target.deny(denials))
     }
 
     /// Lock the rows the next reads return until the transaction this Vista

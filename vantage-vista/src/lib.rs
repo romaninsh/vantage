@@ -10,6 +10,7 @@ mod computed;
 mod contained;
 #[cfg(feature = "contract")]
 pub mod contract;
+mod denials;
 pub mod eval;
 mod factory;
 mod filter;
@@ -37,6 +38,7 @@ pub use catalog::Catalog;
 pub use change::{VistaChange, VistaChangeStream};
 pub use column::{Column, ColumnFamily, ColumnFlag};
 pub use contained::{ContainedWriteback, build_contained_vista};
+pub use denials::{Denials, forbidden, forbidden_column};
 pub use factory::VistaFactory;
 pub use filter::{FilterOp, operand_text};
 pub use id_generator::{IdGenerator, ShortId};

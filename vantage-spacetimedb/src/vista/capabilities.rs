@@ -35,7 +35,12 @@ pub(super) fn capabilities_for(
     keyed: bool,
 ) -> VistaCapabilities {
     let read = [Capability::FilterOps, Capability::Subscribe];
-    let writes = [Capability::Insert, Capability::Update, Capability::Delete];
+    let writes = [
+        Capability::Insert,
+        Capability::Update,
+        Capability::Delete,
+        Capability::DeleteAll,
+    ];
     let writable = caller_is_owner && keyed && matches!(kind, TableKind::Table);
     read.into_iter()
         .chain(writes.into_iter().filter(|_| writable))

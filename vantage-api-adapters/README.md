@@ -8,7 +8,7 @@ endpoint, so any HTTP client becomes another scenery consumer.
 
 ```toml
 [dependencies]
-vantage-api-adapters = { version = "0.6.4", features = ["axum"] }
+vantage-api-adapters = { version = "0.8.0", features = ["axum"] }
 ```
 
 ```rust,ignore

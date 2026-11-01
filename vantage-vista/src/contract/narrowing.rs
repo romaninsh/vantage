@@ -46,7 +46,7 @@ type Rows = IndexMap<String, Record<CborValue>>;
 /// The search, order, operator-filter, native-condition and dotted-path
 /// probes, recorded into `probe`.
 pub(super) async fn narrow_into(vista: &Vista, probe: &mut Probe) {
-    let caps = *vista.capabilities();
+    let caps = vista.capabilities();
     // The un-narrowed rows the effect probes compare against. A fixture
     // that can't list, or lists nothing, is held to "not refused" only.
     let listed: Option<Rows> = vista.list_values().await.ok();

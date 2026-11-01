@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.0.0 — 2026-11-01
+
+Requires vantage-core 2.0.0, vantage-vista 3.0.0 and vantage-table 4.0.0.
+
+- The vista advertises `DeleteAll` next to `Delete`.
+
 ## 3.1.0 — 2026-10-31
 
 Requires vantage-vista 2.6.0 and vantage-table 3.2.0.

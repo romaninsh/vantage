@@ -17,6 +17,7 @@ use std::sync::Arc;
 use vantage_core::Result;
 #[cfg(not(feature = "rhai"))]
 use vantage_core::error;
+use vantage_table::source::SelectSource;
 use vantage_table::table::{BuildEnv, Table, TableInjector};
 use vantage_types::{EmptyEntity, Entity};
 use vantage_vista::{
@@ -71,13 +72,16 @@ impl SurrealVistaFactory {
     /// Wrap a typed table as a Vista. Column metadata is harvested from the
     /// table; CRUD goes through `Table`'s reading path. The original entity
     /// type is preserved so `with_expression` closures remain typecheckable.
+    /// A query-sourced table (a `rhai:` or `base:` reference target, say) is
+    /// read-only here too.
     pub fn from_table<E>(&self, table: Table<SurrealDB, E>) -> Result<Vista>
     where
         E: Entity<AnySurrealType> + 'static,
     {
         let name = table.table_name().to_string();
         let metadata = metadata_from_table(&table);
-        Ok(self.wrap(table, name, metadata, false))
+        let read_only = matches!(table.source(), SelectSource::Query { .. });
+        Ok(self.wrap(table, name, metadata, read_only))
     }
 
     /// The one place a vista is made, so `from_table` and `build_from_spec`
@@ -162,6 +166,7 @@ fn surreal_capabilities(read_only: bool) -> VistaCapabilities {
         Capability::Insert,
         Capability::Update,
         Capability::Delete,
+        Capability::DeleteAll,
         Capability::ConfineWrites,
         Capability::WritesReachHooks,
         Capability::Subscribe,

@@ -1,6 +1,6 @@
 [package]
 name = "vantage-spacetimedb"
-version = "0.7.1"
+version = "0.8.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -11,9 +11,9 @@ repository = "https://github.com/romaninsh/vantage"
 readme = "README.md"
 
 [dependencies]
-vantage-core = { path = "../vantage-core", version = "1.1.0" }
-vantage-types = { path = "../vantage-types", version = "1.0.0", features = ["serde"] }
-vantage-vista = { path = "../vantage-vista", version = "2.6.0" }
+vantage-core = { path = "../vantage-core", version = "2.0.0" }
+vantage-types = { path = "../vantage-types", version = "2.0.0", features = ["serde"] }
+vantage-vista = { path = "../vantage-vista", version = "3.0.0" }
 
 # Official SpacetimeDB crates, used for the *wire format only* — we own the
 # connection. The typed `spacetimedb-sdk` is deliberately not a dependency: it
@@ -53,8 +53,8 @@ ciborium = "0.2"
 [dev-dependencies]
 # The value-set traits (`list_values`, `get_value`) live here; the Vista
 # facade implements them.
-vantage-dataset = { path = "../vantage-dataset", version = "1.1.2" }
+vantage-dataset = { path = "../vantage-dataset", version = "2.0.0" }
 # `vantage_vista::contract`, run by tests/vista_contract.rs.
-vantage-vista = { path = "../vantage-vista", version = "2.6.0", features = ["contract"] }
+vantage-vista = { path = "../vantage-vista", version = "3.0.0", features = ["contract"] }
 pretty_assertions = "1"
 tokio = { version = "1", features = ["full"] }

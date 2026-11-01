@@ -95,7 +95,12 @@ pub fn build_contained_vista(
         .into_iter()
         .collect();
     if writeback.is_some() {
-        for write in [Capability::Insert, Capability::Update, Capability::Delete] {
+        for write in [
+            Capability::Insert,
+            Capability::Update,
+            Capability::Delete,
+            Capability::DeleteAll,
+        ] {
             capabilities = capabilities.with(write);
         }
     }

@@ -46,6 +46,21 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         }
     }
 
+    /// Drop expression and lazy columns from a full-record write payload, as
+    /// [`Self::strip_imported_columns`] does for imported ones: a row read
+    /// and saved back carries values the table computes, not stores.
+    pub(in crate::table) fn strip_expression_columns(
+        &self,
+        record: &mut vantage_types::Record<T::Value>,
+    ) {
+        record.retain(|name, _| !self.is_expression_column(name));
+    }
+
+    /// Whether `name` is a server-side expression or lazy column.
+    pub(in crate::table) fn is_expression_column(&self, name: &str) -> bool {
+        self.expressions.contains_key(name) || self.lazy_expressions.contains_key(name)
+    }
+
     /// Whether `name` is an imported implicit-reference column
     /// (`"country.name"`) — an expression-backed traversal projection that is
     /// read-only and must never be persisted, ordered, or searched as if it
@@ -59,9 +74,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// (post-fetch) computed column. Driver factories flag such columns
     /// `calculated` in vista metadata so consumers render them read-only.
     pub fn is_calculated_column(&self, name: &str) -> bool {
-        self.imported_columns.contains(name)
-            || self.expressions.contains_key(name)
-            || self.lazy_expressions.contains_key(name)
+        self.imported_columns.contains(name) || self.is_expression_column(name)
     }
 
     /// Register a column the `Vista` computes after each read, positioned

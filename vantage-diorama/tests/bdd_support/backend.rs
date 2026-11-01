@@ -139,6 +139,7 @@ impl MasterRows {
             Capability::Insert,
             Capability::Update,
             Capability::Delete,
+            Capability::DeleteAll,
             Capability::Order,
             Capability::Search,
             Capability::Window,

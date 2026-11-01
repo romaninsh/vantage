@@ -79,7 +79,7 @@ impl Dio {
     async fn reread(&self) -> Result<()> {
         let inner = &self.inner;
         let loader = &inner.lens.callbacks.loader;
-        if loader.pages(inner.master.capabilities()) {
+        if loader.pages(&inner.master.capabilities()) {
             inner.forget_whole_copy();
             self.notify_dataset_changed();
             return Ok(());

@@ -40,7 +40,7 @@ impl Lens {
         let cache = self.cache.open_table(&cache_table_name).await?;
         let hub = hub_key.as_deref().map(|key| self.hub(key));
         let loader = &self.callbacks.loader;
-        let eager = loader.runs_eager_start(master.capabilities());
+        let eager = loader.runs_eager_start(&master.capabilities());
         let detached = eager && !loader.eager_blocking();
 
         let (write_tx, write_rx) = mpsc::channel(self.tuning().write_queue);

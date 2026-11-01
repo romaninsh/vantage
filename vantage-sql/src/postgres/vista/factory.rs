@@ -17,8 +17,8 @@ use crate::postgres::types::AnyPostgresType;
 use crate::postgres::vista::source::PostgresTableShell;
 use crate::postgres::vista::spec::{PostgresColumnExtras, PostgresTableExtras, PostgresVistaSpec};
 use crate::sql_vista::{
-    SourceBlock, SqlSpecDialect, build_spec_table, column_for_type, lower_spec, metadata_options,
-    source_block, sql_capabilities,
+    SourceBlock, SqlSpecDialect, build_spec_table, column_for_type, is_query_sourced, lower_spec,
+    metadata_options, source_block, sql_capabilities,
 };
 
 pub struct PostgresVistaFactory {
@@ -86,7 +86,8 @@ impl PostgresVistaFactory {
     {
         let name = table.table_name().to_string();
         let metadata = table.vista_metadata(metadata_options());
-        Ok(self.wrap(table, name, metadata, false))
+        let read_only = is_query_sourced(table.source());
+        Ok(self.wrap(table, name, metadata, read_only))
     }
 
     /// Single source-construction site shared by `from_table` and

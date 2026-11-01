@@ -13,11 +13,11 @@ use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::{Result, error};
 use vantage_dataset::traits::WritableValueSet;
-use vantage_diorama::Dio;
+use vantage_diorama::{ChangeFlash, Dio};
 use vantage_types::Record;
 use vantage_vista::{
-    Capability, Column, Page, TableShell, Vista, VistaMetadata, forward_table_shell,
-    mocks::MockShell,
+    Capability, Column, Denials, FilterOp, Page, TableShell, Vista, VistaMetadata,
+    forward_table_shell, mocks::MockShell,
 };
 
 use support::record;
@@ -52,6 +52,7 @@ fn residual_shell() -> MockShell {
             Capability::Insert,
             Capability::Update,
             Capability::Delete,
+            Capability::DeleteAll,
             Capability::ConfineWrites,
         ]
         .into_iter()
@@ -94,6 +95,34 @@ forward_table_shell!(ListRefusingShell, inner, {
         self.inner.fetch_window(offset, limit).await
     }
 });
+
+/// A narrowed `Clear` runs as one delete per row, yet it is still a bulk
+/// delete: with `delete_all` denied it is refused, while a single delete
+/// lands.
+#[tokio::test]
+async fn narrowed_clear_needs_delete_all() -> Result<()> {
+    let mut denials = Denials::new();
+    denials.deny(Capability::DeleteAll, "policy/crm.yaml#no-bulk-delete");
+    let shell = residual_shell().with_denials(denials);
+    let dio = warmed_dio(Vista::new("teams", shell.clone())).await?;
+    let not_blue = dio
+        .derive()
+        .with_query(&support::cond("team", FilterOp::Ne, "blue"))
+        .build()
+        .await?;
+    assert!(
+        !not_blue.residual().conditions.is_empty(),
+        "runs as deletes"
+    );
+
+    let err = not_blue.flash(ChangeFlash::clear()).await.unwrap_err();
+    assert!(err.is_forbidden(), "{err}");
+    assert_eq!(shell.record_ids().len(), 3, "the clear wrote nothing");
+
+    not_blue.flash(ChangeFlash::delete("1")).await?;
+    assert!(shell.get_record("1").is_none());
+    Ok(())
+}
 
 /// `id` is outside the red set: a patch into it is NotFound, an insert
 /// under the id a Conflict.

@@ -174,7 +174,7 @@ async fn pipeline_view_is_read_only() -> TestResult {
     seed(&db).await?;
 
     let v = totals(&db);
-    let caps = *v.capabilities();
+    let caps = v.capabilities();
     for capability in [
         Capability::Order,
         Capability::Search,

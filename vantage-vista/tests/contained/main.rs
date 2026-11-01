@@ -7,7 +7,7 @@ use ciborium::Value as CborValue;
 use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet, WritableValueSet};
 use vantage_types::Record;
 use vantage_vista::{
-    Capability, Column, ColumnFlag, Condition, FilterOp, Reference, ReferenceKind, Vista,
+    Capability, Column, ColumnFlag, Condition, Denials, FilterOp, Reference, ReferenceKind, Vista,
     VistaMetadata, VistaQuery, mocks::MockShell,
 };
 
@@ -175,7 +175,12 @@ async fn a_contained_relation_without_a_row_is_its_bare_target() {
     let bare = order_vista().get_ref("lines", None).unwrap();
     assert!(bare.column("quantity").is_some());
     assert!(bare.list_values().await.unwrap().is_empty());
-    for write in [Capability::Insert, Capability::Update, Capability::Delete] {
+    for write in [
+        Capability::Insert,
+        Capability::Update,
+        Capability::Delete,
+        Capability::DeleteAll,
+    ] {
         assert!(!bare.capabilities().has(write), "{write}");
     }
     let err = bare
@@ -183,4 +188,43 @@ async fn a_contained_relation_without_a_row_is_its_bare_target() {
         .await
         .unwrap_err();
     assert!(err.is_unsupported(), "{err}");
+}
+
+/// Contained records write through the parent row, so a parent denied
+/// `update`, or whose host column is read-only, denies its contained targets
+/// every write, naming its rule.
+#[tokio::test]
+async fn contained_target_inherits_parent_update_denial() {
+    let mut frozen = Denials::new();
+    frozen.deny(Capability::Update, "policy/x.yaml#frozen");
+    let mut lines_read_only = Denials::new();
+    lines_read_only.deny_column("lines", "policy/x.yaml#lines");
+    for (denials, rule) in [
+        (frozen, "policy/x.yaml#frozen"),
+        (lines_read_only, "policy/x.yaml#lines"),
+    ] {
+        let vista = order_vista().deny(denials);
+        let order = vista.get_value("order1").await.unwrap().unwrap();
+        let lines = vista.get_ref("lines", Some(&order)).unwrap();
+        for write in [
+            Capability::Insert,
+            Capability::Update,
+            Capability::Delete,
+            Capability::DeleteAll,
+        ] {
+            assert!(!lines.capabilities().has(write), "{rule}: {write}");
+        }
+        let line = rec(&[
+            ("product", t("hover")),
+            ("quantity", i(2)),
+            ("price", i(199)),
+        ]);
+        let err = lines.insert_value("9", &line).await.unwrap_err();
+        assert!(err.is_forbidden(), "{err:?}");
+        assert_eq!(err.context.get("rule").map(String::as_str), Some(rule));
+        assert!(lines.delete("0").await.unwrap_err().is_forbidden());
+
+        let reread = vista.get_value("order1").await.unwrap().unwrap();
+        assert_eq!(reread.get("lines"), order.get("lines"));
+    }
 }

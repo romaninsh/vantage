@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.0 — 2026-11-01
+
+- Depends on vantage-core 2.0 / vantage-vista 3.0 / vantage-table 4.0 (no change of its own).
+
 ## 0.9.1 — 2026-10-31
 
 Requires vantage-vista 2.6.0.

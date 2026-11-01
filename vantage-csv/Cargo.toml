@@ -1,7 +1,7 @@
 [package]
 edition = "2024"
 name = "vantage-csv"
-version = "0.7.5"
+version = "0.8.0"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
 description = "Vantage extension for CSV files"
@@ -20,15 +20,15 @@ paste = "1.0"
 indexmap = { version = "2", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"], optional = true }
 serde_json = { version = "1", features = ["preserve_order"] }
-vantage-core = { version = "1.0.0", path = "../vantage-core" }
-vantage-dataset = { version = "1.1.2", path = "../vantage-dataset" }
-vantage-expressions = { version = "1.2.0", path = "../vantage-expressions" }
-vantage-table = { version = "3.0.0", path = "../vantage-table" }
-vantage-types = { version = "1.0.0", path = "../vantage-types", features = ["serde"] }
-vantage-vista = { version = "2.6.0", path = "../vantage-vista", optional = true }
+vantage-core = { version = "2.0.0", path = "../vantage-core" }
+vantage-dataset = { version = "2.0.0", path = "../vantage-dataset" }
+vantage-expressions = { version = "2.0.0", path = "../vantage-expressions" }
+vantage-table = { version = "4.0.0", path = "../vantage-table" }
+vantage-types = { version = "2.0.0", path = "../vantage-types", features = ["serde"] }
+vantage-vista = { version = "3.0.0", path = "../vantage-vista", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.52", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml_ng = "0.10"
-vantage-vista = { version = "2.6.0", path = "../vantage-vista", features = ["contract"] }
+vantage-vista = { version = "3.0.0", path = "../vantage-vista", features = ["contract"] }

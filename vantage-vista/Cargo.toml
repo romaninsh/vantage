@@ -1,6 +1,6 @@
 [package]
 name = "vantage-vista"
-version = "2.6.0"
+version = "3.0.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Universal, schema-bearing data handle for the Vantage data framework"
@@ -10,9 +10,9 @@ repository = "https://github.com/romaninsh/vantage"
 doctest = false
 
 [dependencies]
-vantage-core = { version = "1.1.0", path = "../vantage-core" }
-vantage-types = { version = "1.0.0", path = "../vantage-types" }
-vantage-dataset = { version = "1.1.2", path = "../vantage-dataset" }
+vantage-core = { version = "2.0.0", path = "../vantage-core" }
+vantage-types = { version = "2.0.0", path = "../vantage-types" }
+vantage-dataset = { version = "2.0.0", path = "../vantage-dataset" }
 ciborium = { version = "0.2", features = ["std"] }
 indexmap = { version = "2.14", features = ["serde"] }
 async-stream = "0.3"
@@ -59,7 +59,7 @@ mocks = []
 
 [dev-dependencies]
 tokio = { version = "1.52", features = ["macros", "rt-multi-thread", "sync", "time"] }
-vantage-dataset = { version = "1.1.2", path = "../vantage-dataset", features = ["contract"] }
+vantage-dataset = { version = "2.0.0", path = "../vantage-dataset", features = ["contract"] }
 serde_json = "1"
 # Memory-backed Vistas for the script vocabulary tests. Integration tests only:
 # vantage-memory depends on this crate, so unit tests would see two copies.

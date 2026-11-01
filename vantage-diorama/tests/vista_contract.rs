@@ -59,6 +59,7 @@ async fn facade_capability_set() {
         Capability::Insert,
         Capability::Update,
         Capability::Delete,
+        Capability::DeleteAll,
         Capability::Subscribe,
         Capability::Search,
         Capability::FilterOps,

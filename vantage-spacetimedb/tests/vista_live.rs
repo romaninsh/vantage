@@ -70,7 +70,7 @@ async fn unsupported_operations_refuse_instead_of_being_emulated() {
     let mut factory = db().vista_factory();
     let mut vista = factory.from_relation("account").await.expect("build vista");
 
-    let caps = *vista.capabilities();
+    let caps = vista.capabilities();
     for missing in [
         Capability::Order,
         Capability::Search,
@@ -135,7 +135,7 @@ async fn a_view_reads_but_is_never_writable() {
         .await
         .expect("views build like tables");
 
-    let caps = *vista.capabilities();
+    let caps = vista.capabilities();
     assert!(caps.has(Capability::Subscribe), "views are subscribable");
     for write in [Capability::Insert, Capability::Update, Capability::Delete] {
         assert!(!caps.has(write), "a view must not advertise {write}");

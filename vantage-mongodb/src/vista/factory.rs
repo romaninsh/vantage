@@ -151,6 +151,7 @@ pub(crate) fn mongo_capabilities(writable: bool, live: bool) -> VistaCapabilitie
         Capability::Insert,
         Capability::Update,
         Capability::Delete,
+        Capability::DeleteAll,
         Capability::ConfineWrites,
         Capability::WritesReachHooks,
     ];

@@ -115,7 +115,7 @@ forward_table_shell!(ShapedShell, inner, {
     }
 
     async fn delete_all(&self) -> Result<()> {
-        self.gate(Capability::Delete)?;
+        self.gate(Capability::DeleteAll)?;
         self.inner.delete_all().await
     }
 

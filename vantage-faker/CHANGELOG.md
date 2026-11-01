@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.0.0 — 2026-11-01
+
+- Requires vantage-core 2.0.0, vantage-vista 3.0.0 and vantage-memory 4.0.0.
+- **Breaking:** `delete_all` on a shaped shell needs `DeleteAll` rather than `Delete`. Profiles that
+  allow deletes advertise both.
+
 ## 2.0.2 — 2026-10-31
 
 - Requires vantage-vista 2.6.0 and vantage-memory 3.1.0. Inside an `atomic` block the faker vista
