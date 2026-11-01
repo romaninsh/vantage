@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0 — 2026-11-01
+
+- `ErrorKind::Forbidden`, `mark_forbidden()`, `is_forbidden()`: a rule refused the write. Unlike
+  `Unsupported`, the backend could do it; transports answer 403.
+- `ErrorKind` is `#[non_exhaustive]`. **Breaking:** an exhaustive `match` on `ErrorKind` needs a
+  wildcard arm, as with `Conflict` in 1.1.0.
+
 ## 1.1.1 — 2026-10-14
 
 - The in-crate unit tests move to the blackbox suite under `tests/`; module docs added. No API or
