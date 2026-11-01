@@ -112,7 +112,11 @@ impl DioShell {
     /// moved out of the set is left alone. Read from the cache, the subset is
     /// the rows the cache holds; on a paged Dio that may be fewer than the
     /// master's.
+    ///
+    /// Either way it needs `Delete`: a subset deleted row by row is refused
+    /// as a `Clear` would be.
     pub(super) async fn delete_rows(&self) -> Result<()> {
+        self.dio.refuse(&ChangeFlash::clear())?;
         if self.reads_whole_cache() {
             return self.dio().flash(ChangeFlash::clear()).await.map(|_| ());
         }

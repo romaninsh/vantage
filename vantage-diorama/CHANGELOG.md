@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.4.0 — 2026-11-01
+
+- Requires vantage-core 1.2.0 and vantage-vista 2.7.0.
+- `Dio::flash` refuses a write the master's denials name (`Forbidden`) or the Dio's write
+  capabilities don't grant (unsupported) before staging it, so a refused write leaves no
+  `WritePending` and no `WriteReverted` behind. An upsert needs `Insert` as well as `Update`, and
+  so does a replace of a row neither the cache nor the master holds.
+- A Lens writer no longer lifts a capability the master denies: `write_capabilities()` leaves it
+  off.
+- A patch of a denied column is refused; a replace or upsert keeps its stored value on both the
+  writer and the master route, so neither sees the caller's value.
+- The Dio facade carries the master's denials in its metadata.
+- A master's `Forbidden` or `Unsupported` refusal keeps its kind through the write worker.
+
 ## 1.3.1 — 2026-10-25
 
 - A test whose assertions another test already makes is dropped. No API or behaviour change.

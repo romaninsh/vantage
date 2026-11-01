@@ -6,7 +6,7 @@ use std::sync::{Arc, OnceLock};
 
 use tokio::sync::{Mutex, broadcast, mpsc};
 use tokio::task::JoinHandle;
-use vantage_vista::{Vista, VistaMetadata, VistaQuery};
+use vantage_vista::{Capability, Vista, VistaMetadata, VistaQuery};
 
 use super::{
     AbortOnDrop, DetailState, DioEvent, WriteCapabilities, augment_scheduler, pending, query_index,
@@ -176,13 +176,14 @@ impl DioInner {
     /// the inner so [`DioShell`](super::DioShell) can share the one definition of
     /// capability lifting.
     pub(crate) fn write_capabilities(&self) -> WriteCapabilities {
-        use vantage_vista::Capability;
         let routed = self.lens.callbacks.writer.is_some();
         let caps = self.master.capabilities();
+        let denied = self.master.denials().capabilities();
+        let grants = |capability| !denied.has(capability) && (caps.has(capability) || routed);
         WriteCapabilities {
-            can_insert: caps.has(Capability::Insert) || routed,
-            can_update: caps.has(Capability::Update) || routed,
-            can_delete: caps.has(Capability::Delete) || routed,
+            can_insert: grants(Capability::Insert),
+            can_update: grants(Capability::Update),
+            can_delete: grants(Capability::Delete),
         }
     }
 

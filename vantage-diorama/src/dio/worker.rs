@@ -173,12 +173,15 @@ async fn default_write(dio: &Dio, flash: ChangeFlash) -> Result<FlashOutcome> {
     // `Display` renders "write failed: <driver error>" and the driver's
     // error stays reachable underneath. The wrapper keeps the driver's
     // `Conflict` or `NotFound`: a master that confines writes itself refuses
-    // a record outside its set there, and callers branch on the kind.
+    // a record outside its set there, and callers branch on the kind. So do
+    // a `Forbidden` or `Unsupported` refusal from the master.
     let kind = written.as_ref().err().map(VantageError::kind);
     let wrapped = written.context(error!("write failed"));
     match kind {
         Some(ErrorKind::Conflict) => wrapped.map_err(VantageError::mark_conflict),
         Some(ErrorKind::NotFound) => wrapped.map_err(VantageError::mark_not_found),
+        Some(ErrorKind::Forbidden) => wrapped.map_err(VantageError::mark_forbidden),
+        Some(ErrorKind::Unsupported) => wrapped.map_err(VantageError::mark_unsupported),
         _ => wrapped,
     }
 }
