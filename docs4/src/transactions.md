@@ -93,9 +93,10 @@ handle (cheap to clone) that collects the backends its Vistas touch.
   without transactions (see [below](#datasources-without-transactions)).
 - [`tx.rollback()`](vantage_vista::Transaction::rollback) rolls them back. It is always `Ok`, and
   calling it on a finished transaction does nothing, so cleanup paths can call it freely.
-- Dropping the transaction and every Vista wrapped in it rolls back. Each backend's open
-  transaction rolls back when its handle drops (sqlx queues a `ROLLBACK`, MongoDB aborts the
-  session, SurrealDB closes the connection).
+- Dropping the transaction and every Vista wrapped in it rolls back each backend that joined.
+  Each one's open transaction rolls back when its handle drops (sqlx queues a `ROLLBACK`, MongoDB
+  aborts the session, SurrealDB closes the connection). Writes by datasources without
+  transactions have already landed and stay.
 
 A backend's own transaction starts at the first statement, not at `wrap`: wrapping a Vista you
 end up not using costs nothing. After commit or rollback, a wrapped Vista answers every call with
@@ -150,7 +151,9 @@ committed, so `commit` returns `Ok`.
 Before-hooks run at the write, inside the transaction, as they always do. A before-hook that
 returns `Err` fails the write. If you let the error leave the transaction, it rolls back. If you
 catch it and commit, the commit goes ahead on SQL, MongoDB and SurrealDB, because only a failed
-database statement fails the commit there. On memory, any failed operation fails it.
+database statement fails the commit there. On memory, any failed operation on the store fails
+it, a refusal the caller caught included; a before-hook error stops the write before it reaches
+the store, so a caught one doesn't.
 
 ## Locking reads
 
@@ -528,8 +531,10 @@ only the direct-write probe (or the direct-read one when its tables take no inse
 
 - Wrap every Vista you write through with `tx.wrap`, or the resolver with `tx.resolver`; an
   unwrapped Vista writes outside the transaction.
-- Commit explicitly. Every other way out (an error, `?`, a panic, a drop) rolls back.
-- A caught error inside the transaction still fails the commit.
+- Commit explicitly. Every other way out (an error, `?`, a panic, a drop) rolls back the
+  backends that joined; direct writes stay.
+- A caught database error still fails the commit (on memory, any caught error from the store); a
+  caught before-hook error doesn't.
 - After-hooks run after the commit; their failures are logged, not returned.
 - Use `lock()` for read-then-write on Postgres and MySQL.
 - Across databases, the commit is per database: read `committed_before_failure` and wrap the
