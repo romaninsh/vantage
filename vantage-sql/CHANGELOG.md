@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.10.6 — 2026-11-01
+
+- A reference target over a query (`rhai:` or `base:`) is read-only. `from_table` built it with
+  write capabilities, so a write through the reference reached the underlying table (VAN-461).
+
 ## 0.10.5 — 2026-10-31
 
 Requires vantage-vista 2.6.0.

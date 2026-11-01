@@ -26,7 +26,8 @@ use crate::mysql::vista::spec::{
     MysqlColumnExtras, MysqlReferenceExtras, MysqlTableExtras, MysqlVistaSpec,
 };
 use crate::sql_vista::{
-    SourceBlock, SqlSpecDialect, build_spec_table, column_for_type, metadata_options, source_block,
+    SourceBlock, SqlSpecDialect, build_spec_table, column_for_type, is_query_sourced,
+    metadata_options, source_block,
 };
 
 #[derive(Clone)]
@@ -74,7 +75,8 @@ impl MysqlVistaFactory {
     {
         let name = table.table_name().to_string();
         let metadata = table.vista_metadata(metadata_options());
-        Ok(self.wrap(table, name, metadata, false))
+        let read_only = is_query_sourced(table.source());
+        Ok(self.wrap(table, name, metadata, read_only))
     }
 
     /// Build a `Table<MysqlDB, EmptyEntity>` from a spec, resolving any

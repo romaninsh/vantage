@@ -1,8 +1,13 @@
 //! Writes over a connection that signs in as a VIEWER, which SurrealDB
-//! refuses with an empty result instead of an error.
+//! refuses with an empty result instead of an error; and writes a vista
+//! refuses before they reach the database.
 
 use std::sync::{Arc, Mutex};
 
+#[cfg(feature = "rhai")]
+use ciborium::Value as CborValue;
+#[cfg(feature = "rhai")]
+use indexmap::IndexMap;
 use vantage_dataset::prelude::*;
 use vantage_expressions::Expression;
 use vantage_expressions::traits::datasource::ExprDataSource;
@@ -10,9 +15,13 @@ use vantage_surrealdb::operation::SurrealOperation;
 use vantage_surrealdb::surrealdb::SurrealDB;
 use vantage_surrealdb::thing::Thing;
 use vantage_surrealdb::types::AnySurrealType;
+#[cfg(feature = "rhai")]
+use vantage_surrealdb::vista::SurrealVistaSpec;
 use vantage_table::prelude::Hook;
 use vantage_table::table::{AfterCx, Table, after_hook};
 use vantage_types::{EmptyEntity, Record};
+#[cfg(feature = "rhai")]
+use vantage_vista::{Capability, SpecResolver, VistaFactory};
 
 async fn connect(dsn: &str) -> SurrealDB {
     let client = surreal_client::SurrealConnection::dsn(dsn)
@@ -41,10 +50,16 @@ fn rec(pairs: &[(&str, &str)]) -> Record<AnySurrealType> {
         .collect()
 }
 
-/// A fresh database holding `item:in1`, as root and as a VIEWER of it.
-async fn fixture() -> (Table<SurrealDB, EmptyEntity>, Table<SurrealDB, EmptyEntity>) {
+/// A fresh database, as root.
+async fn fresh_root() -> (SurrealDB, String) {
     let name = format!("refused_writes_{}", uuid::Uuid::new_v4().simple());
     let root = connect(&format!("cbor://root:root@localhost:8000/bakery/{name}")).await;
+    (root, name)
+}
+
+/// A fresh database holding `item:in1`, as root and as a VIEWER of it.
+async fn fixture() -> (Table<SurrealDB, EmptyEntity>, Table<SurrealDB, EmptyEntity>) {
+    let (root, name) = fresh_root().await;
     root.execute(&Expression::new(
         "DEFINE USER viewer ON DATABASE PASSWORD 'viewer' ROLES VIEWER",
         vec![],
@@ -170,4 +185,93 @@ async fn refused_patch_and_replace_error() {
         .await
         .unwrap_err();
     assert_eq!(err.kind(), vantage_core::ErrorKind::NotFound);
+}
+
+#[cfg(feature = "rhai")]
+fn spec(yaml: &str) -> SurrealVistaSpec {
+    serde_yaml_ng::from_str(yaml).expect("spec yaml")
+}
+
+#[cfg(feature = "rhai")]
+fn cbor_record(pairs: &[(&str, CborValue)]) -> Record<CborValue> {
+    pairs
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.clone()))
+        .collect()
+}
+
+/// `brand` refers to `brand_override_view`, a query over `brand_override`.
+/// The target is reached through `from_table`, which must see its query
+/// source and make it read-only, as `build_from_spec` does (VAN-461).
+#[cfg(feature = "rhai")]
+#[tokio::test]
+async fn a_query_table_reached_by_reference_refuses_writes() {
+    let (db, _) = fresh_root().await;
+    for sql in [
+        "CREATE brand:b1 SET name = 'B1'",
+        "CREATE brand_override:o1 SET brand = brand:b1, rollout = 0",
+    ] {
+        db.execute(&Expression::new(sql, vec![])).await.unwrap();
+    }
+    let brand = spec(
+        r#"
+name: brand
+columns:
+  id: { type: thing, flags: [id] }
+  name: { type: string }
+references:
+  override:
+    table: brand_override_view
+    kind: has_many
+    foreign_key: brand
+"#,
+    );
+    let view = spec(
+        r#"
+name: brand_override_view
+columns:
+  id: { type: thing, flags: [id] }
+  brand: { type: thing }
+  rollout: { type: int }
+surreal:
+  rhai: |
+    surreal::select().from("brand_override")
+"#,
+    );
+    let stored = spec(
+        r#"
+name: brand_override
+columns:
+  id: { type: thing, flags: [id] }
+  rollout: { type: int }
+"#,
+    );
+    let map: IndexMap<String, SurrealVistaSpec> = [("brand_override_view".to_string(), view)]
+        .into_iter()
+        .collect();
+    let resolver: Arc<dyn SpecResolver<SurrealVistaSpec>> =
+        Arc::new(move |name: &str| map.get(name).cloned());
+    let factory = db.vista_factory().with_resolver(resolver);
+
+    let a = factory.build_from_spec(brand).unwrap();
+    let row = a.get_value("brand:b1").await.unwrap().expect("brand:b1");
+    let target = a.get_ref("override", Some(&row)).unwrap();
+    assert!(!target.capabilities().has(Capability::Update));
+    assert!(
+        target
+            .patch_value(
+                "brand_override:o1",
+                &cbor_record(&[("rollout", CborValue::Integer(1.into()))])
+            )
+            .await
+            .is_err()
+    );
+
+    let plain = factory.build_from_spec(stored).unwrap();
+    let after = plain
+        .get_value("brand_override:o1")
+        .await
+        .unwrap()
+        .expect("brand_override:o1");
+    assert_eq!(after["rollout"], CborValue::Integer(0.into()));
 }
