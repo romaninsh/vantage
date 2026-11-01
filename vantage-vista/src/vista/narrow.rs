@@ -107,7 +107,7 @@ impl Vista {
             return unsupported(Capability::FilterOps);
         }
         let condition = Condition::new(column, op, value);
-        self.shell_mut().add_condition(&condition)?;
+        self.edit_shell(|shell| shell.add_condition(&condition))?;
         self.applied.conditions.push(condition);
         Ok(())
     }
@@ -119,7 +119,7 @@ impl Vista {
     pub fn set_search(&mut self, text: Option<&str>) -> Result<()> {
         let Some(text) = text else {
             if self.applied.search.is_some() {
-                self.shell_mut().set_search(None)?;
+                self.edit_shell(|shell| shell.set_search(None))?;
                 self.applied.search = None;
             }
             return Ok(());
@@ -127,7 +127,7 @@ impl Vista {
         if !self.capabilities().has(Capability::Search) {
             return unsupported(Capability::Search);
         }
-        self.shell_mut().set_search(Some(text))?;
+        self.edit_shell(|shell| shell.set_search(Some(text)))?;
         self.applied.search = Some(text.to_string());
         Ok(())
     }
@@ -142,7 +142,7 @@ impl Vista {
     pub fn set_order(&mut self, order: Option<(&str, SortDirection)>) -> Result<()> {
         let Some((column, dir)) = order else {
             if self.applied.order.is_some() {
-                self.shell_mut().set_order(None)?;
+                self.edit_shell(|shell| shell.set_order(None))?;
                 self.applied.order = None;
             }
             return Ok(());
@@ -158,7 +158,7 @@ impl Vista {
         {
             return Err(error!("Column is not orderable", column = column).mark_unsupported());
         }
-        self.shell_mut().set_order(Some((column, dir)))?;
+        self.edit_shell(|shell| shell.set_order(Some((column, dir))))?;
         self.applied.order = Some((column.to_string(), dir));
         Ok(())
     }
@@ -166,7 +166,7 @@ impl Vista {
     /// Narrow by a driver-native condition; the query records its key.
     pub fn add_native_condition(&mut self, condition: NativeCondition) -> Result<()> {
         let key = condition.key().to_string();
-        self.shell_mut().add_native_condition(condition)?;
+        self.edit_shell(|shell| shell.add_native_condition(condition))?;
         self.applied.native.push(key);
         Ok(())
     }

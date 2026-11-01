@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use vantage_core::Result;
 use vantage_dataset::{ReadableValueSet, WritableValueSet};
 use vantage_types::{Entity, InvariantValue, Record};
+use vantage_vista::{Capability, forbidden};
 
 use crate::{
     prelude::TableSource,
@@ -43,11 +44,36 @@ where
         id: impl Into<Self::Id> + Send,
         record: &Record<Self::Value>,
     ) -> Result<Record<Self::Value>> {
+        self.require_allowed(Capability::Update)?;
         self.require_confined_writes("replace")?;
         let id = id.into();
         let erased = self.as_entity_erased();
         let mut record = record.clone();
-        let former = self.former_for_update_hooks(&id).await?;
+        let kept: Vec<&str> = self
+            .denials()
+            .columns()
+            .map(|(name, _)| name)
+            .filter(|name| !self.is_calculated_column(name))
+            .collect();
+        let insert_rule = self.denials().rule_for(Capability::Insert);
+        let former = self
+            .former_for_update(&id, !kept.is_empty() || insert_rule.is_some())
+            .await?;
+        // A replace of a row that isn't there creates it.
+        if let (Some(rule), None) = (insert_rule, &former) {
+            return forbidden(Capability::Insert, rule, self.table_name());
+        }
+        // A whole row read and saved back carries the read-only columns too:
+        // each keeps its stored value, so an unchanged round-trip saves and a
+        // backend that rewrites the whole row doesn't erase it.
+        record.retain(|name, _| self.denials().column_rule(name).is_none());
+        if let Some(former) = &former {
+            for name in kept {
+                if let Some(value) = former.get(name) {
+                    record.insert(name.to_string(), value.clone());
+                }
+            }
+        }
         let update = UpdateOf {
             id: &id,
             stored: former.as_ref(),
@@ -83,6 +109,7 @@ where
         id: impl Into<Self::Id> + Send,
         partial: &Record<Self::Value>,
     ) -> Result<Record<Self::Value>> {
+        self.require_allowed(Capability::Update)?;
         self.require_confined_writes("patch")?;
         let id = id.into();
         // A patch is explicit intent per key — unlike a full-record round-trip
@@ -95,10 +122,10 @@ where
                 column = name.as_str()
             ));
         }
-        self.refuse_expression_columns(partial)?;
+        self.refuse_read_only_columns(partial)?;
         let erased = self.as_entity_erased();
         let mut partial = partial.clone();
-        let former = self.former_for_update_hooks(&id).await?;
+        let former = self.former_for_update(&id, false).await?;
         let update = UpdateOf {
             id: &id,
             stored: former.as_ref(),
@@ -131,6 +158,7 @@ where
     }
 
     async fn delete(&self, id: impl Into<Self::Id> + Send) -> Result<()> {
+        self.require_allowed(Capability::Delete)?;
         self.require_confined_writes("delete")?;
         let id = id.into();
         let has_hooks =
@@ -154,6 +182,7 @@ where
     }
 
     async fn delete_all(&self) -> Result<()> {
+        self.require_allowed(Capability::Delete)?;
         let erased = self.as_entity_erased();
         run_delete_all(self.before_delete_all_hooks(), erased).await?;
         self.data_source().delete_table_all_values(self).await?;
@@ -166,10 +195,11 @@ where
     T::Value: InvariantValue,
 {
     /// The row as it stands before an update, read once through the set, when
-    /// any before- or after-update hook will want it; `None` when there are
-    /// none (no extra read) or the set doesn't hold the row.
-    async fn former_for_update_hooks(&self, id: &T::Id) -> Result<Option<Record<T::Value>>> {
-        if self.before_update_hooks().is_empty() && self.after_update_hooks().is_empty() {
+    /// the caller `needs` it or any before- or after-update hook will want it;
+    /// `None` when neither does (no extra read) or the set doesn't hold the
+    /// row.
+    async fn former_for_update(&self, id: &T::Id, needs: bool) -> Result<Option<Record<T::Value>>> {
+        if !needs && self.before_update_hooks().is_empty() && self.after_update_hooks().is_empty() {
             return Ok(None);
         }
         self.get_value(id.clone()).await

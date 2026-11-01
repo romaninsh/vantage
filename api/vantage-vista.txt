@@ -75,6 +75,7 @@ impl vantage_vista::mocks::MockShell
 pub fn vantage_vista::mocks::MockShell::new() -> Self
 pub fn vantage_vista::mocks::MockShell::with_capabilities(self, vantage_vista::VistaCapabilities) -> Self
 pub fn vantage_vista::mocks::MockShell::with_contained(self, vantage_vista::Reference, vantage_vista::VistaMetadata) -> Self
+pub fn vantage_vista::mocks::MockShell::with_denials(self, vantage_vista::Denials) -> Self
 pub fn vantage_vista::mocks::MockShell::with_id_prefix(self, impl core::convert::Into<alloc::string::String>) -> Self
 pub fn vantage_vista::mocks::MockShell::with_metadata(self, vantage_vista::VistaMetadata) -> Self
 pub fn vantage_vista::mocks::MockShell::with_record(self, impl core::convert::Into<alloc::string::String>, vantage_types::record::Record<ciborium::value::Value>) -> Self
@@ -267,6 +268,8 @@ impl vantage_vista::Vista
 pub fn vantage_vista::Vista::capabilities(&self) -> &vantage_vista::VistaCapabilities
 pub fn vantage_vista::Vista::column(&self, &str) -> core::option::Option<&vantage_vista::Column>
 pub fn vantage_vista::Vista::columns(&self) -> &indexmap::map::IndexMap<alloc::string::String, vantage_vista::Column>
+pub fn vantage_vista::Vista::denials(&self) -> vantage_vista::Denials
+pub fn vantage_vista::Vista::deny(self, vantage_vista::Denials) -> Self
 pub fn vantage_vista::Vista::driver_name(&self) -> &'static str
 pub fn vantage_vista::Vista::id_column(&self) -> core::option::Option<&str>
 pub fn vantage_vista::Vista::id_generator(&self) -> core::option::Option<&vantage_vista::IdGenerator>
@@ -1052,6 +1055,34 @@ impl<C> core::marker::Unpin for vantage_vista::ContainedYaml<C> where indexmap::
 impl<C> core::marker::UnsafeUnpin for vantage_vista::ContainedYaml<C> where indexmap::map::IndexMap<alloc::string::String, vantage_vista::ColumnSpec<C>>: core::marker::UnsafeUnpin
 impl<C> core::panic::unwind_safe::RefUnwindSafe for vantage_vista::ContainedYaml<C> where indexmap::map::IndexMap<alloc::string::String, vantage_vista::ColumnSpec<C>>: core::panic::unwind_safe::RefUnwindSafe
 impl<C> core::panic::unwind_safe::UnwindSafe for vantage_vista::ContainedYaml<C> where indexmap::map::IndexMap<alloc::string::String, vantage_vista::ColumnSpec<C>>: core::panic::unwind_safe::UnwindSafe
+#[non_exhaustive] pub struct vantage_vista::Denials
+impl vantage_vista::Denials
+pub fn vantage_vista::Denials::capabilities(&self) -> vantage_vista::VistaCapabilities
+pub fn vantage_vista::Denials::column_rule(&self, &str) -> core::option::Option<&str>
+pub fn vantage_vista::Denials::columns(&self) -> impl core::iter::traits::iterator::Iterator<Item = (&str, &str)>
+pub fn vantage_vista::Denials::deny(&mut self, vantage_vista::Capability, impl core::convert::Into<alloc::string::String>)
+pub fn vantage_vista::Denials::deny_column(&mut self, impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>)
+pub fn vantage_vista::Denials::is_empty(&self) -> bool
+pub fn vantage_vista::Denials::merge(&mut self, &vantage_vista::Denials)
+pub fn vantage_vista::Denials::new() -> Self
+pub fn vantage_vista::Denials::rule_for(&self, vantage_vista::Capability) -> core::option::Option<&str>
+impl core::clone::Clone for vantage_vista::Denials
+pub fn vantage_vista::Denials::clone(&self) -> Self
+impl core::cmp::Eq for vantage_vista::Denials
+impl core::cmp::PartialEq for vantage_vista::Denials
+pub fn vantage_vista::Denials::eq(&self, &Self) -> bool
+impl core::default::Default for vantage_vista::Denials
+pub fn vantage_vista::Denials::default() -> Self
+impl core::fmt::Debug for vantage_vista::Denials
+pub fn vantage_vista::Denials::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vantage_vista::Denials
+impl core::marker::Freeze for vantage_vista::Denials
+impl core::marker::Send for vantage_vista::Denials
+impl core::marker::Sync for vantage_vista::Denials
+impl core::marker::Unpin for vantage_vista::Denials
+impl core::marker::UnsafeUnpin for vantage_vista::Denials
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_vista::Denials
+impl core::panic::unwind_safe::UnwindSafe for vantage_vista::Denials
 #[non_exhaustive] pub struct vantage_vista::JoinKey
 pub vantage_vista::JoinKey::from: alloc::string::String
 pub vantage_vista::JoinKey::to: core::option::Option<alloc::string::String>
@@ -1338,6 +1369,8 @@ impl vantage_vista::Vista
 pub fn vantage_vista::Vista::capabilities(&self) -> &vantage_vista::VistaCapabilities
 pub fn vantage_vista::Vista::column(&self, &str) -> core::option::Option<&vantage_vista::Column>
 pub fn vantage_vista::Vista::columns(&self) -> &indexmap::map::IndexMap<alloc::string::String, vantage_vista::Column>
+pub fn vantage_vista::Vista::denials(&self) -> vantage_vista::Denials
+pub fn vantage_vista::Vista::deny(self, vantage_vista::Denials) -> Self
 pub fn vantage_vista::Vista::driver_name(&self) -> &'static str
 pub fn vantage_vista::Vista::id_column(&self) -> core::option::Option<&str>
 pub fn vantage_vista::Vista::id_generator(&self) -> core::option::Option<&vantage_vista::IdGenerator>
@@ -1423,6 +1456,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for vantage_vista::VistaCapabilitie
 impl core::panic::unwind_safe::UnwindSafe for vantage_vista::VistaCapabilities
 #[non_exhaustive] pub struct vantage_vista::VistaMetadata
 pub vantage_vista::VistaMetadata::columns: indexmap::map::IndexMap<alloc::string::String, vantage_vista::Column>
+pub vantage_vista::VistaMetadata::denials: vantage_vista::Denials
 pub vantage_vista::VistaMetadata::id_column: core::option::Option<alloc::string::String>
 pub vantage_vista::VistaMetadata::id_generator: core::option::Option<vantage_vista::IdGenerator>
 pub vantage_vista::VistaMetadata::references: indexmap::map::IndexMap<alloc::string::String, vantage_vista::Reference>
@@ -1431,6 +1465,7 @@ pub fn vantage_vista::VistaMetadata::new() -> Self
 pub fn vantage_vista::VistaMetadata::search_columns(&self) -> alloc::vec::Vec<&str>
 pub fn vantage_vista::VistaMetadata::with_column(self, vantage_vista::Column) -> Self
 pub fn vantage_vista::VistaMetadata::with_columns_at<'a>(self, impl core::iter::traits::collect::IntoIterator<Item = (usize, &'a vantage_vista::Column)>) -> Self
+pub fn vantage_vista::VistaMetadata::with_denials(self, vantage_vista::Denials) -> Self
 pub fn vantage_vista::VistaMetadata::with_id_column(self, impl core::convert::Into<alloc::string::String>) -> Self
 pub fn vantage_vista::VistaMetadata::with_id_generator(self, vantage_vista::IdGenerator) -> Self
 pub fn vantage_vista::VistaMetadata::with_reference(self, vantage_vista::Reference) -> Self
@@ -1636,6 +1671,8 @@ pub fn vantage_vista::build_contained_vista(&vantage_vista::Reference, vantage_v
 pub fn vantage_vista::cant_take_part(&str) -> vantage_core::util::error::VantageError
 pub fn vantage_vista::condition_column_error(&vantage_vista::VistaMetadata, &str) -> vantage_core::util::error::VantageError
 pub fn vantage_vista::direct(alloc::boxed::Box<dyn vantage_vista::TableShell>) -> alloc::boxed::Box<dyn vantage_vista::TableShell>
+pub fn vantage_vista::forbidden<T>(vantage_vista::Capability, &str, &str) -> vantage_core::util::error::Result<T>
+pub fn vantage_vista::forbidden_column<T>(&str, &str, &str) -> vantage_core::util::error::Result<T>
 pub fn vantage_vista::operand_text(&ciborium::value::Value) -> alloc::string::String
 pub fn vantage_vista::resolve_base_spec<S>(core::option::Option<alloc::rcs::arc::Arc<dyn vantage_vista::SpecResolver<S>>>, &str) -> vantage_core::util::error::Result<(alloc::rcs::arc::Arc<dyn vantage_vista::SpecResolver<S>>, S)>
 pub fn vantage_vista::unknown_relation(&str) -> vantage_core::util::error::VantageError

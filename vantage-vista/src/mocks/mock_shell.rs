@@ -9,6 +9,7 @@ use vantage_types::Record;
 
 use crate::{
     capabilities::{Capability, VistaCapabilities},
+    denials::Denials,
     filter::FilterOp,
     metadata::VistaMetadata,
     query::VistaQuery,
@@ -98,6 +99,13 @@ impl MockShell {
     /// [`with_contained`](Self::with_contained).
     pub fn with_metadata(mut self, metadata: VistaMetadata) -> Self {
         self.metadata = metadata;
+        self
+    }
+
+    /// Sets the metadata's denials, as a driver's `vista_metadata` would
+    /// carry a table's: call it after [`with_metadata`](Self::with_metadata).
+    pub fn with_denials(mut self, denials: Denials) -> Self {
+        self.metadata.denials = denials;
         self
     }
 

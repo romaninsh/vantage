@@ -11,7 +11,7 @@ use std::future::Future;
 
 use vantage_core::Result;
 use vantage_types::{EmptyEntity, Entity, InvariantValue, Record};
-use vantage_vista::Transaction;
+use vantage_vista::{Capability, Transaction};
 
 use super::invariants::enforce_invariants;
 use crate::table::{
@@ -29,10 +29,11 @@ where
     T::Value: InvariantValue,
 {
     /// Everything a single insert does to `record` before the driver write:
-    /// the confined-writes check, before-insert hooks, dropping read-only
-    /// imported and expression columns, and conforming to the set's
-    /// invariants. Returns the record to store.
+    /// the denial and confined-writes checks, before-insert hooks, dropping
+    /// read-only imported and expression columns, and conforming to the
+    /// set's invariants. Returns the record to store.
     pub async fn prepare_insert(&self, record: &Record<T::Value>) -> Result<Record<T::Value>> {
+        self.require_allowed(Capability::Insert)?;
         self.require_confined_writes("insert")?;
         let mut record = record.clone();
         run_before(
