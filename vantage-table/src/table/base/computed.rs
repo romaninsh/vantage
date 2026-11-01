@@ -4,9 +4,9 @@
 
 use std::sync::Arc;
 
-use vantage_core::Result;
+use vantage_core::{Result, error};
 use vantage_expressions::Expression;
-use vantage_types::Entity;
+use vantage_types::{Entity, Record};
 
 use super::Table;
 use crate::traits::table_source::TableSource;
@@ -46,6 +46,39 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         }
     }
 
+    /// Drop expression and lazy columns from a full-record write payload, as
+    /// [`Self::strip_imported_columns`] does for imported ones: a row read
+    /// and saved back carries values the table computes, not stores.
+    pub(in crate::table) fn strip_expression_columns(&self, record: &mut Record<T::Value>) {
+        record.retain(|name, _| !self.is_expression_column(name));
+    }
+
+    /// A patch is explicit intent per key, so one that sets an expression or
+    /// lazy column is refused rather than dropped. Context values are plain
+    /// text, not `Debug`-quoted as `error!` would write them.
+    pub(in crate::table) fn refuse_expression_columns(
+        &self,
+        partial: &Record<T::Value>,
+    ) -> Result<()> {
+        let Some(column) = partial.keys().find(|k| self.is_expression_column(k)) else {
+            return Ok(());
+        };
+        let mut e = error!("column is read-only").mark_forbidden();
+        for (key, value) in [
+            ("forbidden", self.table_name()),
+            ("rule", "expression column"),
+            ("column", column.as_str()),
+        ] {
+            e.context.insert(key.to_string(), value.to_string());
+        }
+        Err(e)
+    }
+
+    /// Whether `name` is a server-side expression or lazy column.
+    pub(in crate::table) fn is_expression_column(&self, name: &str) -> bool {
+        self.expressions.contains_key(name) || self.lazy_expressions.contains_key(name)
+    }
+
     /// Whether `name` is an imported implicit-reference column
     /// (`"country.name"`) — an expression-backed traversal projection that is
     /// read-only and must never be persisted, ordered, or searched as if it
@@ -59,9 +92,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// (post-fetch) computed column. Driver factories flag such columns
     /// `calculated` in vista metadata so consumers render them read-only.
     pub fn is_calculated_column(&self, name: &str) -> bool {
-        self.imported_columns.contains(name)
-            || self.expressions.contains_key(name)
-            || self.lazy_expressions.contains_key(name)
+        self.imported_columns.contains(name) || self.is_expression_column(name)
     }
 
     /// Register a column the `Vista` computes after each read, positioned

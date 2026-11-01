@@ -30,8 +30,8 @@ where
 {
     /// Everything a single insert does to `record` before the driver write:
     /// the confined-writes check, before-insert hooks, dropping read-only
-    /// imported columns, and conforming to the set's invariants. Returns the
-    /// record to store.
+    /// imported and expression columns, and conforming to the set's
+    /// invariants. Returns the record to store.
     pub async fn prepare_insert(&self, record: &Record<T::Value>) -> Result<Record<T::Value>> {
         self.require_confined_writes("insert")?;
         let mut record = record.clone();
@@ -43,6 +43,7 @@ where
         )
         .await?;
         self.strip_imported_columns(&mut record);
+        self.strip_expression_columns(&mut record);
         enforce_invariants(&mut record, self.invariants())?;
         Ok(record)
     }

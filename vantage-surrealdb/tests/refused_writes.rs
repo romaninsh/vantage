@@ -275,3 +275,47 @@ columns:
         .expect("brand_override:o1");
     assert_eq!(after["rollout"], CborValue::Integer(0.into()));
 }
+
+/// An `expr:` column is computed on read; a patch that sets it is refused
+/// as `Forbidden` and never reaches the stored field (VAN-460).
+#[cfg(feature = "rhai")]
+#[tokio::test]
+async fn patching_an_expr_column_is_forbidden() {
+    let (db, _) = fresh_root().await;
+    db.execute(&Expression::new(
+        "CREATE note:n1 SET description = 'plain'",
+        vec![],
+    ))
+    .await
+    .unwrap();
+    let vista = db
+        .vista_factory()
+        .from_yaml(
+            r#"
+name: note
+columns:
+  id: { type: thing, flags: [id] }
+  description: { type: string, expr: 'surreal::expr("description")' }
+"#,
+        )
+        .unwrap();
+
+    let err = vista
+        .patch_value(
+            "note:n1",
+            &cbor_record(&[("description", CborValue::Text("hacked".into()))]),
+        )
+        .await
+        .unwrap_err();
+    assert!(err.is_forbidden(), "{err:?}");
+
+    let stored = Table::<SurrealDB, EmptyEntity>::new("note", db)
+        .with_id_column("id")
+        .with_column_of::<String>("description");
+    let row = stored
+        .get_value(Thing::new("note", "n1"))
+        .await
+        .unwrap()
+        .expect("note:n1");
+    assert_eq!(row["description"], text("plain"));
+}
