@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.4.0 — 2026-11-01
+
+- Requires vantage-vista 2.8.0.
+- `delete_all` checks a `DeleteAll` denial as well as `Delete`, so a rule can refuse bulk delete
+  while single deletes go through.
+
 ## 3.3.0 — 2026-11-01
 
 - Requires vantage-vista 2.7.0.

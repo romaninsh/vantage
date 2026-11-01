@@ -126,6 +126,7 @@ pub use vantage_vista::prelude::WritableValueSet
 pub vantage_vista::prelude::Capability::ConfineWrites
 pub vantage_vista::prelude::Capability::Cursor
 pub vantage_vista::prelude::Capability::Delete
+pub vantage_vista::prelude::Capability::DeleteAll
 pub vantage_vista::prelude::Capability::FilterOps
 pub vantage_vista::prelude::Capability::Import
 pub vantage_vista::prelude::Capability::Insert
@@ -659,6 +660,7 @@ pub macro vantage_vista::forward_table_shell!
 pub vantage_vista::Capability::ConfineWrites
 pub vantage_vista::Capability::Cursor
 pub vantage_vista::Capability::Delete
+pub vantage_vista::Capability::DeleteAll
 pub vantage_vista::Capability::FilterOps
 pub vantage_vista::Capability::Import
 pub vantage_vista::Capability::Insert

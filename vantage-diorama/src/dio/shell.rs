@@ -78,6 +78,7 @@ impl DioShell {
             (write_caps.can_insert, Capability::Insert),
             (write_caps.can_update, Capability::Update),
             (write_caps.can_delete, Capability::Delete),
+            (write_caps.can_delete_all, Capability::DeleteAll),
             (true, Capability::Subscribe),
             (true, Capability::Search),
             (true, Capability::FilterOps),

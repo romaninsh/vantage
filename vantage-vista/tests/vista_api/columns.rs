@@ -92,7 +92,7 @@ fn a_hand_built_other_with_a_known_name_is_that_flag() {
 #[test]
 fn the_capability_vocabulary_is_listed_once_and_round_trips_by_name() {
     let all: Vec<Capability> = Capability::iter().collect();
-    assert_eq!(all.len(), 14);
+    assert_eq!(all.len(), 15);
     let mut names: Vec<&str> = all.iter().map(|c| c.as_str()).collect();
     names.sort_unstable();
     names.dedup();
@@ -132,7 +132,7 @@ fn capability_sets_add_remove_and_serialize_every_name() {
 
     let json = serde_json::to_value(set).unwrap();
     let map = json.as_object().unwrap();
-    assert_eq!(map.len(), 14);
+    assert_eq!(map.len(), 15);
     assert_eq!(map["writes_reach_hooks"], false);
     assert_eq!(map["insert"], true);
     assert_eq!(map["delete"], false);

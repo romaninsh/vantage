@@ -180,10 +180,13 @@ impl DioInner {
         let caps = self.master.capabilities();
         let denied = self.master.denials().capabilities();
         let grants = |capability| !denied.has(capability) && (caps.has(capability) || routed);
+        let can_delete = grants(Capability::Delete);
         WriteCapabilities {
             can_insert: grants(Capability::Insert),
             can_update: grants(Capability::Update),
-            can_delete: grants(Capability::Delete),
+            can_delete,
+            // Implied by `Delete`, so a denial of either takes it.
+            can_delete_all: can_delete && grants(Capability::DeleteAll),
         }
     }
 

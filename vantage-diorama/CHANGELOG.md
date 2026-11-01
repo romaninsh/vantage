@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.5.0 — 2026-11-01
+
+- Requires vantage-vista 2.8.0.
+- `WriteCapabilities.can_delete_all`: `can_delete` unless a rule denies `DeleteAll`. A `Clear`,
+  narrowed or not, and the facade's `delete_all` need it; with it denied they are refused
+  `Forbidden` before anything is staged, while single deletes still land.
+- The Dio facade advertises `DeleteAll` when `can_delete_all`.
+
 ## 1.4.0 — 2026-11-01
 
 - Requires vantage-core 1.2.0 and vantage-vista 2.7.0.

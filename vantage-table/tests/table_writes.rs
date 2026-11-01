@@ -306,15 +306,15 @@ async fn a_denied_table_write_is_forbidden() {
         json!({"id": "2", "name": "b"}),
     ])
     .await;
-    table.deny(Capability::Delete, "policy/crm.yaml#no-delete");
+    table.deny(Capability::DeleteAll, "policy/crm.yaml#no-bulk-delete");
     let err = table.delete_all().await.unwrap_err();
     assert!(err.is_forbidden(), "{err}");
     assert_eq!(
         err.context.get("rule").map(String::as_str),
-        Some("policy/crm.yaml#no-delete")
+        Some("policy/crm.yaml#no-bulk-delete")
     );
-    assert!(table.delete("1").await.unwrap_err().is_forbidden());
-    assert_eq!(table.list_values().await.unwrap().len(), 2);
+    table.delete("1").await.unwrap();
+    assert_eq!(table.list_values().await.unwrap().len(), 1);
 
     // A replace of a missing row would create it.
     table.deny(Capability::Insert, "policy/crm.yaml#no-new");
@@ -326,6 +326,9 @@ async fn a_denied_table_write_is_forbidden() {
         .replace_value("2", &rec(json!({"id": "2", "name": "B"})))
         .await
         .unwrap();
+
+    table.deny(Capability::Delete, "policy/crm.yaml#no-delete");
+    assert!(table.delete("2").await.unwrap_err().is_forbidden());
 }
 
 #[test]

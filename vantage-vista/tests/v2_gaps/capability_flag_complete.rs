@@ -52,7 +52,13 @@ fn rhai_map_lists_every_capability(caps: VistaCapabilities) {
         .iter()
         .map(|(k, v)| (k.to_string(), v.as_bool().expect("each value is a bool")))
         .collect();
-    let mut want = expected(&caps);
+    // The map reads the Vista's capabilities, where `Delete` implies `DeleteAll`.
+    let effective = if caps.has(Capability::Delete) {
+        caps.with(Capability::DeleteAll)
+    } else {
+        caps
+    };
+    let mut want = expected(&effective);
     listed.sort();
     want.sort();
     assert_eq!(listed, want, "the rhai map must list every capability");

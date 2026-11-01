@@ -16,9 +16,10 @@ const PROBE_ID: &str = "vista-contract-probe";
 ///
 /// - `Insert`: `insert_value`;
 /// - `Update`: `patch_value`, `replace_value`, `upsert_value`;
-/// - `Delete`: `delete`, and `delete_all`;
+/// - `Delete`: `delete`;
+/// - `DeleteAll` (implied by `Delete` unless denied): `delete_all`;
 /// - `Import`: `import_values` of no rows;
-/// - `ConfineWrites`: `insert_value` and (with `Delete`) `delete_all` through
+/// - `ConfineWrites`: `insert_value` and (with `DeleteAll`) `delete_all` through
 ///   a clone narrowed to the probe id. The un-narrowed `count()` must be the
 ///   same before the insert and after the `delete_all`: only the probe row
 ///   may go. The fixture must hold rows besides the probe row, or a
@@ -64,8 +65,12 @@ pub async fn check_advertised_writes(vista: &Vista) {
     }
     if caps.has(Capability::ConfineWrites) {
         probe_confined(vista, &mut probe).await;
-    } else if caps.has(Capability::Delete) {
-        probe.check(Capability::Delete, "delete_all", &vista.delete_all().await);
+    } else if caps.has(Capability::DeleteAll) {
+        probe.check(
+            Capability::DeleteAll,
+            "delete_all",
+            &vista.delete_all().await,
+        );
     }
     probe.finish();
 }
@@ -98,9 +103,9 @@ async fn probe_confined(vista: &Vista, probe: &mut Probe) {
             &inserted,
         );
     }
-    if caps.has(Capability::Delete) {
+    if caps.has(Capability::DeleteAll) {
         let deleted = confined.delete_all().await;
-        probe.check(Capability::Delete, "narrowed delete_all", &deleted);
+        probe.check(Capability::DeleteAll, "narrowed delete_all", &deleted);
         match (before, vista.count().await) {
             (Ok(before), Ok(after)) if before != after => probe.fail(format!(
                 "`confine_writes`: a delete_all narrowed to the probe row changed the \
