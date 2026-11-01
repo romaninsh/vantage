@@ -10,8 +10,8 @@ use vantage_types::{EmptyEntity, Entity};
 use vantage_vista::{ColumnSpec, NoExtras, SpecResolver, Vista, VistaFactory, VistaMetadata};
 
 use crate::sql_vista::{
-    SourceBlock, SqlSpecDialect, build_spec_table, column_for_type, lower_spec, metadata_options,
-    source_block, sql_capabilities,
+    SourceBlock, SqlSpecDialect, build_spec_table, column_for_type, is_query_sourced, lower_spec,
+    metadata_options, source_block, sql_capabilities,
 };
 use crate::sqlite::SqliteDB;
 use crate::sqlite::statements::SqliteSelect;
@@ -65,7 +65,8 @@ impl SqliteVistaFactory {
     {
         let name = table.table_name().to_string();
         let metadata = table.vista_metadata(metadata_options());
-        Ok(self.wrap(table, name, metadata, false))
+        let read_only = is_query_sourced(table.source());
+        Ok(self.wrap(table, name, metadata, read_only))
     }
 
     /// Single source-construction site shared by `from_table` and

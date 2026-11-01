@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.1 — 2026-11-01
+
+- A reference or contained target over a query (`rhai:` or `base:`) is read-only. `from_table`
+  built it with write capabilities, so a patch through the reference reached the underlying table
+  (VAN-461).
+
 ## 2.2.0 — 2026-10-31
 
 Requires vantage-vista 2.6.0, vantage-table 3.2.0 and surreal-client 1.1.0.
