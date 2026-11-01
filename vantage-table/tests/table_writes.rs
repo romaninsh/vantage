@@ -319,6 +319,21 @@ async fn replace_round_trip_drops_expression_column() {
     assert!(err.is_forbidden(), "{err}");
 }
 
+#[tokio::test]
+async fn an_expression_column_a_hook_sets_never_reaches_the_patch() {
+    let table = with_rows(vec![json!({"id": "1", "name": "a"})])
+        .await
+        .with_expression("label", |_| vantage_expressions::expr_any!("upper(name)"))
+        .with_hook(Hook::BeforeUpdate(Phase::Populate, setting("label", "x")));
+    table
+        .patch_value("1", &rec(json!({"name": "b"})))
+        .await
+        .unwrap();
+    let stored = table.get_value("1").await.unwrap().unwrap();
+    assert_eq!(stored["name"], json!("b"));
+    assert!(stored.get("label").is_none());
+}
+
 // --- invariants ---------------------------------------------------------------
 
 async fn scoped() -> MockTable {

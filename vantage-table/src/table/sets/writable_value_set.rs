@@ -112,6 +112,8 @@ where
         )
         .await?;
         self.strip_imported_columns(&mut partial);
+        // A before-update hook may have set one; it isn't stored either way.
+        self.strip_expression_columns(&mut partial);
         validate_invariants(&partial, self.invariants())?;
         let result = self
             .data_source()
