@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.2.2 — 2026-11-01
+
+- Tests only: a patch that sets an `expr:` column is refused and leaves the stored field alone
+  (VAN-460, fixed in vantage-table 3.2.1).
+
 ## 2.2.1 — 2026-11-01
 
 - A reference or contained target over a query (`rhai:` or `base:`) is read-only. `from_table`
