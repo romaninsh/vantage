@@ -4,6 +4,8 @@
 
 Requires vantage-core 2.0.0.
 
+- `forbidden` / `forbidden_column` refusals carry `forbidden: <table>` and `rule: <rule>` first in
+  their context, plain text, the form hosts already read back from an access refusal.
 - **Breaking:** `Capability::DeleteAll`. `delete_all` needs it, and `Delete` no longer covers it; a
   shell that supports `delete_all` has to advertise `DeleteAll`.
 - Write denials: `Denials` on `VistaMetadata.denials`, set with `Vista::deny()` and read with

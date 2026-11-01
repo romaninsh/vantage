@@ -156,8 +156,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// vista-computed, so it is neither selected nor shown. Invariants and
     /// conditions naming it stay, so inserts are still stamped with its
     /// value and rows are still narrowed by it; references hold their
-    /// foreign key by name and keep traversing. A write that sets it is
-    /// refused `Forbidden`, unless the value is the column's invariant.
+    /// foreign key by name and keep traversing.
     pub fn remove_column(&mut self, name: &str) -> vantage_core::Result<()> {
         if name == self.id_field_name() {
             return Err(vantage_core::error!(format!(
@@ -192,7 +191,6 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             )));
         }
         self.imported_columns.shift_remove(name);
-        self.removed_columns.insert(name.to_string());
         if let Some(active) = &mut self.active_columns {
             active.shift_remove(name);
         }

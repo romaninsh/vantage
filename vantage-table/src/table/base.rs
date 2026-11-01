@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use indexmap::{IndexMap, IndexSet};
+use indexmap::IndexMap;
 use vantage_expressions::Expression;
 use vantage_types::{EmptyEntity, Entity};
 use vantage_vista::Denials;
@@ -78,9 +78,6 @@ where
     pub(super) lock: bool,
     /// See [`Self::deny`].
     pub(super) denials: Denials,
-    /// Names taken out by [`Self::remove_column`]: writes that set them are
-    /// refused, unless the value is the set's own invariant.
-    pub(super) removed_columns: IndexSet<String>,
 }
 
 impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
@@ -112,7 +109,6 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             hooks: Hooks::default(),
             lock: false,
             denials: Denials::default(),
-            removed_columns: IndexSet::new(),
         }
     }
 
@@ -148,7 +144,6 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             hooks: self.hooks,
             lock: self.lock,
             denials: self.denials,
-            removed_columns: self.removed_columns,
         }
     }
 

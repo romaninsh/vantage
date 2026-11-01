@@ -4,10 +4,9 @@
 
 - Requires vantage-core 2.0.0 and vantage-vista 3.0.0.
 - `Table::deny`, `Table::deny_column` and `Table::denials`: write denials the table hands to its
-  vista. `vista_metadata()` carries them, and lists expression and removed columns as read-only
-  columns. A replace keeps a denied column's stored value; with `Insert` denied, a replace of a
-  missing row is refused.
-- **Breaking:** a removed column refuses writes, except a write of the value its invariant pins.
+  vista. `vista_metadata()` carries them, and lists expression columns as read-only columns. A
+  replace keeps a denied column's stored value; with `Insert` denied, a replace of a missing row is
+  refused.
 - **Breaking:** expression and lazy columns are dropped from insert and replace, and a patch that
   sets one is refused.
 

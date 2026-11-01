@@ -78,9 +78,9 @@ pub fn forbidden<T>(capability: Capability, rule: &str, table: &str) -> Result<T
     Err(refusal(
         "write forbidden",
         [
-            ("table", table),
-            ("capability", capability.as_str()),
+            ("forbidden", table),
             ("rule", rule),
+            ("capability", capability.as_str()),
         ],
     ))
 }
@@ -90,12 +90,13 @@ pub fn forbidden<T>(capability: Capability, rule: &str, table: &str) -> Result<T
 pub fn forbidden_column<T>(column: &str, rule: &str, table: &str) -> Result<T> {
     Err(refusal(
         "column is read-only",
-        [("table", table), ("column", column), ("rule", rule)],
+        [("forbidden", table), ("rule", rule), ("column", column)],
     ))
 }
 
 /// Context values go in as plain text, not `Debug`-quoted as `error!` would
-/// write them: hosts read `rule` back to name the refusing rule.
+/// write them. `forbidden: <table>` then `rule: <rule>` lead, the form hosts
+/// already read back from an access refusal.
 fn refusal(message: &str, context: [(&str, &str); 3]) -> VantageError {
     let mut e = error!(message).mark_forbidden();
     for (key, value) in context {

@@ -355,19 +355,13 @@ async fn replace_round_trip_drops_expression_column() {
 #[test]
 fn denials_reach_vista_metadata() {
     let mut table = MockTable::new("t", MockTableSource::new())
-        .with_expression("label", |_| vantage_expressions::expr_any!("upper(name)"))
-        .with_column_of::<String>("legacy");
+        .with_expression("label", |_| vantage_expressions::expr_any!("upper(name)"));
     table.deny_column("ssn", "r");
-    table.remove_column("legacy").unwrap();
     let metadata = table.vista_metadata(Default::default());
     assert_eq!(metadata.denials.column_rule("ssn"), Some("r"));
     assert_eq!(
         metadata.denials.column_rule("label"),
         Some("expression column")
-    );
-    assert_eq!(
-        metadata.denials.column_rule("legacy"),
-        Some("removed column")
     );
 }
 

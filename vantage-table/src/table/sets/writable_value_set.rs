@@ -46,7 +46,6 @@ where
     ) -> Result<Record<Self::Value>> {
         self.require_allowed(Capability::Update)?;
         self.require_confined_writes("replace")?;
-        self.refuse_removed_columns(record)?;
         let id = id.into();
         let erased = self.as_entity_erased();
         let mut record = record.clone();
@@ -205,8 +204,8 @@ where
     }
 
     /// A patch is explicit intent per key, so a column it can't write is
-    /// refused rather than dropped: one a rule made read-only, an expression
-    /// or lazy column, or a removed one.
+    /// refused rather than dropped: one a rule made read-only, or an
+    /// expression or lazy column.
     fn refuse_read_only_columns(&self, partial: &Record<T::Value>) -> Result<()> {
         for name in partial.keys() {
             if let Some(rule) = self.denials().column_rule(name) {
@@ -214,24 +213,6 @@ where
             }
             if self.is_expression_column(name) {
                 return forbidden_column(name, "expression column", self.table_name());
-            }
-        }
-        self.refuse_removed_columns(partial)
-    }
-
-    /// Refuse a write that sets a removed column, unless the value is the
-    /// column's invariant (or a null that a full-record write fills from it).
-    pub(super) fn refuse_removed_columns(&self, record: &Record<T::Value>) -> Result<()> {
-        for name in &self.removed_columns {
-            let Some(value) = record.get(name) else {
-                continue;
-            };
-            let invariant = self
-                .invariants()
-                .get(name)
-                .is_some_and(|expected| value.is_null() || value.value_eq(expected));
-            if !invariant {
-                return forbidden_column(name, "removed column", self.table_name());
             }
         }
         Ok(())

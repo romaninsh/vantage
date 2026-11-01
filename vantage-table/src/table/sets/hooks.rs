@@ -29,14 +29,12 @@ where
     T::Value: InvariantValue,
 {
     /// Everything a single insert does to `record` before the driver write:
-    /// the denial and confined-writes checks, refusing removed columns,
-    /// before-insert hooks, dropping read-only imported and expression
-    /// columns, and conforming to the set's invariants. Returns the record
-    /// to store.
+    /// the denial and confined-writes checks, before-insert hooks, dropping
+    /// read-only imported and expression columns, and conforming to the
+    /// set's invariants. Returns the record to store.
     pub async fn prepare_insert(&self, record: &Record<T::Value>) -> Result<Record<T::Value>> {
         self.require_allowed(Capability::Insert)?;
         self.require_confined_writes("insert")?;
-        self.refuse_removed_columns(record)?;
         let mut record = record.clone();
         run_before(
             self.before_insert_hooks(),
