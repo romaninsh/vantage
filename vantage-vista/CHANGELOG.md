@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.6.1 — 2026-11-01
+
+Requires vantage-core 1.2.0: a transaction keeps a `Forbidden` refusal's kind when it reissues it.
+
 ## 2.6.0 — 2026-10-31
 
 Requires vantage-rhai 1.4.0.

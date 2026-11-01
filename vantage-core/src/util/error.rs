@@ -13,6 +13,7 @@ use std::fmt;
 /// observability sinks (Sentry, OTEL collectors) capture classified
 /// errors without callers needing to log explicitly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum ErrorKind {
     /// Default — error not yet classified by the producer.
     #[default]
@@ -38,6 +39,10 @@ pub enum ErrorKind {
     /// row outside the set, or the written row would not belong to the set.
     /// The request was well formed. Transports map this to 409.
     Conflict,
+    /// A rule denies the write: the capability or column exists, but a
+    /// policy forbids it here. Context names the `rule`. Distinct from
+    /// `Unsupported` (the backend can't do it). Transports map this to 403.
+    Forbidden,
 }
 
 /// VantageError with location tracking and context information
@@ -278,6 +283,12 @@ impl VantageError {
         self
     }
 
+    /// Classify this error as [`ErrorKind::Forbidden`] (builder).
+    pub fn mark_forbidden(mut self) -> Self {
+        self.kind = ErrorKind::Forbidden;
+        self
+    }
+
     /// Emit a `tracing::error!` event with this error's kind, location,
     /// message and context, then return `self` so it can be chained:
     /// `error!(...).mark_unsupported().traced()`. Classification and logging
@@ -325,6 +336,11 @@ impl VantageError {
     /// `true` if this error is classified as [`ErrorKind::Conflict`].
     pub fn is_conflict(&self) -> bool {
         self.kind == ErrorKind::Conflict
+    }
+
+    /// `true` if this error is classified as [`ErrorKind::Forbidden`].
+    pub fn is_forbidden(&self) -> bool {
+        self.kind == ErrorKind::Forbidden
     }
 
     fn emit_trace(&self) {

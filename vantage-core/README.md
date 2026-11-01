@@ -8,7 +8,7 @@ Vantage dependencies of its own.
 - `VantageError`: an error with a message, the call-site location, key=value context and an
   optional source error. Errors chain, so each layer can add its own context.
 - `ErrorKind`: `Generic` (default), `Unsupported`, `Unimplemented`, `IncorrectUsage`, `NotFound`,
-  `Conflict`. Set it with `mark_unsupported()`, `mark_not_found()` and so on, read it with
+  `Conflict`, `Forbidden`. Set it with `mark_unsupported()`, `mark_not_found()` and so on, read it with
   `kind()` or `is_not_found()` and friends. Transports use it to pick a status code instead of
   parsing the message.
 - `Result<T>`: shorthand for `std::result::Result<T, VantageError>`.

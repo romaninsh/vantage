@@ -104,6 +104,7 @@ fn kind_defaults_to_generic() {
     assert!(!err.is_incorrect_usage());
     assert!(!err.is_not_found());
     assert!(!err.is_conflict());
+    assert!(!err.is_forbidden());
 }
 
 #[test]
@@ -133,6 +134,11 @@ fn each_mark_sets_exactly_its_kind() {
     assert_eq!(e.kind(), ErrorKind::Conflict);
     assert!(e.is_conflict());
     assert!(!e.is_not_found());
+
+    let e = error!("write forbidden", rule = "policy/pii.yaml#pii-read-only").mark_forbidden();
+    assert_eq!(e.kind(), ErrorKind::Forbidden);
+    assert!(e.is_forbidden());
+    assert!(!e.is_unsupported());
 }
 
 #[test]

@@ -5966,7 +5966,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-core"
-version = "1.1.1"
+version = "1.2.0"
 dependencies = [
  "anyhow",
  "atty",
@@ -6342,7 +6342,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "2.6.0"
+version = "2.6.1"
 dependencies = [
  "async-stream",
  "async-trait",
