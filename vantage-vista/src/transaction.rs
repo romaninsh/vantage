@@ -7,7 +7,7 @@ mod wrap;
 
 use std::any::Any;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, Weak};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 
 use futures_core::future::BoxFuture;
 use indexmap::{IndexMap, IndexSet};
@@ -94,7 +94,7 @@ impl Transaction {
     }
 
     fn state(&self) -> MutexGuard<'_, State> {
-        self.0.state.lock().unwrap_or_else(|e| e.into_inner())
+        self.0.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// The participant for `key`, made by `make` on first use; later calls return the same Arc.

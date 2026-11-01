@@ -23,7 +23,7 @@ pub enum UpsertOutcome {
 }
 
 /// One row-level write, as a transaction's copy of a table records it for
-/// [`MemoryTable::apply`].
+/// [`MemoryTable::apply_all`].
 pub(crate) enum Change {
     Insert(String, Row),
     Replace(String, Row),

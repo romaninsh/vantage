@@ -154,13 +154,12 @@ impl TxFixture for Api {
     }
 }
 
+/// Without transactions both contracts run the same direct writes, so one
+/// test checks both.
 #[tokio::test]
-async fn graphql_transactions_hold_the_contract() {
-    contract::check_transactions(&Api(serve().await)).await
-}
-
-#[cfg(feature = "rhai")]
-#[tokio::test]
-async fn graphql_atomic_holds_the_contract() {
-    contract::check_atomic_rhai(&Api(serve().await)).await
+async fn graphql_transactions_and_atomic_hold_the_contract() {
+    let api = Api(serve().await);
+    contract::check_transactions(&api).await;
+    #[cfg(feature = "rhai")]
+    contract::check_atomic_rhai(&api).await;
 }
