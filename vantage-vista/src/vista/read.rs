@@ -107,7 +107,12 @@ impl Vista {
             (None, None) => format!("parent {} takes no updates", self.name()),
         };
         let mut denials = Denials::new();
-        for write in [Capability::Insert, Capability::Update, Capability::Delete] {
+        for write in [
+            Capability::Insert,
+            Capability::Update,
+            Capability::Delete,
+            Capability::DeleteAll,
+        ] {
             denials.deny(write, rule.as_str());
         }
         Ok(target.deny(denials))

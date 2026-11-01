@@ -21,6 +21,7 @@ pub use set::VistaCapabilities;
 /// | `Insert` | `insert` |
 /// | `Update` | `replace`, `upsert`, `patch` |
 /// | `Delete` | `delete`, `delete_all` |
+/// | `DeleteAll` | `delete_all`; implied by `Delete`, so a shell doesn't advertise it. It exists so a rule can deny bulk delete alone |
 /// | `Import` | `import`: one atomic batch that counts only new rows |
 /// | `Subscribe` | `watch` |
 /// | `Order` | `set_order` |
@@ -42,6 +43,7 @@ pub enum Capability {
     Insert,
     Update,
     Delete,
+    DeleteAll,
     Import,
     Subscribe,
     Order,
@@ -57,10 +59,11 @@ pub enum Capability {
 
 /// Every variant, in declaration order. The set is a `u16` bitset, so this
 /// holds at most 16.
-const ALL: [Capability; 14] = [
+const ALL: [Capability; 15] = [
     Capability::Insert,
     Capability::Update,
     Capability::Delete,
+    Capability::DeleteAll,
     Capability::Import,
     Capability::Subscribe,
     Capability::Order,
@@ -87,6 +90,7 @@ impl Capability {
             Capability::Insert => "insert",
             Capability::Update => "update",
             Capability::Delete => "delete",
+            Capability::DeleteAll => "delete_all",
             Capability::Import => "import",
             Capability::Subscribe => "subscribe",
             Capability::Order => "order",

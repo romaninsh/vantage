@@ -101,3 +101,22 @@ async fn deny_survives_clone_and_cannot_be_undone() {
     let err = clone.delete("1".to_string()).await.unwrap_err();
     assert!(err.is_forbidden(), "{err:?}");
 }
+
+#[tokio::test]
+async fn delete_all_can_be_denied_alone() {
+    let open = account(Denials::new());
+    assert!(open.capabilities().has(Capability::DeleteAll));
+    open.delete_all().await.unwrap();
+    assert!(open.get_value("1").await.unwrap().is_none());
+
+    let mut bulk = Denials::new();
+    bulk.deny(Capability::DeleteAll, "policy/crm.yaml#no-bulk-delete");
+    let vista = account(bulk);
+    assert!(vista.capabilities().has(Capability::Delete));
+    assert!(!vista.capabilities().has(Capability::DeleteAll));
+    let err = vista.delete_all().await.unwrap_err();
+    assert!(err.is_forbidden(), "{err:?}");
+    assert_eq!(rule(&err), Some("policy/crm.yaml#no-bulk-delete"));
+    vista.delete("1".to_string()).await.unwrap();
+    assert!(vista.get_value("1").await.unwrap().is_none());
+}

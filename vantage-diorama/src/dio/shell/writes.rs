@@ -113,8 +113,8 @@ impl DioShell {
     /// the rows the cache holds; on a paged Dio that may be fewer than the
     /// master's.
     ///
-    /// Either way it needs `Delete`: a subset deleted row by row is refused
-    /// as a `Clear` would be.
+    /// Either way it needs `DeleteAll`: a subset deleted row by row is
+    /// refused as a `Clear` would be.
     pub(super) async fn delete_rows(&self) -> Result<()> {
         self.dio.refuse(&ChangeFlash::clear())?;
         if self.reads_whole_cache() {

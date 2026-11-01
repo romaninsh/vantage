@@ -40,7 +40,8 @@ impl Dio {
     ///    one the [`write_capabilities`](Self::write_capabilities) don't
     ///    grant is unsupported, before anything is staged and with no event
     ///    published. A Lens writer doesn't lift a denial. A `Clear` needs
-    ///    `Delete`, an `Upsert` needs `Insert` too, and so does a `Replace`
+    ///    `DeleteAll` too, even when it runs as one delete per row; an
+    ///    `Upsert` needs `Insert` too, and so does a `Replace`
     ///    of a row neither the cache nor the master holds. A patch of a denied
     ///    column is `Forbidden`; a `Replace` or `Upsert` keeps a denied
     ///    column's stored value and drops a denied calculated one, so neither
@@ -260,15 +261,16 @@ impl DioInner {
     /// denying rule, even under a Lens writer. One the Dio's
     /// [`write_capabilities`](Self::write_capabilities) don't grant is
     /// unsupported. A patch naming a column denied by a rule is `Forbidden`.
-    /// A `Clear` needs `Delete`, and an `Upsert` needs `Insert` as well as
-    /// `Update`.
+    /// A `Clear` needs `DeleteAll` as well as `Delete`, even when it runs as
+    /// one delete per row, and an `Upsert` needs `Insert` as well as `Update`.
     pub(crate) fn refuse(&self, flash: &ChangeFlash) -> Result<()> {
         let kind = *flash.kind();
         let capabilities: &[Capability] = match kind {
             FlashKind::Insert => &[Capability::Insert],
             FlashKind::Replace | FlashKind::Patch => &[Capability::Update],
             FlashKind::Upsert => &[Capability::Update, Capability::Insert],
-            FlashKind::Delete | FlashKind::Clear => &[Capability::Delete],
+            FlashKind::Delete => &[Capability::Delete],
+            FlashKind::Clear => &[Capability::Delete, Capability::DeleteAll],
         };
         self.refuse_capabilities(capabilities)?;
         if kind == FlashKind::Patch {

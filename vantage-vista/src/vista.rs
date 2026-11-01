@@ -85,12 +85,20 @@ impl Vista {
         out
     }
 
+    /// `Delete` implies `DeleteAll`, so a shell never advertises it; it is
+    /// there for a rule to deny. Denying `Delete` takes `DeleteAll` too.
     fn refresh_capabilities(&mut self) {
         let mut capabilities = *self.shell.capabilities();
+        if capabilities.has(Capability::Delete) {
+            capabilities = capabilities.with(Capability::DeleteAll);
+        }
         for denials in [&self.shell.metadata().denials, &self.denials] {
             for denied in denials.capabilities().iter() {
                 capabilities = capabilities.without(denied);
             }
+        }
+        if !capabilities.has(Capability::Delete) {
+            capabilities = capabilities.without(Capability::DeleteAll);
         }
         self.capabilities = capabilities;
     }

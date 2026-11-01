@@ -201,7 +201,12 @@ async fn contained_target_inherits_parent_update_denial() {
         let vista = order_vista().deny(denials);
         let order = vista.get_value("order1").await.unwrap().unwrap();
         let lines = vista.get_ref("lines", Some(&order)).unwrap();
-        for write in [Capability::Insert, Capability::Update, Capability::Delete] {
+        for write in [
+            Capability::Insert,
+            Capability::Update,
+            Capability::Delete,
+            Capability::DeleteAll,
+        ] {
             assert!(!lines.capabilities().has(write), "{rule}: {write}");
         }
         let line = rec(&[

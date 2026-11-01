@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.8.0 — 2026-11-01
+
+- `Capability::DeleteAll`, so a rule can deny bulk delete alone. `Delete` implies it: shells
+  don't advertise it, and `Vista::capabilities()` lists it wherever `Delete` is and no rule denies
+  it. `delete_all` needs `Delete` and an undenied `DeleteAll`; denying `Delete` takes both.
+- The contract probes `delete_all` under `DeleteAll`. Capability sets serialize a `delete_all`
+  entry.
+- A contained target under a parent's update denial is denied `DeleteAll` too.
+
 ## 2.7.0 — 2026-11-01
 
 - Write denials: `Denials` on `VistaMetadata.denials`, added with `Vista::deny()` and read with

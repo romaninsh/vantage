@@ -71,8 +71,11 @@ impl WritableValueSet for Vista {
         self.shell().delete(&id.into()).await
     }
 
+    /// Needs `Delete`, and `DeleteAll` not denied: a rule may refuse bulk
+    /// delete alone.
     async fn delete_all(&self) -> Result<()> {
         self.require_write(Capability::Delete, "delete_all")?;
+        self.require(Capability::DeleteAll)?;
         self.shell().delete_all().await
     }
 }

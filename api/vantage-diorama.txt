@@ -1685,6 +1685,7 @@ impl !core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::WeakDio
 impl !core::panic::unwind_safe::UnwindSafe for vantage_diorama::WeakDio
 #[non_exhaustive] pub struct vantage_diorama::WriteCapabilities
 pub vantage_diorama::WriteCapabilities::can_delete: bool
+pub vantage_diorama::WriteCapabilities::can_delete_all: bool
 pub vantage_diorama::WriteCapabilities::can_insert: bool
 pub vantage_diorama::WriteCapabilities::can_update: bool
 impl core::clone::Clone for vantage_diorama::WriteCapabilities

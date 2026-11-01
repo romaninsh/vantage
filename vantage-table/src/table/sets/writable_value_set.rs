@@ -183,6 +183,7 @@ where
 
     async fn delete_all(&self) -> Result<()> {
         self.require_allowed(Capability::Delete)?;
+        self.require_allowed(Capability::DeleteAll)?;
         let erased = self.as_entity_erased();
         run_delete_all(self.before_delete_all_hooks(), erased).await?;
         self.data_source().delete_table_all_values(self).await?;

@@ -113,7 +113,7 @@ impl WeakDio {
 /// asks before offering add/edit/delete.
 ///
 /// Defaults to the master Vista's own capabilities; a Lens
-/// [`writer`](crate::LensBuilder::writer) lifts all three, because the
+/// [`writer`](crate::LensBuilder::writer) lifts them all, because the
 /// writer — not the master — then takes the writes (a read-only CSV becomes editable, with
 /// changes landing wherever the route sends them). A capability the master's
 /// [`denials`](Vista::denials) name stays off: no writer lifts a denial.
@@ -123,6 +123,9 @@ pub struct WriteCapabilities {
     pub can_insert: bool,
     pub can_update: bool,
     pub can_delete: bool,
+    /// A `Clear`, or a facade `delete_all`: `can_delete` unless a rule
+    /// denies bulk delete alone.
+    pub can_delete_all: bool,
 }
 
 impl WriteCapabilities {
@@ -133,6 +136,7 @@ impl WriteCapabilities {
             Capability::Insert => self.can_insert,
             Capability::Update => self.can_update,
             Capability::Delete => self.can_delete,
+            Capability::DeleteAll => self.can_delete_all,
             _ => false,
         }
     }
