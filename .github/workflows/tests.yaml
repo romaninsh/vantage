@@ -223,6 +223,10 @@ jobs:
             || { mkdir -p .config && cp .ci/.config/nextest.toml.example .config/nextest.toml; }
           # A fresh runner has no target dir to extract into.
           mkdir -p target/llvm-cov-target
+          # A self-hosted runner keeps target/ between runs: profiles a killed
+          # or failed run left behind would be merged into this run's report,
+          # and one truncated profile fails every report after it.
+          cargo llvm-cov clean --profraw-only
           filter=()
           [ -n "$EXCLUDE" ] && filter=(-E "not ($EXCLUDE)")
           if [ "$BUILD_IN_SUITE" = true ]; then
