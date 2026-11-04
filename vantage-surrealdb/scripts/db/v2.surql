@@ -25,7 +25,7 @@ DEFINE FIELD contact_details ON client TYPE string;
 DEFINE FIELD is_paying_client ON client TYPE bool DEFAULT false;
 DEFINE FIELD balance ON client TYPE decimal DEFAULT 0;
 DEFINE FIELD bakery ON client TYPE record<bakery>; -- Direct link to bakery
-DEFINE FIELD metadata ON client TYPE option<object> FLEXIBLE; -- For future extensibility
+DEFINE FIELD metadata ON client TYPE option<object>; -- For future extensibility (client is SCHEMALESS: no FLEXIBLE, which SurrealDB 4 refuses there)
 DEFINE INDEX unique_email ON client FIELDS email UNIQUE;
 
 -- Product table (schema-full with embedded inventory)
