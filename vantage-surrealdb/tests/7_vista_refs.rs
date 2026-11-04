@@ -18,7 +18,7 @@ use vantage_expressions::ExprDataSource;
 use vantage_surrealdb::surreal_expr;
 use vantage_surrealdb::surrealdb::SurrealDB;
 use vantage_surrealdb::vista::{SurrealVistaFactory, SurrealVistaSpec};
-use vantage_vista::{ColumnFlag, SpecResolver, VistaFactory};
+use vantage_vista::{ColumnFlag, SortDirection, SpecResolver, VistaFactory};
 
 type TestResult = std::result::Result<(), Box<dyn Error>>;
 
@@ -219,6 +219,62 @@ surreal:
     Ok(())
 }
 
+/// A dotted column orders by its projected alias, both ways: a bare
+/// `ORDER BY bakery.name` would address a field path and return the rows
+/// unsorted.
+#[tokio::test]
+async fn dotted_spec_column_orders_rows() -> TestResult {
+    let (db, bakery_table, client_table) = setup().await;
+    seed_v2_like(&db, &bakery_table, &client_table).await?;
+    for statement in [
+        format!("CREATE {bakery_table}:alpine SET name = 'Alpine Bakery'"),
+        format!(
+            "CREATE {client_table}:jen SET name = 'Jennifer Parker', bakery = {bakery_table}:alpine"
+        ),
+    ] {
+        db.execute(&surreal_expr!(&statement)).await?;
+    }
+
+    let (bakery_spec, _) = build_specs(&bakery_table, &client_table);
+    let client_yaml = format!(
+        r#"
+name: client
+columns:
+  id: {{ type: thing, flags: [id] }}
+  name: {{ type: string }}
+  bakery: {{ type: thing, references: bakery }}
+  bakery.name: {{ type: string }}
+surreal:
+  table: {client_table}
+"#
+    );
+    let resolver = registry_resolver(vec![("bakery".into(), bakery_spec)]);
+    let mut clients = SurrealVistaFactory::new(db)
+        .with_resolver(resolver)
+        .build_from_spec(serde_yaml_ng::from_str(&client_yaml)?)?;
+    assert!(
+        clients
+            .column("bakery.name")
+            .is_some_and(|c| c.has_flag(ColumnFlag::Orderable))
+    );
+
+    let bakery_of_first = |rows: &IndexMap<String, _>| -> Option<ciborium::Value> {
+        rows.values()
+            .next()
+            .and_then(|r: &vantage_types::Record<ciborium::Value>| r.get("bakery.name").cloned())
+    };
+    clients.set_order(Some(("bakery.name", SortDirection::Ascending)))?;
+    let first = bakery_of_first(&clients.list_values().await?);
+    assert_eq!(first, Some(ciborium::Value::Text("Alpine Bakery".into())));
+    clients.set_order(Some(("bakery.name", SortDirection::Descending)))?;
+    let first = bakery_of_first(&clients.list_values().await?);
+    assert_eq!(
+        first,
+        Some(ciborium::Value::Text("Hill Valley Bakery".into()))
+    );
+    Ok(())
+}
+
 /// Quicksearch reads every column when none is flagged, but leaves imported
 /// reference columns out: text only `bakery.name` holds matches no row.
 #[tokio::test]
@@ -267,6 +323,56 @@ columns:
     )
     .expect("client yaml");
     assert!(SurrealVistaFactory::new(db).build_from_spec(spec).is_err());
+}
+
+/// A dotted column back into the same table (an employee's `manager.name`), or
+/// a pair of tables reading each other's, builds: the target is built only to
+/// look the column up and leaves its own dotted columns out, so the build
+/// doesn't recurse until the stack overflows.
+#[test]
+fn dotted_columns_through_a_self_reference_or_a_cycle_build() {
+    let db = SurrealDB::new(surreal_client::SurrealMockBuilder::new().build());
+    let spec = |yaml: &str| -> SurrealVistaSpec { serde_yaml_ng::from_str(yaml).expect("yaml") };
+    let employee = r#"
+name: employee
+columns:
+  id: { type: thing, flags: [id] }
+  name: { type: string }
+  manager: { type: thing, references: employee }
+  manager.name: { type: string }
+"#;
+    let resolver = registry_resolver(vec![("employee".into(), spec(employee))]);
+    let employees = SurrealVistaFactory::new(db.clone())
+        .with_resolver(resolver)
+        .build_from_spec(spec(employee))
+        .expect("a self-referencing dotted column builds");
+    assert!(employees.column("manager.name").is_some());
+
+    let customer = r#"
+name: customer
+columns:
+  id: { type: thing, flags: [id] }
+  name: { type: string }
+  rep: { type: thing, references: rep }
+  rep.name: { type: string }
+"#;
+    let rep = r#"
+name: rep
+columns:
+  id: { type: thing, flags: [id] }
+  name: { type: string }
+  best: { type: thing, references: customer }
+  best.name: { type: string }
+"#;
+    let resolver = registry_resolver(vec![
+        ("customer".into(), spec(customer)),
+        ("rep".into(), spec(rep)),
+    ]);
+    let customers = SurrealVistaFactory::new(db)
+        .with_resolver(resolver)
+        .build_from_spec(spec(customer))
+        .expect("dotted columns in a cycle build");
+    assert!(customers.column("rep.name").is_some());
 }
 
 #[cfg(feature = "rhai")]
