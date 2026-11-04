@@ -85,6 +85,14 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         self.imported_columns.contains(name)
     }
 
+    /// Whether `name` is in the SELECT: every column is, until
+    /// `with_active_columns` restricts the projection.
+    pub(crate) fn is_projected(&self, name: &str) -> bool {
+        self.active_columns
+            .as_ref()
+            .is_none_or(|active| active.contains(name))
+    }
+
     /// Whether `name` is computed rather than stored: an imported
     /// implicit-reference column, a server-side expression column, or a lazy
     /// (post-fetch) computed column. Driver factories flag such columns

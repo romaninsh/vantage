@@ -258,21 +258,69 @@ surreal:
             .is_some_and(|c| c.has_flag(ColumnFlag::Orderable))
     );
 
-    let bakery_of_first = |rows: &IndexMap<String, _>| -> Option<ciborium::Value> {
+    let bakeries = |rows: IndexMap<String, vantage_types::Record<ciborium::Value>>| -> Vec<String> {
         rows.values()
-            .next()
-            .and_then(|r: &vantage_types::Record<ciborium::Value>| r.get("bakery.name").cloned())
+            .filter_map(|r| {
+                r.get("bakery.name")
+                    .and_then(|v| v.as_text())
+                    .map(str::to_owned)
+            })
+            .collect()
     };
+    let (alpine, hill) = ("Alpine Bakery", "Hill Valley Bakery");
     clients.set_order(Some(("bakery.name", SortDirection::Ascending)))?;
-    let first = bakery_of_first(&clients.list_values().await?);
-    assert_eq!(first, Some(ciborium::Value::Text("Alpine Bakery".into())));
-    clients.set_order(Some(("bakery.name", SortDirection::Descending)))?;
-    let first = bakery_of_first(&clients.list_values().await?);
     assert_eq!(
-        first,
-        Some(ciborium::Value::Text("Hill Valley Bakery".into()))
+        bakeries(clients.list_values().await?),
+        [alpine, hill, hill, hill]
+    );
+    clients.set_order(Some(("bakery.name", SortDirection::Descending)))?;
+    assert_eq!(
+        bakeries(clients.list_values().await?),
+        [hill, hill, hill, alpine]
     );
     Ok(())
+}
+
+/// An imported column orders by its alias, so it is `orderable` only when the
+/// SELECT projects it: `with_imported_column` on a table restricted by
+/// `with_active_columns` adds it outside the projection.
+#[test]
+fn an_imported_column_outside_the_projection_is_not_orderable() {
+    use vantage_surrealdb::AnySurrealType;
+    use vantage_table::table::Table;
+    use vantage_types::EmptyEntity;
+
+    let db = SurrealDB::new(surreal_client::SurrealMockBuilder::new().build());
+    let bakery = |db: SurrealDB| -> Table<SurrealDB, EmptyEntity> {
+        Table::new("bakery", db)
+            .with_id_column("id")
+            .with_column_of::<String>("name")
+    };
+    let client = |db: SurrealDB| -> Table<SurrealDB, EmptyEntity> {
+        Table::new("client", db)
+            .with_id_column("id")
+            .with_column_of::<String>("name")
+            .with_column_of::<AnySurrealType>("bakery")
+            .with_one("bakery", "bakery", bakery)
+    };
+    let factory = SurrealVistaFactory::new(db.clone());
+    let orderable = |table: Table<SurrealDB, EmptyEntity>| {
+        let vista = factory.from_table(table).expect("vista");
+        vista
+            .column("bakery.name")
+            .expect("imported column")
+            .has_flag(ColumnFlag::Orderable)
+    };
+
+    let projected = client(db.clone())
+        .with_imported_column("bakery.name")
+        .expect("import");
+    assert!(orderable(projected));
+    let outside = client(db)
+        .with_active_columns(&["id", "name"])
+        .and_then(|t| t.with_imported_column("bakery.name"))
+        .expect("import");
+    assert!(!orderable(outside));
 }
 
 /// Quicksearch reads every column when none is flagged, but leaves imported
@@ -346,7 +394,13 @@ columns:
         .with_resolver(resolver)
         .build_from_spec(spec(employee))
         .expect("a self-referencing dotted column builds");
-    assert!(employees.column("manager.name").is_some());
+    // Imported, not left a plain column: the outer traversal is registered.
+    let imported = |vista: &vantage_vista::Vista, name: &str| {
+        vista
+            .column(name)
+            .is_some_and(|c| c.has_flag(ColumnFlag::Calculated))
+    };
+    assert!(imported(&employees, "manager.name"));
 
     let customer = r#"
 name: customer
@@ -372,7 +426,7 @@ columns:
         .with_resolver(resolver)
         .build_from_spec(spec(customer))
         .expect("dotted columns in a cycle build");
-    assert!(customers.column("rep.name").is_some());
+    assert!(imported(&customers, "rep.name"));
 }
 
 #[cfg(feature = "rhai")]

@@ -32,7 +32,9 @@ runs:
             "$MYSQL_IMAGE"
         fi
         if has surreal; then
-          docker run -d --name surrealdb -p 8000:8000 surrealdb/surrealdb:latest \
+          # Pinned: `latest` became SurrealDB 4.0, which refuses integers above
+          # i64::MAX; supporting 4.x is its own change (VAN-579).
+          docker run -d --name surrealdb -p 8000:8000 surrealdb/surrealdb:v3.3.5 \
             start --user root --pass root memory
         fi
         if has mongo; then
