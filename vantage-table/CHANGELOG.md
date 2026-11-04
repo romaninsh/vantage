@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.4.1 — 2026-11-04
+
+- A dotted column whose relation leads back to its own table (`manager.name` on `employee`), or
+  two tables whose dotted columns read each other, no longer rebuilds the tables until the stack
+  overflows. The target built to look a dotted column up leaves out its own dotted columns:
+  nothing traverses them there. A real traversal still builds the full table.
+- `Orderable::All` flags an imported column `orderable` only when it is projected: one added by
+  `with_imported_column` outside a `with_active_columns` set has no alias to order by.
+
 ## 3.4.0 — 2026-11-01
 
 - Requires vantage-vista 2.8.0.

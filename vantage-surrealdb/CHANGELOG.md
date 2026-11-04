@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.2.3 — 2026-11-04
+
+- Requires vantage-table 3.4.1.
+- A dotted column (`customer.name`) sorts. It orders by its escaped alias, `ORDER BY
+  ⟨customer.name⟩`; before, it wasn't `orderable` and a sort on it was refused.
+- Test data: `scripts/db/v2.surql` loads on SurrealDB 4.0, which refuses `FLEXIBLE` on a field of
+  a `SCHEMALESS` table (it was a no-op there).
+
 ## 2.2.2 — 2026-11-01
 
 - Tests only: a patch that sets an `expr:` column is refused and leaves the stored field alone

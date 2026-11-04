@@ -14,13 +14,14 @@ pub(super) fn metadata_from_table<E>(table: &Table<SurrealDB, E>) -> VistaMetada
 where
     E: Entity<AnySurrealType> + 'static,
 {
-    // SurrealDB sorts on any physical field. An imported implicit-reference
-    // column exists only as a projection alias — ordering by its dotted name
-    // would address a nonexistent field and silently not sort. expr:/lazy
-    // computed columns stay orderable (they order by their projected alias);
-    // all computed columns are read-only for consumers.
+    // Every column is orderable. An imported implicit-reference column
+    // (`customer.name`) orders by its projected alias, which the order
+    // renders escaped (`ORDER BY ⟨customer.name⟩`): bare, it would address a
+    // field path and silently not sort. expr:/lazy computed columns order by
+    // their alias the same way; all computed columns are read-only for
+    // consumers.
     table.vista_metadata(VistaMetadataOptions {
-        orderable: Orderable::ExceptImported,
+        orderable: Orderable::All,
         calculated: true,
         column_flags: true,
         references: true,

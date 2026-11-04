@@ -16,6 +16,8 @@ use crate::{
 pub enum Orderable {
     #[default]
     None,
+    /// Every column; an imported implicit-reference one (`author.name`) only
+    /// when it is projected, since it orders by its alias.
     All,
     /// Every column but imported implicit-reference ones (`author.name`),
     /// which exist only as a projection alias and can't be ordered by name.
@@ -103,7 +105,10 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         let mut vc = VistaColumn::new(name, col.get_type());
         let orderable = match options.orderable {
             Orderable::None => false,
-            Orderable::All => true,
+            // An imported column orders by its alias, so only when it is
+            // projected: `with_imported_column` on a restricted table adds
+            // one outside the SELECT.
+            Orderable::All => !self.is_imported_column(name) || self.is_projected(name),
             Orderable::ExceptImported => !self.is_imported_column(name),
         };
         if orderable {

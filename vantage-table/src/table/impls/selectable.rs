@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::sync::Arc;
 
 use vantage_core::{Result, error};
@@ -12,6 +13,34 @@ use crate::{
     traits::column_like::ColumnLike,
     traits::table_source::TableSource,
 };
+
+thread_local! {
+    /// Set while a dotted column's target is built only to look the column up.
+    /// That build leaves out the target's own dotted columns: nothing traverses
+    /// them, and a self-reference (`manager.name` on `employee`) or a cycle of
+    /// them would otherwise rebuild the tables until the stack runs out.
+    static RESOLVING_DOTTED: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Marks this thread as resolving a dotted column until dropped, restoring the
+/// previous state (an error or panic mid-build included).
+struct ResolvingDotted(bool);
+
+impl ResolvingDotted {
+    fn enter() -> Self {
+        Self(RESOLVING_DOTTED.with(|r| r.replace(true)))
+    }
+}
+
+impl Drop for ResolvingDotted {
+    fn drop(&mut self) {
+        RESOLVING_DOTTED.with(|r| r.set(self.0));
+    }
+}
+
+fn resolving_dotted() -> bool {
+    RESOLVING_DOTTED.with(Cell::get)
+}
 
 impl<T, E> Table<T, E>
 where
@@ -218,6 +247,11 @@ where
             }
 
             if parts.len() >= 2 {
+                // A target built only to look up a dotted column carries no
+                // dotted columns of its own (see `RESOLVING_DOTTED`).
+                if resolving_dotted() {
+                    continue;
+                }
                 self.import_dotted_column(col)?;
                 self.active_columns
                     .get_or_insert_with(Default::default)
@@ -282,6 +316,9 @@ where
         }
         let column = parts[parts.len() - 1];
         let hops = &parts[..parts.len() - 1];
+        if resolving_dotted() {
+            return Ok(());
+        }
 
         if !self.data_source().supports_traversal() {
             return Err(error!(
@@ -290,6 +327,9 @@ where
             ));
         }
 
+        // Every table built from here to the lowering below is built only to
+        // look the column up.
+        let resolving = ResolvingDotted::enter();
         let (target, fk_hops) = self.resolve_has_one_target(hops)?;
         if !target.columns().contains_key(column) {
             return Err(error!(
@@ -310,6 +350,7 @@ where
             Some(e) => e,
             None => self.traverse_rest_generic(hops, column)?,
         };
+        drop(resolving);
 
         let dotted = col.to_string();
         if !self.columns.contains_key(&dotted) {
