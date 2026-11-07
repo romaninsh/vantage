@@ -191,7 +191,9 @@ async fn a_self_referencing_rollup_never_gives_wrong_counts() {
     );
 }
 
-/// A missing column, an unknown column and an unknown relation are build errors.
+/// A missing column, an unknown column, an unknown relation and a computed
+/// child column are build errors. A computed column would aggregate the stored
+/// field of the same name, not the expression.
 #[tokio::test]
 async fn bad_rollups_error_at_build() {
     let db = get_db().await;
@@ -200,21 +202,16 @@ async fn bad_rollups_error_at_build() {
     let unknown_column =
         order_table(db.clone()).with_rollup("t", "lines", RollupOp::Max, Some("nope"), None);
     assert!(unknown_column.is_err());
-    let unknown_relation = order_table(db).with_rollup("t", "nope", RollupOp::Count, None, None);
+    let unknown_relation =
+        order_table(db.clone()).with_rollup("t", "nope", RollupOp::Count, None, None);
     assert!(unknown_relation.is_err());
-}
-
-/// A computed child column would aggregate the stored field of the same name,
-/// not the expression: refused at build.
-#[tokio::test]
-async fn rollup_over_a_computed_child_column_is_refused() {
     fn doubled_lines(db: SqliteDB) -> Table<SqliteDB, OrderLine> {
         line_table(db).with_expression("price", |_| sqlite_expr!("price * 2"))
     }
-    let built = order_table(get_db().await)
+    let computed = order_table(db)
         .with_many("doubled", "order_id", doubled_lines)
         .with_rollup("t", "doubled", RollupOp::Sum, Some("price"), None);
-    assert!(built.is_err());
+    assert!(computed.is_err());
 }
 
 /// A has_one relation has no child set to roll up: refused at build.
