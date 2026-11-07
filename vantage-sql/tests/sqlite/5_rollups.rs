@@ -12,6 +12,7 @@ use vantage_sql::condition::SqliteCondition;
 use vantage_sql::sqlite::SqliteType;
 use vantage_sql::sqlite::{AnySqliteType, SqliteDB, sqlite_ident};
 use vantage_sql::sqlite_expr;
+use vantage_table::pagination::Pagination;
 use vantage_table::table::{RollupOp, Table};
 use vantage_types::entity;
 
@@ -201,4 +202,41 @@ async fn bad_rollups_error_at_build() {
     assert!(unknown_column.is_err());
     let unknown_relation = order_table(db).with_rollup("t", "nope", RollupOp::Count, None, None);
     assert!(unknown_relation.is_err());
+}
+
+/// A computed child column would aggregate the stored field of the same name,
+/// not the expression: refused at build.
+#[tokio::test]
+async fn rollup_over_a_computed_child_column_is_refused() {
+    fn doubled_lines(db: SqliteDB) -> Table<SqliteDB, OrderLine> {
+        line_table(db).with_expression("price", |_| sqlite_expr!("price * 2"))
+    }
+    let built = order_table(get_db().await)
+        .with_many("doubled", "order_id", doubled_lines)
+        .with_rollup("t", "doubled", RollupOp::Sum, Some("price"), None);
+    assert!(built.is_err());
+}
+
+/// A has_one relation has no child set to roll up: refused at build.
+#[tokio::test]
+async fn rollup_over_a_has_one_relation_is_refused() {
+    let built = order_table(get_db().await)
+        .with_one("client", "client_id", client_table)
+        .with_rollup("t", "client", RollupOp::Count, None, None);
+    assert!(built.is_err());
+}
+
+/// A has_many target with a window (an offset would skip the one aggregate
+/// row) has no clear set to aggregate: refused at build.
+#[tokio::test]
+async fn rollup_over_a_paginated_child_is_refused() {
+    fn second_page(db: SqliteDB) -> Table<SqliteDB, OrderLine> {
+        let mut lines = line_table(db);
+        lines.set_pagination(Some(Pagination::new(2, 1)));
+        lines
+    }
+    let built = order_table(get_db().await)
+        .with_many("paged", "order_id", second_page)
+        .with_rollup("t", "paged", RollupOp::Count, None, None);
+    assert!(built.is_err());
 }

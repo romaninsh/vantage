@@ -85,7 +85,7 @@ where
                     }).await
                 };
                 let mapped: Option<Result<(T::Id, E)>> = match item {
-                    Some(Ok((id, mut record))) => match self.run_after_load(&id, &mut record).await {
+                    Some(Ok((id, mut record))) => match self.finish_read(&id, &mut record).await {
                         // Convert record to entity — handle error before yield to keep Send
                         Ok(()) => Some(
                             E::try_from_record(&record)

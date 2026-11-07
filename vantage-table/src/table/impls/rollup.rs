@@ -6,6 +6,7 @@ use std::sync::Arc;
 use vantage_core::{Result, error};
 use vantage_expressions::{Expression, Expressive, SelectableDataSource, expr_any};
 use vantage_types::Entity;
+use vantage_vista::ReferenceKind;
 
 use crate::{
     source::SelectSeed,
@@ -39,8 +40,9 @@ where
     ///
     /// The backend renders the expression
     /// ([`TableSource::rollup_expression`]): a correlated subquery by default.
-    /// An unknown relation or column, or a backend that refuses roll-ups, is
-    /// an error here, not when the table is read.
+    /// An unknown relation or column, a relation that isn't a has_many, a
+    /// target with a window, or a backend that refuses roll-ups, is an error
+    /// here, not when the table is read.
     pub fn with_rollup(
         mut self,
         name: &str,
@@ -49,6 +51,22 @@ where
         column: Option<&str>,
         condition: Option<T::Condition>,
     ) -> Result<Self> {
+        if self.ref_cardinality(relation)? != ReferenceKind::HasMany {
+            return Err(error!(
+                "a roll-up needs a has_many relation",
+                relation = relation,
+                table = self.table_name()
+            ));
+        }
+        // A window would aggregate one page of children, or, past the first
+        // page, skip the aggregate's only row.
+        if self.get_ref_target_erased(relation)?.pagination().is_some() {
+            return Err(error!(
+                "a roll-up's relation target can't have pagination",
+                relation = relation,
+                table = self.table_name()
+            ));
+        }
         let expr = self
             .data_source()
             .rollup_expression(&self, relation, op, column, condition)?;
@@ -67,6 +85,14 @@ where
     ) -> Result<Expression<T::Value>> {
         let column = || {
             let name = column.ok_or_else(|| error!("roll-up needs a column", op = op))?;
+            // The aggregate reads the stored field, not the expression.
+            if self.is_calculated_column(name) {
+                return Err(error!(
+                    "a roll-up can't aggregate a computed column",
+                    column = name,
+                    table = self.table_name()
+                ));
+            }
             self.columns().get(name).ok_or_else(|| {
                 error!(
                     "roll-up column not found",

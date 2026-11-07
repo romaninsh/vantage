@@ -70,9 +70,10 @@ assert_eq!(orders.list().await.unwrap().len(), 3);
 
 **What to implement:** override `related_correlated_condition` in your `TableSource` to produce
 table-qualified equality, and `try_related_correlated_condition` to return it. `get_subquery_as`
-calls the `try_` one. Its default returns an `Unsupported` error, so on a backend without
-correlated subqueries (CSV, REST, MongoDB) `get_subquery_as` fails when the table is built, not
-when it's read.
+calls the `try_` one. Its default calls `related_correlated_condition` when `supports_traversal`
+is `true` and otherwise returns an `Unsupported` error, so on a backend without correlated
+subqueries (CSV, REST) `get_subquery_as` fails when the table is built, not when it's read.
+MongoDB traverses with `$lookup`, so it overrides the `try_` one to refuse.
 
 ```text
 fn related_correlated_condition(&self, target_table: &str, target_field: &str,
@@ -92,7 +93,7 @@ fn try_related_correlated_condition(&self, target_table: &str, target_field: &st
 `related_correlated_condition` predates roll-ups and returns the condition itself, with a panicking
 default. Changing it to return `Result` would break every driver that overrides it. The fallible
 sibling keeps those drivers compiling: one that overrides only the old method still builds, and
-its `get_subquery_as` returns `Unsupported` until it adds the `try_` override.
+if it says `supports_traversal`, its `get_subquery_as` keeps working through the `try_` default.
 
 Requires `SelectableDataSource` (Step 3) since aggregate query builders use `table.select()`.
 

@@ -14,8 +14,11 @@ use surreal_client::SurrealConnection;
 use uuid::Uuid;
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_expressions::ExprDataSource;
+use vantage_expressions::traits::selectable::Selectable;
+use vantage_surrealdb::SurrealSelect;
 use vantage_surrealdb::surreal_expr;
 use vantage_surrealdb::surrealdb::SurrealDB;
+use vantage_table::pagination::Pagination;
 use vantage_table::table::{RollupOp, Table};
 use vantage_types::EmptyEntity;
 
@@ -174,6 +177,60 @@ async fn rollups_over_a_reference_link_read_through_record_references() {
         "SELECT (math::sum(<~(line FIELD invoice)[WHERE void = false AND net != NONE \
          AND net != NULL].net)) AS total FROM invoice"
     );
+}
+
+/// A query-sourced child aliased like the stored table keeps its own rows:
+/// `<~(line FIELD invoice)` would read every line, void ones included.
+#[tokio::test]
+async fn rollup_over_a_query_sourced_child_keeps_its_query() {
+    let db = seeded(true).await;
+    fn live_lines(db: SurrealDB) -> Table<SurrealDB, EmptyEntity> {
+        let mut select = SurrealSelect::new();
+        select.add_source("line", None);
+        select.add_where_condition(surreal_expr!("void = {}", false));
+        Table::from_select(db, "line", select)
+            .with_id_column("id")
+            .with_column_of::<i64>("net")
+    }
+    let table = Table::<SurrealDB, EmptyEntity>::new("invoice", db)
+        .with_id_column("id")
+        .with_many("lines", "invoice", live_lines)
+        .with_rollup("lines", "lines", RollupOp::Count, None, None)
+        .unwrap();
+    let counts = rollups(&table).await;
+    assert_eq!(
+        [&counts["invoice:one"][0], &counts["invoice:two"][0]],
+        [&json!(3), &json!(1)]
+    );
+}
+
+/// A computed child column would aggregate the stored field of the same name,
+/// not the expression: refused.
+#[tokio::test]
+async fn rollup_over_a_computed_child_column_is_refused() {
+    let db = seeded(true).await;
+    fn doubled_lines(db: SurrealDB) -> Table<SurrealDB, EmptyEntity> {
+        line_table(db).with_expression("net", |_| surreal_expr!("net * 2"))
+    }
+    let built = Table::<SurrealDB, EmptyEntity>::new("invoice", db)
+        .with_many("lines", "invoice", doubled_lines)
+        .with_rollup("total", "lines", RollupOp::Sum, Some("net"), None);
+    assert!(built.is_err());
+}
+
+/// A has_many target with a window has no clear set to aggregate: refused.
+#[tokio::test]
+async fn rollup_over_a_paginated_child_is_refused() {
+    let db = seeded(true).await;
+    fn first_line(db: SurrealDB) -> Table<SurrealDB, EmptyEntity> {
+        let mut lines = line_table(db);
+        lines.set_pagination(Some(Pagination::new(2, 1)));
+        lines
+    }
+    let built = Table::<SurrealDB, EmptyEntity>::new("invoice", db)
+        .with_many("lines", "invoice", first_line)
+        .with_rollup("lines", "lines", RollupOp::Count, None, None);
+    assert!(built.is_err());
 }
 
 #[tokio::test]

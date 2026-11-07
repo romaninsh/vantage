@@ -166,6 +166,19 @@ async fn preview_renders_the_narrowed_select_and_a_window_on_request() -> TestRe
     Ok(())
 }
 
+/// A table that pages itself keeps its window in a preview asked for no
+/// window, as its unwindowed reads keep it.
+#[tokio::test]
+async fn preview_with_no_window_keeps_the_tables_own_pagination() -> TestResult {
+    let (db, table_name) = setup().await;
+    let mut table = product_table(db.clone(), &table_name);
+    table.set_pagination(Some(vantage_table::pagination::Pagination::new(1, 5)));
+    let vista = db.vista_factory().from_table(table)?;
+    assert_eq!(vista.preview_window(0, None).query, vista.preview().query);
+    assert!(vista.preview().query.unwrap().contains("LIMIT 5"));
+    Ok(())
+}
+
 #[tokio::test]
 async fn capabilities_advertise_fetch_window() -> TestResult {
     let (db, table_name) = setup().await;

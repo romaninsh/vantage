@@ -280,7 +280,7 @@ hook a table has:
 | variant | runs on | receives | may | transaction |
 | --- | --- | --- | --- | --- |
 | `BeforeSelect(_)` | list, get, stream (before the first row), count, sum/max/min, and the reads a write makes | `SelectCx { context, table }` | `Err` refuses the read | inside |
-| `AfterLoad(_)` | each row a list, get or stream returns, and the stored row a write reads; not count or aggregates | `LoadCx { id, record: &mut Record, context, table }` | change the row; `Err` fails the read | inside |
+| `AfterLoad(_)` | each row a list, get or stream returns; not the stored row a write reads, count or aggregates | `LoadCx { id, record: &mut Record, context, table }` | change the row; `Err` fails the read | inside |
 | `BeforeInsert(Phase, _)` | insert, import, upsert of a new row | `BeforeCx { record: &mut Record, id: None, stored: None, patch: false, context, table }` | change the record; `Err` refuses | inside |
 | `BeforeUpdate(Phase, _)` | replace, patch, upsert of a stored row | `BeforeCx` with `id`, the `stored` row and `patch` (a patch's `record` holds only the patched fields; a replace's is the whole new row) | change the record; `Err` refuses | inside |
 | `BeforeSave(Phase, _)` | everything `BeforeInsert` and `BeforeUpdate` run on | `BeforeCx`; `id` is `None` on an insert | change the record; `Err` refuses | inside |
@@ -305,8 +305,8 @@ An insert, replace, patch or upsert goes through these steps; an `Err` at any st
 write stops it with nothing written:
 
 1. the denial and confined-writes checks;
-2. on an update, the stored row, read once through the set (with `BeforeSelect` and `AfterLoad`)
-   when a hook or a read-only column needs it; an upsert on a table with write hooks always reads
+2. on an update, the stored row, read once through the set (with `BeforeSelect`, without
+   `AfterLoad` and the lazy expressions) when a hook or a read-only column needs it; an upsert on a table with write hooks always reads
    it, to choose between insert and replace;
 3. the `Phase::Normalize` hooks: clean the input (trim, default empties);
 4. the `Phase::Populate` hooks, the default phase: set or compute fields;
@@ -444,7 +444,8 @@ saves a row it read writes the rewritten values, so the hook must be idempotent:
 own output gives the same row.
 
 The stored row a write reads (an update's `cx.stored` and `cx.before`, a delete's `cx.record`) is
-read through the table, so it has been through `AfterLoad` too. A vista shell that reads rows from
+the row as stored: it skips `AfterLoad` and the lazy expressions, so a rule judges the real
+values and a replace doesn't write the rewritten ones back. A vista shell that reads rows from
 the data source directly calls
 [`Table::finish_read`](vantage_table::table::Table::finish_read) on each one, which runs the
 `AfterLoad` hooks and then the lazy expressions.

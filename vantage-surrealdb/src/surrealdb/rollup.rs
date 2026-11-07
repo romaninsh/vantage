@@ -8,6 +8,7 @@
 
 use vantage_core::{Result, error};
 use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
+use vantage_table::source::SelectSource;
 use vantage_table::table::{RollupOp, Table};
 use vantage_types::{EmptyEntity, Entity};
 use vantage_vista::ReferenceKind;
@@ -31,6 +32,14 @@ impl SurrealDB {
             RollupOp::Count => None,
             _ => {
                 let name = column.ok_or_else(|| error!("roll-up needs a column", op = op))?;
+                // Both forms read the stored field, not the expression.
+                if child.is_calculated_column(name) {
+                    return Err(error!(
+                        "a roll-up can't aggregate a computed column",
+                        column = name,
+                        table = child.table_name()
+                    ));
+                }
                 if !child.columns().contains_key(name) {
                     return Err(error!(
                         "roll-up column not found",
@@ -56,11 +65,14 @@ impl SurrealDB {
         let link = parent.ref_foreign_key(relation)?;
         let has_many = parent.ref_cardinality(relation)? == ReferenceKind::HasMany;
         let checked = self.is_reference_link(child.table_name(), &link);
+        // `<~` reads the stored table; a query-sourced child keeps its query
+        // through the subquery.
+        let stored = matches!(child.source(), SelectSource::Name(_));
 
-        let rows = if has_many && checked == Some(true) {
+        let rows = if has_many && stored && checked == Some(true) {
             referenced_rows(&child, &link, filters, value)
         } else {
-            if has_many {
+            if has_many && stored {
                 self.warn_slow_rollup(
                     child.table_name(),
                     &link,

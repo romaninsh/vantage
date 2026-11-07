@@ -255,6 +255,27 @@ fn the_preview_is_the_get_with_conditions_as_params() {
     assert_eq!(preview.note, None);
 }
 
+/// A window asked for renders in the request, as the windowed fetch sends
+/// it; without paging params it stays a note.
+#[test]
+fn a_preview_window_is_the_request_the_windowed_fetch_sends() {
+    let api = offline()
+        .pagination_params(PaginationParams::skip_limit("skip", "limit"))
+        .build();
+    let preview = vista(api, USERS).preview_window(20, Some(10));
+    let query = preview.query.expect("a query");
+    assert!(query.starts_with("GET http://x/users?"), "{query}");
+    assert!(
+        query.contains("skip=20") && query.contains("limit=10"),
+        "{query}"
+    );
+    assert_eq!(preview.note, None);
+
+    let unpaged = vista(offline().no_pagination().build(), USERS).preview_window(20, Some(10));
+    assert_eq!(unpaged.query.as_deref(), Some("GET http://x/users"));
+    assert!(unpaged.note.expect("a note").contains("rows 20.."));
+}
+
 #[test]
 fn the_preview_masks_the_auth_header() {
     let api = offline().auth("Bearer secret-token").build();

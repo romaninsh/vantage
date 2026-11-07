@@ -532,6 +532,62 @@ surreal:
     Ok(())
 }
 
+/// A dotted column on a derived vista reads through the vista's own
+/// reference, not a stored ⟨nominal.code⟩ field.
+#[tokio::test]
+async fn base_vista_dotted_column_reads_through_its_reference() -> TestResult {
+    let (db, _) = setup().await;
+    for statement in [
+        "CREATE nominal:sales SET code = '4000'",
+        "CREATE nominal_sheet:s1 SET nominal = nominal:sales, amount = -100",
+    ] {
+        db.execute(&surreal_expr!(statement)).await?;
+    }
+    let specs: IndexMap<String, SurrealVistaSpec> = [
+        (
+            "nominal",
+            "name: nominal\ncolumns:\n  id: { type: thing, flags: [id] }\n  code: { type: string }\n",
+        ),
+        (
+            "nominal_sheet",
+            "name: nominal_sheet\ncolumns:\n  id: { type: thing, flags: [id] }\n  \
+             nominal: { type: thing }\n  amount: { type: int }\n",
+        ),
+    ]
+    .into_iter()
+    .map(|(name, yaml)| (name.to_string(), serde_yaml_ng::from_str(yaml).unwrap()))
+    .collect();
+    let specs = Arc::new(specs);
+    let resolver: Arc<dyn SpecResolver<SurrealVistaSpec>> =
+        Arc::new(move |name: &str| specs.get(name).cloned());
+
+    let sheet: SurrealVistaSpec = serde_yaml_ng::from_str(
+        r#"
+name: sheet_view
+columns:
+  nominal: { type: thing, references: nominal }
+  nominal.code: { type: string }
+surreal:
+  base: nominal_sheet
+  inherit:
+    columns: [id, amount]
+"#,
+    )?;
+    let vista = db
+        .vista_factory()
+        .with_resolver(resolver)
+        .build_from_spec(sheet)?;
+    let row = vista
+        .get_value("nominal_sheet:s1")
+        .await?
+        .expect("the s1 row");
+    assert_eq!(
+        row.get("nominal.code"),
+        Some(&CborValue::Text("4000".into()))
+    );
+    Ok(())
+}
+
 /// A derived vista can't have a has_one reference keyed by a column its rows
 /// don't carry: the build refuses it.
 #[test]

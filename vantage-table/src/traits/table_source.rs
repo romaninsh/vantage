@@ -411,8 +411,8 @@ pub trait TableSource: DataSource + Clone + 'static {
     /// [`supports_traversal`](Self::supports_traversal) `false`).
     ///
     /// Callers in this crate go through
-    /// [`try_related_correlated_condition`](Self::try_related_correlated_condition);
-    /// a backend overriding this one overrides that one too.
+    /// [`try_related_correlated_condition`](Self::try_related_correlated_condition),
+    /// whose default reaches this one when `supports_traversal` is `true`.
     fn related_correlated_condition(
         &self,
         target_table: &str,
@@ -425,10 +425,14 @@ pub trait TableSource: DataSource + Clone + 'static {
     }
 
     /// Fallible [`related_correlated_condition`](Self::related_correlated_condition),
-    /// used by `get_subquery_as` / `get_subquery_erased` and so by roll-ups. The
-    /// default is an `Unsupported` error, so those fail at build time instead of
-    /// panicking. A backend with correlated subqueries returns
-    /// `Ok(self.related_correlated_condition(..))`.
+    /// used by `get_subquery_as` / `get_subquery_erased` and so by roll-ups.
+    ///
+    /// The default calls `related_correlated_condition` on a backend that
+    /// [`supports_traversal`](Self::supports_traversal) (which must override
+    /// it), so a driver overriding only that one keeps working. Any other
+    /// backend gets an `Unsupported` error at build time instead of a panic.
+    /// A backend that traverses some other way (MongoDB's `$lookup`) overrides
+    /// this one to refuse.
     fn try_related_correlated_condition(
         &self,
         target_table: &str,
@@ -436,7 +440,14 @@ pub trait TableSource: DataSource + Clone + 'static {
         source_table: &str,
         source_column: &str,
     ) -> Result<Self::Condition> {
-        let _ = (target_table, target_field, source_table, source_column);
+        if self.supports_traversal() {
+            return Ok(self.related_correlated_condition(
+                target_table,
+                target_field,
+                source_table,
+                source_column,
+            ));
+        }
         Err(
             vantage_core::error!("correlated subqueries aren't supported by this backend")
                 .mark_unsupported(),

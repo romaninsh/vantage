@@ -158,6 +158,10 @@ where
     }
 
     fn preview_window(&self, offset: usize, limit: Option<usize>) -> Preview {
+        // No window asked for: the read keeps the table's own pagination.
+        if offset == 0 && limit.is_none() {
+            return self.preview();
+        }
         let mut select = self.table.select();
         select.set_limit(
             limit.map(|n| n as i64),

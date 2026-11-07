@@ -144,6 +144,13 @@ fn test_as_sum() {
     );
 }
 
+#[test]
+fn test_as_avg_keeps_fraction() {
+    let s = PostgresSelect::new().with_source("product");
+    let avg_expr = s.as_avg(postgres_expr!("\"price\""));
+    assert_eq!(avg_expr.preview(), "SELECT AVG(\"price\") FROM \"product\"");
+}
+
 // ── Live execution via ExprDataSource ──────────────────────────────────────
 
 #[tokio::test]

@@ -54,19 +54,25 @@ pub(super) fn build_surreal_table(
         .with_spec_references(spec, env, build_surreal_table)?
         .with_contained_specs(&spec.contained, build_column)?;
 
-    // A dotted column (`batch.name`) is an implicit reference, imported
-    // through `with_active_columns`; as a plain column it would read one
-    // ⟨batch.name⟩ field that doesn't exist. The active set must name every
-    // column.
-    let mut table = if spec.columns.keys().any(|n| n.contains('.')) {
-        let names: Vec<String> = table.columns().keys().cloned().collect();
-        let name_refs: Vec<&str> = names.iter().map(String::as_str).collect();
-        table.with_active_columns(&name_refs)?
-    } else {
-        table
-    };
+    let mut table = import_dotted_columns(spec, table)?;
     env.inject(&spec.name, &mut table, build_surreal_table)?;
     Ok(table)
+}
+
+/// A dotted column (`batch.name`) is an implicit reference, imported
+/// through `with_active_columns`; as a plain column it would read one
+/// ⟨batch.name⟩ field that doesn't exist. The active set must name every
+/// column, and the references must be registered first.
+fn import_dotted_columns(
+    spec: &SurrealVistaSpec,
+    table: Table<SurrealDB, EmptyEntity>,
+) -> Result<Table<SurrealDB, EmptyEntity>> {
+    if !spec.columns.keys().any(|n| n.contains('.')) {
+        return Ok(table);
+    }
+    let names: Vec<String> = table.columns().keys().cloned().collect();
+    let name_refs: Vec<&str> = names.iter().map(String::as_str).collect();
+    table.with_active_columns(&name_refs)
 }
 
 /// Lower a column's `expr:` script into a server-side computed column,
@@ -141,7 +147,7 @@ fn build_derived_table(
         None => base_table.select(),
     };
     let inherit = block.and_then(|m| m.inherit.clone()).unwrap_or_default();
-    Table::derive_from_spec(
+    let table = Table::derive_from_spec(
         &base_table,
         spec,
         select,
@@ -149,7 +155,8 @@ fn build_derived_table(
         &inherit.relations,
         build_column,
     )?
-    .with_spec_references(spec, env, build_surreal_table)
+    .with_spec_references(spec, env, build_surreal_table)?;
+    import_dotted_columns(spec, table)
 }
 
 /// Apply a `rhai:` transform to a base select. Feature-gated like

@@ -16,9 +16,12 @@
 - A window longer than the view's page (the warm re-pull, a refresh) is fetched one page per
   request. A source that caps its responses (a REST server serving at most 100 rows) and states no
   total used to answer the long window short, which read as the end of the set: the re-pull then
-  dropped every cached row past the cap and cut the view there.
-- Views attaching to the same rows within 2 s share one background re-pull, instead of each
-  re-reading the whole loaded block.
+  dropped every cached row past the cap and cut the view there. A source that states its total
+  and still answers short is asked again from the first row it didn't send, until it reaches the
+  total or sends nothing, so the re-pull reads the whole window and drops the rows it lost.
+- Views attaching to the same rows within 2 s share one background re-pull of each loaded block,
+  instead of each re-reading it. A view attaching to another block in that time still re-pulls
+  its own.
 
 ## 1.5.0 — 2026-11-01
 

@@ -10,6 +10,8 @@ Requires vantage-table 3.5.0.
   default: a correlated subquery per column. The selects gain `as_avg` (`AVG(column)`), and
   `try_related_correlated_condition` wraps `related_correlated_condition`, which `get_subquery_*`
   now call. Requires vantage-expressions 1.3.0.
+- Postgres and MySQL no longer cast `AVG` to an integer (`CAST(AVG(x) AS BIGINT)` read the mean
+  of 1 and 2 as 1); it reads as a decimal. `SUM` keeps its cast.
 
 ## 0.10.6 — 2026-11-01
 

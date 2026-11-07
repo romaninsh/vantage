@@ -155,6 +155,66 @@ async fn a_warm_reopen_over_a_capped_source_drops_nothing_that_exists() {
     assert_eq!(names(&reopened).len(), 20, "the view was cut short");
 }
 
+/// A source that states its total but caps each response at five rows: the
+/// warm re-pull continues past the first answer, reads the whole set, and
+/// drops the row deleted meanwhile.
+#[tokio::test]
+async fn a_warm_reopen_over_a_capped_source_with_a_total_drops_a_deleted_row() {
+    let ids: Vec<String> = (0..20).map(|i| format!("r{i:02}")).collect();
+    let shell = ids.iter().fold(
+        MockShell::new()
+            .with_metadata(meta(&["id", "name"]))
+            .with_capabilities(VistaCapabilities::new().with(Capability::Window)),
+        |shell, id| shell.with_record(id, record(&[("id", id), ("name", id)])),
+    );
+    let loader = vantage_diorama::Loader::paged(move |cx, range, query, sink| async move {
+        let page = cx.fetch(range.clone(), &query).await?.page;
+        if let Some(total) = page.total {
+            sink.set_total(total.max(0) as usize);
+        }
+        for (i, (id, record)) in page.rows.into_iter().take(5).enumerate() {
+            sink.push(range.start + i, id, record).await?;
+        }
+        Ok(())
+    });
+    let dio = support::memory_lens(loader)
+        .dio(Vista::new("capped", shell.clone()))
+        .build()
+        .await
+        .expect("dio builds");
+    let first = dio
+        .table_scenery()
+        .page_size(5)
+        .open()
+        .await
+        .expect("view opens");
+    for start in (0..20).step_by(5) {
+        first.set_viewport(start..start + 5, 0..0);
+        assert!(
+            eventually(WITHIN, || names(&first).len() >= start + 5).await,
+            "loaded {:?}",
+            names(&first)
+        );
+    }
+    drop(first);
+
+    shell.remove_record("r12");
+    let want: Vec<String> = ids.iter().filter(|id| *id != "r12").cloned().collect();
+    let _reopened = dio
+        .table_scenery()
+        .page_size(5)
+        .open()
+        .await
+        .expect("view reopens");
+    let settled = tokio::time::timeout(WITHIN, async {
+        while cached_ids(&dio).await != want {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    assert!(settled.is_ok(), "cache {:?}", cached_ids(&dio).await);
+}
+
 /// Views opening together beside a live one share its rows; the re-pull
 /// their first viewports ask for runs once, not once per view.
 #[tokio::test]
@@ -197,6 +257,59 @@ async fn views_opening_together_re_pull_the_shared_rows_once() {
         1,
         "one re-pull for five views"
     );
+}
+
+/// Two views attach together to different loaded blocks: the second one's
+/// block is re-pulled too, though the first one's re-pull ran moments ago.
+#[tokio::test]
+async fn views_attaching_together_to_different_blocks_re_pull_each_block() {
+    let ids: Vec<String> = (0..20).map(|i| format!("r{i:02}")).collect();
+    let shell = ids.iter().fold(
+        MockShell::new()
+            .with_metadata(meta(&["id", "name"]))
+            .with_capabilities(VistaCapabilities::new().with(Capability::Window)),
+        |shell, id| shell.with_record(id, record(&[("id", id), ("name", id)])),
+    );
+    let dio = paged_dio(Vista::new("blocks", shell.clone())).await;
+    let kept = dio
+        .table_scenery()
+        .page_size(5)
+        .open()
+        .await
+        .expect("view opens");
+    for start in [15, 0] {
+        kept.set_viewport(start..start + 5, 0..0);
+        assert!(
+            eventually(WITHIN, || kept.row(start + 4).is_some()).await,
+            "block {start} loads"
+        );
+    }
+    assert!(kept.row(10).is_none(), "the blocks stay apart");
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    shell.remove_record("r17");
+    let top = dio
+        .table_scenery()
+        .page_size(5)
+        .open()
+        .await
+        .expect("opens");
+    top.set_viewport(0..5, 0..0);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let bottom = dio
+        .table_scenery()
+        .page_size(5)
+        .open()
+        .await
+        .expect("opens");
+    bottom.set_viewport(15..20, 0..0);
+
+    assert!(
+        eventually(WITHIN, || !names(&bottom).contains(&"r17".to_string())).await,
+        "the bottom block still shows r17: {:?}",
+        names(&bottom)
+    );
+    drop((kept, top));
 }
 
 /// The last view closed, so the reopen seeds new rows from the warm cache;

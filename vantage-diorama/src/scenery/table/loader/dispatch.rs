@@ -176,7 +176,10 @@ pub(super) async fn run_chunk_callback(
     // longer window short, and a short answer with no total reads as the end
     // of the set — the warm re-pull would then drop every cached row past the
     // cap. A stated total settles the end by itself, so once there is one the
-    // rest of the window goes in one request.
+    // rest of the window goes in one request. A source that states a total
+    // and still answers short (a capped REST server with a count) is asked
+    // again from the first row it didn't send, until it reaches the total or
+    // sends nothing.
     let mut result = Ok(());
     let mut start = effective_range.start;
     while start < effective_range.end {
@@ -193,19 +196,22 @@ pub(super) async fn run_chunk_callback(
         result = priority
             .scope(cb(cx.clone(), page.clone(), query.clone(), sink.clone()))
             .await;
-        let short = state.load_push_count() - before < page.len();
+        let received = (state.load_push_count() - before).min(page.len());
         let stated = state
             .load_total_reported
             .load(std::sync::atomic::Ordering::SeqCst)
             .then(|| *state.total.read().unwrap());
-        let ended = match stated {
-            Some(total) => total.is_some_and(|t| t <= page.end),
-            None => short,
+        let (ended, next) = match stated {
+            Some(total) => {
+                let next = start + received;
+                (received == 0 || total.is_some_and(|t| t <= next), next)
+            }
+            None => (received < page.len(), page.end),
         };
         if result.is_err() || ended {
             break;
         }
-        start = page.end;
+        start = next;
     }
     drop(sink);
     cancel_guard.armed = false;

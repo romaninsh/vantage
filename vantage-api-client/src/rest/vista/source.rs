@@ -111,6 +111,22 @@ impl TableShell for RestApiTableShell {
         )
     }
 
+    /// A window with a limit goes into the request, as `fetch_window` sends
+    /// it in place of the table's own. Any other stays a note.
+    fn preview_window(&self, offset: usize, limit: Option<usize>) -> Preview {
+        match limit {
+            Some(limit) if self.capabilities.has(Capability::Window) => {
+                self.table.data_source().preview_request(
+                    self.table.table_name(),
+                    Some((offset as i64, limit as i64)),
+                    self.order(),
+                    self.table.conditions(),
+                )
+            }
+            _ => self.preview().with_window_note(offset, limit),
+        }
+    }
+
     /// The table's own read, plus the shell's order, which the table doesn't
     /// hold. Each row is finished (after-load hooks, lazy expressions) as
     /// `list_values` would.

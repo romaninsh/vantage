@@ -141,6 +141,18 @@ async fn streaming_a_row_that_does_not_fit_the_entity_yields_an_error() {
 }
 
 #[tokio::test]
+async fn streamed_entities_carry_the_lazy_columns_like_listed_ones() {
+    let table = people(vec![serde_json::json!({"id": "1", "name": "Alice"})])
+        .await
+        .with_lazy_expression("age", |_| async { Ok(serde_json::json!(30)) });
+    assert_eq!(table.list().await.unwrap()["1"], person("1", "Alice", 30));
+
+    let mut stream = table.stream();
+    let first = std::future::poll_fn(|cx| stream.as_mut().poll_next(cx)).await;
+    assert_eq!(first.unwrap().unwrap().1, person("1", "Alice", 30));
+}
+
+#[tokio::test]
 async fn insert_stores_a_new_entity_and_leaves_an_existing_one_untouched() {
     let table = people(vec![
         serde_json::json!({"id": "1", "name": "Alice", "age": 30}),

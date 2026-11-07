@@ -5,7 +5,9 @@
 - `Hook::AfterLoad` rewrites each row a list, get, get-some or stream returns, before the lazy
   expressions (`LoadCx`, `after_load_hook`, `after_load_hook_sync`). Counts, aggregates,
   conditions and order still use the stored values. `Table::finish_read` runs the hooks and the
-  lazy expressions on a row, for shells that read the data source directly.
+  lazy expressions on a row, for shells that read the data source directly. The entity
+  `Table::stream()` runs the lazy expressions too, as `list()` and `get()` do; before, an entity
+  that needed a lazy field failed to convert there.
 - `Table::upsert_value` inserts a row the set doesn't hold and replaces one it does, so the insert
   hooks (the id generator, timestamps) run only on a new row and the update hooks see `stored`. A
   table without insert or update hooks replaces in one write, as before.
@@ -36,14 +38,15 @@
   vantage-expressions 1.3.0 (`Selectable::as_avg`).
 - `TableSource::try_related_correlated_condition`, a fallible sibling of
   `related_correlated_condition` (unchanged). `get_subquery_as`, `get_subquery_erased` and the
-  roll-up default call it. Its default is an `Unsupported` error, so on MongoDB, CSV or REST they
-  now fail cleanly instead of panicking. Non-breaking, but a driver with correlated subqueries
-  should also override `try_related_correlated_condition` to return
-  `Ok(self.related_correlated_condition(..))`; the SQL and SurrealDB drivers do.
-- Driver authors: `get_subquery_*` now go through `try_related_correlated_condition`, so an
-  out-of-tree source that overrides only `related_correlated_condition` gets `Unsupported` from
-  them, and from roll-ups and dotted columns, until it overrides `try_related_correlated_condition`
-  too. `MockTableSource` now implements both.
+  roll-up default call it. Its default calls `related_correlated_condition` on a source that
+  `supports_traversal`, and is an `Unsupported` error on any other, so on CSV or REST they now
+  fail cleanly instead of panicking (MongoDB overrides it to refuse). Non-breaking: an
+  out-of-tree source that overrides only `related_correlated_condition` and says
+  `supports_traversal` keeps its subqueries and dotted columns. `MockTableSource` implements both.
+- `with_rollup` refuses a relation that isn't a has_many, and a has_many whose target has
+  pagination (a window would aggregate one page, and past the first page skip the aggregate's
+  only row). `aggregate_query` refuses a computed column (an expression, lazy or imported one),
+  which it would read as the stored field of the same name.
 
 ## 3.4.1 — 2026-11-04
 

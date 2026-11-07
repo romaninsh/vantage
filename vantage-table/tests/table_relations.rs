@@ -271,17 +271,23 @@ impl TableSource for CborSource {
         )
     }
 
-    fn try_related_correlated_condition(
+    // Only the infallible method, as a driver written before
+    // `try_related_correlated_condition` existed: traversal still reaches it.
+    fn supports_traversal(&self) -> bool {
+        true
+    }
+
+    fn related_correlated_condition(
         &self,
         target_table: &str,
         target_field: &str,
         source_table: &str,
         source_column: &str,
-    ) -> Result<Expression<CborValue>> {
-        Ok(Expression::new(
+    ) -> Expression<CborValue> {
+        Expression::new(
             format!("{target_table}.{target_field} = {source_table}.{source_column}"),
             vec![],
-        ))
+        )
     }
 
     fn column_table_values_expr<'a, E, Type: ColumnType>(
