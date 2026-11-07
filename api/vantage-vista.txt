@@ -102,6 +102,7 @@ pub fn vantage_vista::mocks::MockShell::list<'life0, 'async_trait>(&'life0 self)
 pub fn vantage_vista::mocks::MockShell::metadata(&self) -> &vantage_vista::VistaMetadata
 pub fn vantage_vista::mocks::MockShell::patch<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
 pub fn vantage_vista::mocks::MockShell::preview(&self) -> vantage_vista::Preview
+pub fn vantage_vista::mocks::MockShell::preview_window(&self, usize, core::option::Option<usize>) -> vantage_vista::Preview
 pub fn vantage_vista::mocks::MockShell::rebind(&self, &vantage_vista::Transaction) -> vantage_core::util::error::Result<alloc::boxed::Box<dyn vantage_vista::TableShell>>
 pub fn vantage_vista::mocks::MockShell::register_rhai_extensions(&self, &mut rhai::engine::Engine)
 pub fn vantage_vista::mocks::MockShell::replace<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
@@ -279,6 +280,7 @@ pub fn vantage_vista::Vista::map_shell<S: vantage_vista::TableShell>(self, impl 
 pub fn vantage_vista::Vista::name(&self) -> &str
 pub fn vantage_vista::Vista::new(impl core::convert::Into<alloc::string::String>, impl vantage_vista::TableShell) -> Self
 pub fn vantage_vista::Vista::preview(&self) -> vantage_vista::Preview
+pub fn vantage_vista::Vista::preview_window(&self, usize, core::option::Option<usize>) -> vantage_vista::Preview
 pub fn vantage_vista::Vista::query(&self) -> &vantage_vista::VistaQuery
 pub fn vantage_vista::Vista::reference(&self, &str) -> core::option::Option<&vantage_vista::Reference>
 pub fn vantage_vista::Vista::references(&self) -> &indexmap::map::IndexMap<alloc::string::String, vantage_vista::Reference>
@@ -1178,6 +1180,7 @@ impl vantage_vista::Preview
 pub fn vantage_vista::Preview::new() -> Self
 pub fn vantage_vista::Preview::with_note(self, impl core::convert::Into<alloc::string::String>) -> Self
 pub fn vantage_vista::Preview::with_query(self, impl core::convert::Into<alloc::string::String>) -> Self
+pub fn vantage_vista::Preview::with_window_note(self, usize, core::option::Option<usize>) -> Self
 impl core::clone::Clone for vantage_vista::Preview
 pub fn vantage_vista::Preview::clone(&self) -> Self
 impl core::cmp::PartialEq for vantage_vista::Preview
@@ -1381,6 +1384,7 @@ pub fn vantage_vista::Vista::map_shell<S: vantage_vista::TableShell>(self, impl 
 pub fn vantage_vista::Vista::name(&self) -> &str
 pub fn vantage_vista::Vista::new(impl core::convert::Into<alloc::string::String>, impl vantage_vista::TableShell) -> Self
 pub fn vantage_vista::Vista::preview(&self) -> vantage_vista::Preview
+pub fn vantage_vista::Vista::preview_window(&self, usize, core::option::Option<usize>) -> vantage_vista::Preview
 pub fn vantage_vista::Vista::query(&self) -> &vantage_vista::VistaQuery
 pub fn vantage_vista::Vista::reference(&self, &str) -> core::option::Option<&vantage_vista::Reference>
 pub fn vantage_vista::Vista::references(&self) -> &indexmap::map::IndexMap<alloc::string::String, vantage_vista::Reference>
@@ -1580,6 +1584,7 @@ pub fn vantage_vista::TableShell::list<'life0, 'async_trait>(&'life0 self) -> co
 pub fn vantage_vista::TableShell::metadata(&self) -> &vantage_vista::VistaMetadata
 pub fn vantage_vista::TableShell::patch<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
 pub fn vantage_vista::TableShell::preview(&self) -> vantage_vista::Preview
+pub fn vantage_vista::TableShell::preview_window(&self, usize, core::option::Option<usize>) -> vantage_vista::Preview
 pub fn vantage_vista::TableShell::rebind(&self, &vantage_vista::Transaction) -> vantage_core::util::error::Result<alloc::boxed::Box<dyn vantage_vista::TableShell>>
 pub fn vantage_vista::TableShell::register_rhai_extensions(&self, &mut rhai::engine::Engine)
 pub fn vantage_vista::TableShell::replace<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
@@ -1606,6 +1611,7 @@ pub fn vantage_vista::mocks::MockShell::list<'life0, 'async_trait>(&'life0 self)
 pub fn vantage_vista::mocks::MockShell::metadata(&self) -> &vantage_vista::VistaMetadata
 pub fn vantage_vista::mocks::MockShell::patch<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
 pub fn vantage_vista::mocks::MockShell::preview(&self) -> vantage_vista::Preview
+pub fn vantage_vista::mocks::MockShell::preview_window(&self, usize, core::option::Option<usize>) -> vantage_vista::Preview
 pub fn vantage_vista::mocks::MockShell::rebind(&self, &vantage_vista::Transaction) -> vantage_core::util::error::Result<alloc::boxed::Box<dyn vantage_vista::TableShell>>
 pub fn vantage_vista::mocks::MockShell::register_rhai_extensions(&self, &mut rhai::engine::Engine)
 pub fn vantage_vista::mocks::MockShell::replace<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
@@ -1632,6 +1638,7 @@ pub fn T::list<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxe
 pub fn T::metadata(&self) -> &vantage_vista::VistaMetadata
 pub fn T::patch<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
 pub fn T::preview(&self) -> vantage_vista::Preview
+pub fn T::preview_window(&self, usize, core::option::Option<usize>) -> vantage_vista::Preview
 pub fn T::rebind(&self, &vantage_vista::Transaction) -> vantage_core::util::error::Result<alloc::boxed::Box<dyn vantage_vista::TableShell>>
 pub fn T::register_rhai_extensions(&self, &mut rhai::engine::Engine)
 pub fn T::replace<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
