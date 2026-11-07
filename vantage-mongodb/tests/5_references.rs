@@ -7,7 +7,7 @@ use vantage_dataset::ReadableDataSet;
 #[allow(unused_imports)]
 use vantage_mongodb::AnyMongoType;
 use vantage_mongodb::{MongoDB, MongoId};
-use vantage_table::table::Table;
+use vantage_table::table::{RollupOp, Table};
 use vantage_types::entity;
 
 fn mongo_url() -> String {
@@ -83,4 +83,33 @@ async fn test_get_ref_as_traverses_has_many_and_has_one() {
         .unwrap();
     assert_eq!(client.len(), 1);
     assert_eq!(client.values().next().unwrap().name, "Marty McFly");
+}
+
+/// A client that never connects: the calls below fail before any query.
+async fn offline_db() -> MongoDB {
+    let client = mongodb::Client::with_uri_str("mongodb://127.0.0.1:1")
+        .await
+        .unwrap();
+    MongoDB::new(client, "offline")
+}
+
+/// Roll-ups and correlated subqueries are refused with an error, not a panic.
+#[tokio::test]
+async fn rollups_and_correlated_subqueries_error() {
+    let clients = client_table(offline_db().await);
+
+    let err = clients
+        .clone()
+        .with_rollup("orders", "orders", RollupOp::Count, None, None)
+        .unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "rollup columns aren't supported on MongoDB yet"
+    );
+    assert!(err.is_unsupported(), "{err:?}");
+
+    let err = clients
+        .get_subquery_as::<ClientOrder>("orders")
+        .unwrap_err();
+    assert!(err.is_unsupported(), "{err:?}");
 }

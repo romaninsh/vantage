@@ -481,6 +481,21 @@ impl TableSource for SqliteDB {
         .into()
     }
 
+    fn try_related_correlated_condition(
+        &self,
+        target_table: &str,
+        target_field: &str,
+        source_table: &str,
+        source_column: &str,
+    ) -> Result<Self::Condition> {
+        Ok(self.related_correlated_condition(
+            target_table,
+            target_field,
+            source_table,
+            source_column,
+        ))
+    }
+
     fn column_table_values_expr<'a, E, Type: ColumnType>(
         &'a self,
         table: &Table<Self, E>,

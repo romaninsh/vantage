@@ -228,9 +228,9 @@ for the SQL backends) so genuine nulls are recognised. Non-nullable value types 
 
 ## Lifecycle hooks
 
-Attach async callbacks around writes with `Table::with_hook(Hook::…)`. Hooks are how audit stamps,
-normalization, validation, soft-delete, and after-effects are expressed — generically, on any
-backend.
+Attach async callbacks around writes and reads with `Table::with_hook(Hook::…)`. Hooks are how
+audit stamps, normalization, validation, soft-delete, read rules and after-effects are expressed —
+generically, on any backend.
 
 ```rust
 # use vantage_sql::prelude::*;
@@ -274,39 +274,88 @@ let launches = Launch::table(db).with_hook(Hook::BeforeInsert(Phase::Populate, b
 ### The `Hook` variants
 
 One enum carries a placement-specific closure. Each hook receives one context struct holding what's
-available at its stage, so new fields can be added without breaking existing hooks:
+available at its stage, so new fields can be added without breaking existing hooks. This is every
+hook a table has:
 
-| variant | when | receives | may |
-| --- | --- | --- | --- |
-| `BeforeInsert(Phase, _)` | before an insert | `BeforeCx { record: &mut Record, id: None, stored: None, context, table }` | mutate / `Err` to cancel |
-| `BeforeUpdate(Phase, _)` | before replace/patch | `BeforeCx`, with `id`, the `stored` row and `patch` (a patch's `record` holds only the patched fields; a replace's is the whole new row) | mutate / `Err` to cancel |
-| `BeforeSave(Phase, _)` | before insert **and** update | `BeforeCx` | mutate / `Err` to cancel |
-| `BeforeDelete(_)` | before a delete | `DeleteCx { id, record (former), context, table }` | `Err` to veto, or `HookReturn::Handled` to take over |
-| `AfterInsert` / `AfterUpdate` / `AfterSave` | after the write commits | `AfterCx { id, record, before, context, table }` | side-effects |
-| `AfterDelete(_)` | after a delete | `AfterCx` (`record` is the former row) | side-effects |
-| `BeforeDeleteAll(_)` / `AfterDeleteAll(_)` | around `delete_all` | `DeleteAllCx { context, table }` | `Err` to cancel (before) / side-effects |
-| `BeforeSelect(_)` | before a read: list, get, stream, count, sum/max/min | `SelectCx { context, table }` | `Err` to refuse the read |
+| variant | runs on | receives | may | transaction |
+| --- | --- | --- | --- | --- |
+| `BeforeSelect(_)` | list, get, stream (before the first row), count, sum/max/min, and the reads a write makes | `SelectCx { context, table }` | `Err` refuses the read | inside |
+| `AfterLoad(_)` | each row a list, get or stream returns, and the stored row a write reads; not count or aggregates | `LoadCx { id, record: &mut Record, context, table }` | change the row; `Err` fails the read | inside |
+| `BeforeInsert(Phase, _)` | insert, import, upsert of a new row | `BeforeCx { record: &mut Record, id: None, stored: None, patch: false, context, table }` | change the record; `Err` refuses | inside |
+| `BeforeUpdate(Phase, _)` | replace, patch, upsert of a stored row | `BeforeCx` with `id`, the `stored` row and `patch` (a patch's `record` holds only the patched fields; a replace's is the whole new row) | change the record; `Err` refuses | inside |
+| `BeforeSave(Phase, _)` | everything `BeforeInsert` and `BeforeUpdate` run on | `BeforeCx`; `id` is `None` on an insert | change the record; `Err` refuses | inside |
+| `BeforeDelete(_)` | delete, and each row of a delete-all | `DeleteCx { id, record (the stored row), context, table }` | `Err` refuses; `HookReturn::Handled` takes over (soft delete) | inside |
+| `BeforeDeleteAll(_)` | delete-all, once | `DeleteAllCx { context, table }` (`table.conditions()` is the set) | `Err` refuses | inside |
+| `AfterInsert` / `AfterUpdate` / `AfterSave` | the same writes as their before-hook | `AfterCx { id, record (as written), before (the stored row, update only), context, table }` | side effects; `Err` is reported, the write stays | after commit, on a copy |
+| `AfterDelete(_)` | delete, and each row of a delete-all that deleted row by row | `AfterCx`, `record` is the former row | side effects | after commit, on a copy |
+| `AfterDeleteAll(_)` | delete-all, once | `DeleteAllCx` | side effects | after commit, on a copy |
 
 The `table` handed to a hook is entity-erased, so it can traverse relations (`get_ref`) and reach
 the datasource — enough for cross-row validation and after-effects. `context` is the
 [`WriteContext`](vantage_table::write_context::WriteContext) in scope for the write, if any.
 
-### Ordering and control flow
+"Inside" means the hook runs on the table the write runs on: inside a
+[transaction](./transactions.md), its reads through `cx.table` see the transaction's rows and an
+`Err` leaves the transaction to roll back. After-hooks wait for the commit and run on a copy of the
+table back on its pool, outside the transaction.
 
-- **Before-write hooks run ahead of invariant enforcement**, ordered by `Phase`:
-  `Normalize` → `Populate` (the default) → `Validate`, then registration order within a phase. So
-  normalize inputs, then derive/stamp fields, then validate the final record.
-- **Returning `Err` from any before-hook cancels the operation** before anything is written.
+### The order of a write
+
+An insert, replace, patch or upsert goes through these steps; an `Err` at any step before the
+write stops it with nothing written:
+
+1. the denial and confined-writes checks;
+2. on an update, the stored row, read once through the set (with `BeforeSelect` and `AfterLoad`)
+   when a hook or a read-only column needs it; an upsert on a table with write hooks always reads
+   it, to choose between insert and replace;
+3. the `Phase::Normalize` hooks: clean the input (trim, default empties);
+4. the `Phase::Populate` hooks, the default phase: set or compute fields;
+5. the `Phase::Validate` hooks: judge the record as it will be written;
+6. dropping imported and expression columns, then the set's invariants;
+7. the datasource write;
+8. the after-hooks, at once or after the commit.
+
+Within a phase, hooks run in registration order. `BeforeSave` hooks take their place among
+`BeforeInsert` / `BeforeUpdate` by phase and registration, as if registered on both.
+
+Who registers where:
+
+- **`Normalize`**: hooks that rewrite input, so that everything after sees the clean value.
+- **`Populate`**: [`with_timestamps`](vantage_table::table::Table::with_timestamps) /
+  [`with_audit`](vantage_table::table::Table::with_audit) stamps and the
+  [`with_generated_id`](vantage_table::table::Table::with_generated_id) id generator.
+- **`Validate`**: rule hooks. A host that adds access checks registers them in `Validate` before
+  its own rule hooks, so the checks and the rules both see the final record.
+
+### Upsert
+
+[`Table::upsert_value`](vantage_table::table::Table::upsert_value) reads the row through the set.
+When the set doesn't hold it, the write is an insert: the insert hooks run, so the id generator
+and a created-at stamp apply only to a new row. When it does, the write is a replace and the update
+hooks get the row as `stored`. A table without insert or update hooks skips the read and writes a
+replace, which creates a missing row in one statement. The SQL, SurrealDB and MongoDB vista shells
+write `Vista::upsert_value` this way.
+
+### Delete and delete-all
+
 - **`BeforeDelete` returning `HookReturn::Handled`** skips the real delete and reports success —
   this is how soft-delete works (patch a `deleted` marker, return `Handled`). A delete with hooks
   loads the row once so before/after hooks see its contents. A delete with hooks on a row outside
   the set runs no hooks and deletes nothing.
+- **Without a `BeforeDelete` hook, `delete_all` is one statement.** `BeforeDeleteAll` and
+  `AfterDeleteAll` run once for the set and the per-row hooks don't run.
+- **With a `BeforeDelete` hook, `delete_all` goes row by row.** After `BeforeDeleteAll` it lists
+  the set and runs the `BeforeDelete` hooks on every row first, so a refusal of any row deletes
+  nothing. Then it deletes each row the hooks didn't handle and runs its `AfterDelete` hooks, and
+  `AfterDeleteAll` runs last. A soft-deleting table therefore soft-deletes on `delete_all` too.
+  Inside a transaction the whole run is part of it. Outside one, a `Handled` hook has done its
+  work by the time a later row is refused, and a datasource error part-way leaves the rows deleted
+  so far; run a delete-all that must be all or nothing in a transaction.
+
+### After-hooks
+
 - **An update with after-update hooks reads the row first**, through the set, so `cx.before`
   holds the row as it was; without such hooks there is no extra read.
-- **`delete_all` runs `BeforeDeleteAll` / `AfterDeleteAll` once for the whole set**, never the
-  per-row delete hooks. The hook gets the table, whose `conditions()` describe the set; an error
-  from the before hook cancels it. A soft-delete `BeforeDelete` doesn't cover it: `delete_all`
-  still removes the rows, so a soft-deleting table needs a `BeforeDeleteAll` that refuses it.
 - After-hooks run for side-effects only. Outside a transaction they run right after the write, and
   a failing after-hook returns its error without undoing the write. Inside a
   [transaction](./transactions.md#after-hooks-wait-for-the-commit) they wait for the commit: they
@@ -319,7 +368,10 @@ the datasource — enough for cross-row validation and after-effects. `context` 
 
 ### Read hooks
 
-`BeforeSelect` is the one hook on the read side. It runs before every read that returns rows or
+Two hooks sit on the read side: `BeforeSelect` decides whether a read may happen, and `AfterLoad`
+rewrites the rows it returns.
+
+`BeforeSelect` runs before every read that returns rows or
 facts about rows, so a rule like "only signed-in callers read invoices" lives on the table rather
 than in every handler that lists it. A stream yields the hook's error as its first item. The hook
 reads `cx.context` (the same [`WriteContext`](vantage_table::write_context::WriteContext) writes
@@ -364,11 +416,46 @@ update. That is deliberate: a refused read must not leak the former row into a h
 
 Reads served by a Dio's cache are the exception; see the Dio note below.
 
+#### Fixing up stored rows: `AfterLoad`
+
+`AfterLoad` runs on each row a list, get or stream returns, before the lazy expressions, and may
+rewrite it. It is for rows already stored in an older shape, for example a code written before a
+`Normalize` hook trimmed and upper-cased it:
+
+```rust
+use vantage_sql::sqlite::{AnySqliteType, SqliteDB};
+use vantage_table::prelude::Hook;
+use vantage_table::table::after_load_hook_sync;
+
+let upper_code = Hook::AfterLoad(after_load_hook_sync::<SqliteDB>(|row, _context| {
+    let code = row.get("code").and_then(|v| v.try_get::<String>());
+    if let Some(code) = code {
+        row.insert("code".into(), AnySqliteType::new(code.trim().to_uppercase()));
+    }
+    Ok(())
+}));
+# let _ = upper_code;
+```
+
+The hook changes what callers see, not the stored row. Conditions, search, order, counts and
+aggregates run in the datasource on the stored values: a table whose `AfterLoad` upper-cases
+`code` lists `"AB"` for a stored `" ab"`, and `where code = "AB"` doesn't match it. A caller that
+saves a row it read writes the rewritten values, so the hook must be idempotent: running it on its
+own output gives the same row.
+
+The stored row a write reads (an update's `cx.stored` and `cx.before`, a delete's `cx.record`) is
+read through the table, so it has been through `AfterLoad` too. A vista shell that reads rows from
+the data source directly calls
+[`Table::finish_read`](vantage_table::table::Table::finish_read) on each one, which runs the
+`AfterLoad` hooks and then the lazy expressions.
+
 ### Writing a hook
 
-Hooks are boxed async closures over their context struct. `before_hook`, `before_delete_hook` and
-`after_hook` wrap a closure or a free `fn` into the hook type; their bounds guide closure
-inference:
+Hooks are boxed async closures over their context struct. `before_hook`, `before_delete_hook`,
+`after_hook`, `after_load_hook`, `select_hook` and `delete_all_hook` wrap a closure or a free `fn`
+into the hook type; their bounds guide closure inference. The `_sync` forms (`before_hook_sync`,
+`before_hook_sync_cx`, `before_delete_hook_sync`, `after_load_hook_sync`) take a closure with
+nothing to await, such as a script evaluated in place:
 
 ```rust
 use vantage_types::Record;

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.9.0 — 2026-11-07
+
+- `preview_script` shows the script's `limit`/`offset`. They were dropped, so
+  `table("orders").limit(20)` previewed with no limit at all.
+- `TableShell::preview_window(offset, limit)` and `Vista::preview_window`: the preview of a row
+  window. The default puts the window in the note (`Preview::with_window_note`); a shell that
+  pages in its query overrides it and renders the window there. `ForwardShell` and transaction
+  shells forward it.
+
 ## 2.8.0 — 2026-11-01
 
 - `Capability::DeleteAll`, so a rule can deny bulk delete alone. `Delete` implies it: shells

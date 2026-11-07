@@ -13,7 +13,7 @@ mod signal;
 mod tail;
 
 use std::ops::Range;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock, Weak};
 
 use vantage_vista::{Condition, SortDirection, VistaCapabilities, VistaQuery};
@@ -96,6 +96,11 @@ pub(crate) struct TableView {
     /// Held across a re-point, so two setters racing on one view move it
     /// once each, in turn.
     pub(crate) repointing: Mutex<()>,
+    /// Set when the view opened onto rows another view had already loaded:
+    /// its first viewport re-pulls their windows, which drops any row the
+    /// master lost with no change to say so. Never set for rows this view
+    /// built; their on-open fetch does the same.
+    pub(crate) repull_on_viewport: AtomicBool,
 }
 
 impl Drop for TableView {

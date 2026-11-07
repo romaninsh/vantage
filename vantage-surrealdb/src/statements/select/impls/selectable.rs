@@ -121,4 +121,8 @@ impl<T: QueryResult> Selectable<AnySurrealType> for SurrealSelect<T> {
     fn as_min(&self, column: impl Expressive<AnySurrealType>) -> Expr {
         Fx::new("math::min", vec![column.expr()]).into()
     }
+
+    fn as_avg(&self, column: impl Expressive<AnySurrealType>) -> Expr {
+        Fx::new("math::mean", vec![column.expr()]).into()
+    }
 }

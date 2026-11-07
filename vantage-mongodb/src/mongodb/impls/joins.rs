@@ -8,8 +8,8 @@
 //!
 //! Each hop is a `$lookup` with `localField`/`foreignField`, never a
 //! correlated sub-pipeline. Correlated subqueries are not implemented:
-//! `Table::get_subquery_*` panics on MongoDB, as `related_correlated_condition`
-//! is the trait's `unimplemented!` default.
+//! `Table::get_subquery_*` fails with `Unsupported` on MongoDB
+//! (`try_related_correlated_condition` refuses).
 //!
 //! A typed table's raw conditions address stored BSON paths: a hand-written
 //! `doc! { "client.name": .. }` reads a nested `client.name` field, not the

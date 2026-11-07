@@ -117,6 +117,7 @@ impl SharedRows {
             last_debug_state: Mutex::new(None),
             payload_named: AtomicBool::new(false),
             last_served: Mutex::new(None),
+            last_attach_repull: Mutex::new(None),
             tasks: TaskGuard::default(),
         });
         // A copy keeps the old index until its reload re-points it: the rows

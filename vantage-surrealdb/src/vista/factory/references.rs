@@ -4,7 +4,7 @@ use vantage_core::{Result, error};
 use vantage_table::table::spec::spec_references;
 use vantage_table::table::{Orderable, Table, VistaMetadataOptions};
 use vantage_types::{EmptyEntity, Entity};
-use vantage_vista::{Reference, ReferenceSpec, VistaMetadata};
+use vantage_vista::{Reference, ReferenceKind, ReferenceSpec, VistaMetadata};
 
 use crate::surrealdb::SurrealDB;
 use crate::types::AnySurrealType;
@@ -40,16 +40,33 @@ pub(super) fn metadata_from_spec(
     table: &Table<SurrealDB, EmptyEntity>,
     spec: &SurrealVistaSpec,
 ) -> Result<VistaMetadata> {
+    let derived = spec
+        .driver
+        .surreal
+        .as_ref()
+        .is_some_and(|b| b.base.is_some());
     let mut metadata = metadata_from_table(table);
     for mut reference in spec_references(spec, &table.id_field_name())? {
-        // A `base:` vista builds no references of its own, only the
-        // relations it inherits, so a traversal would find no target.
         if !metadata.references.contains_key(&reference.name) {
             return Err(error!(
                 "spec reference is absent from the built table's references",
                 relation = reference.name.as_str(),
                 table = table.table_name()
             ));
+        }
+        // A derived table's rows carry only its columns, so a has_one keyed
+        // by any other field has no value to join on.
+        if derived && reference.kind == ReferenceKind::HasOne {
+            for key in &reference.keys {
+                if !table.columns().contains_key(&key.from) {
+                    return Err(error!(
+                        "a derived table's has_one reference needs its foreign key as a column",
+                        relation = reference.name.as_str(),
+                        column = key.from.as_str(),
+                        table = table.table_name()
+                    ));
+                }
+            }
         }
         if let Some(code) = spec.references.get(&reference.name).and_then(build_script) {
             reference = with_build_script(reference, code, &spec.name)?;

@@ -204,6 +204,9 @@ pub(crate) struct SharedRows {
     /// the same viewport (a repaint, a focus change) would otherwise log the
     /// same "served locally" line twice in a row, saying nothing new.
     pub(crate) last_served: Mutex<Option<Range<usize>>>,
+    /// When an attaching view last re-pulled these rows. Views opening
+    /// together share one re-pull rather than each re-reading the block.
+    pub(crate) last_attach_repull: Mutex<Option<std::time::Instant>>,
 
     /// The reactor, the viewport loop and any detached list pass. Aborted
     /// the moment the last view detaches (see [`Self::detach`]), even while

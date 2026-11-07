@@ -691,28 +691,216 @@ fn counting_delete_all(calls: Arc<AtomicUsize>) -> DeleteAllFn<MockTableSource> 
     })
 }
 
-#[tokio::test]
-async fn delete_all_runs_its_hooks_once_and_never_the_row_hooks() {
-    let row_calls = Arc::new(AtomicUsize::new(0));
-    let before_all = Arc::new(AtomicUsize::new(0));
-    let after_all = Arc::new(AtomicUsize::new(0));
-    let table = with_rows(vec![
+fn abc() -> Vec<Value> {
+    vec![
         json!({"id": "1", "name": "a"}),
         json!({"id": "2", "name": "b"}),
         json!({"id": "3", "name": "c"}),
-    ])
-    .await
-    .with_hook(Hook::AfterDelete(counting_after(row_calls.clone())))
-    .with_hook(Hook::BeforeDelete(veto()))
-    .with_hook(Hook::BeforeDeleteAll(counting_delete_all(
-        before_all.clone(),
-    )))
-    .with_hook(Hook::AfterDeleteAll(counting_delete_all(after_all.clone())));
+    ]
+}
+
+#[tokio::test]
+async fn delete_all_without_a_before_delete_hook_runs_its_hooks_once_and_never_the_row_hooks() {
+    let row_calls = Arc::new(AtomicUsize::new(0));
+    let before_all = Arc::new(AtomicUsize::new(0));
+    let after_all = Arc::new(AtomicUsize::new(0));
+    let table = with_rows(abc())
+        .await
+        .with_hook(Hook::AfterDelete(counting_after(row_calls.clone())))
+        .with_hook(Hook::BeforeDeleteAll(counting_delete_all(
+            before_all.clone(),
+        )))
+        .with_hook(Hook::AfterDeleteAll(counting_delete_all(after_all.clone())));
     table.delete_all().await.unwrap();
     assert_eq!(row_calls.load(Ordering::SeqCst), 0);
     assert_eq!(before_all.load(Ordering::SeqCst), 1);
     assert_eq!(after_all.load(Ordering::SeqCst), 1);
     assert!(table.list_values().await.unwrap().is_empty());
+}
+
+/// A before-delete hook recording each row's name, refusing the row named
+/// `refuse`.
+fn refusing_row(
+    refuse: &'static str,
+    seen: Arc<Mutex<Vec<Value>>>,
+) -> BeforeDeleteFn<MockTableSource> {
+    before_delete_hook(move |cx: DeleteCx<'_, MockTableSource>| {
+        let name = cx.record["name"].clone();
+        let seen = seen.clone();
+        Box::pin(async move {
+            seen.lock().unwrap().push(name.clone());
+            if name == json!(refuse) {
+                return Err(vantage_core::error!("row refused"));
+            }
+            Ok(HookReturn::Proceed)
+        })
+    })
+}
+
+#[tokio::test]
+async fn delete_all_with_a_before_delete_hook_deletes_row_by_row() {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let row_calls = Arc::new(AtomicUsize::new(0));
+    let before_all = Arc::new(AtomicUsize::new(0));
+    let table = with_rows(abc())
+        .await
+        .with_hook(Hook::BeforeDelete(refusing_row("none", seen.clone())))
+        .with_hook(Hook::AfterDelete(counting_after(row_calls.clone())))
+        .with_hook(Hook::BeforeDeleteAll(counting_delete_all(
+            before_all.clone(),
+        )));
+    table.delete_all().await.unwrap();
+    assert_eq!(*seen.lock().unwrap(), [json!("a"), json!("b"), json!("c")]);
+    assert_eq!(row_calls.load(Ordering::SeqCst), 3);
+    assert_eq!(before_all.load(Ordering::SeqCst), 1);
+    assert!(table.list_values().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn delete_all_where_one_row_is_refused_deletes_nothing() {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let table = with_rows(abc())
+        .await
+        .with_hook(Hook::BeforeDelete(refusing_row("c", seen.clone())));
+    let err = table.delete_all().await.unwrap_err();
+    assert_eq!(err.message(), "row refused");
+    assert_eq!(table.list_values().await.unwrap().len(), 3);
+}
+
+#[tokio::test]
+async fn delete_all_row_by_row_deletes_only_the_set() {
+    let (all, set) = sets().await;
+    let set = set.with_hook(Hook::BeforeDelete(refusing_row("none", Arc::default())));
+    set.delete_all().await.unwrap();
+    let left: Vec<String> = all.list_values().await.unwrap().into_keys().collect();
+    assert_eq!(left, ["out1"]);
+}
+
+// --- the write path reads the stored row --------------------------------------
+
+/// `plain` holds row 1 with `ssn` "123"; `masked` is the same table with an
+/// after-load hook that reads `ssn` back as "***" and `ssn` read-only.
+async fn masked_ssn() -> (MockTable, MockTable) {
+    let plain = with_rows(vec![json!({"id": "1", "name": "a", "ssn": "123"})]).await;
+    let mut masked = plain.clone().with_hook(Hook::AfterLoad(
+        vantage_table::table::after_load_hook_sync::<MockTableSource>(|record, _| {
+            record.insert("ssn".to_string(), json!("***"));
+            Ok(())
+        }),
+    ));
+    masked.deny_column("ssn", "masked");
+    (plain, masked)
+}
+
+fn stored_ssn(seen: Arc<Mutex<Vec<Value>>>) -> BeforeFn<MockTableSource> {
+    before_hook(move |cx: BeforeCx<'_, MockTableSource>| {
+        seen.lock()
+            .unwrap()
+            .push(cx.stored.map_or(Value::Null, |s| s["ssn"].clone()));
+        Box::pin(async { Ok(()) })
+    })
+}
+
+#[tokio::test]
+async fn a_replace_keeps_the_stored_value_of_a_column_after_load_masks() {
+    let (plain, masked) = masked_ssn().await;
+    masked
+        .replace_value("1", &rec(json!({"name": "b", "ssn": "***"})))
+        .await
+        .unwrap();
+    let row = plain.get_value("1").await.unwrap().unwrap();
+    assert_eq!(
+        (row["name"].clone(), row["ssn"].clone()),
+        (json!("b"), json!("123"))
+    );
+}
+
+#[tokio::test]
+async fn update_and_delete_hooks_see_the_stored_row_not_the_loaded_one() {
+    let (plain, masked) = masked_ssn().await;
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let deleted = Arc::new(Mutex::new(Vec::new()));
+    let deleted_in = deleted.clone();
+    let masked = masked
+        .with_hook(Hook::BeforeUpdate(
+            Phase::Populate,
+            stored_ssn(seen.clone()),
+        ))
+        .with_hook(Hook::BeforeDelete(before_delete_hook(
+            move |cx: DeleteCx<'_, MockTableSource>| {
+                deleted_in.lock().unwrap().push(cx.record["ssn"].clone());
+                Box::pin(async { Ok(HookReturn::Proceed) })
+            },
+        )));
+    masked
+        .patch_value("1", &rec(json!({"name": "b"})))
+        .await
+        .unwrap();
+    assert_eq!(*seen.lock().unwrap(), [json!("123")]);
+    assert_eq!(
+        plain.get_value("1").await.unwrap().unwrap()["ssn"],
+        json!("123")
+    );
+    masked.delete("1").await.unwrap();
+    assert_eq!(*deleted.lock().unwrap(), [json!("123")]);
+}
+
+// --- upsert -------------------------------------------------------------------
+
+/// Logs `label` and whether the hook saw a stored row.
+fn logging_stored(label: &'static str, log: Log) -> BeforeFn<MockTableSource> {
+    before_hook(move |cx: BeforeCx<'_, MockTableSource>| {
+        let entry = format!(
+            "{label}:{}",
+            cx.stored.map_or("-".to_string(), |s| s["name"].to_string())
+        );
+        log.lock().unwrap().push(entry);
+        Box::pin(async { Ok(()) })
+    })
+}
+
+fn insert_and_update_logged(table: MockTable, log: &Log) -> MockTable {
+    table
+        .with_hook(Hook::BeforeInsert(
+            Phase::Populate,
+            logging_stored("ins", log.clone()),
+        ))
+        .with_hook(Hook::BeforeUpdate(
+            Phase::Populate,
+            logging_stored("upd", log.clone()),
+        ))
+        .with_hook(Hook::AfterInsert(recording_after("after-ins", log.clone())))
+        .with_hook(Hook::AfterUpdate(recording_after("after-upd", log.clone())))
+}
+
+#[tokio::test]
+async fn upsert_of_a_new_row_runs_the_insert_hooks() {
+    let log: Log = Arc::default();
+    let table = insert_and_update_logged(with_rows(vec![]).await, &log);
+    let stored = table
+        .upsert_value("1", &rec(json!({"name": "a"})))
+        .await
+        .unwrap();
+    assert_eq!(stored["name"], json!("a"));
+    assert_eq!(*log.lock().unwrap(), ["ins:-", "after-ins:1"]);
+    assert!(table.get_value("1").await.unwrap().is_some());
+}
+
+#[tokio::test]
+async fn upsert_of_an_existing_row_runs_the_update_hooks_with_the_stored_row() {
+    let log: Log = Arc::default();
+    let table = insert_and_update_logged(
+        with_rows(vec![json!({"id": "1", "name": "a", "age": 1})]).await,
+        &log,
+    );
+    table
+        .upsert_value("1", &rec(json!({"name": "b"})))
+        .await
+        .unwrap();
+    assert_eq!(*log.lock().unwrap(), [r#"upd:"a""#, "after-upd:1"]);
+    let row = table.get_value("1").await.unwrap().unwrap();
+    assert_eq!(row["name"], json!("b"));
+    assert!(row.get("age").is_none(), "an upsert replaces the whole row");
 }
 
 #[tokio::test]

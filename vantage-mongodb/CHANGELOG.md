@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.1.1 — 2026-11-07
+
+Requires vantage-table 3.5.0.
+
+- The vista's upsert goes through `Table::upsert_value`: an insert of a missing row, a replace of
+  a stored one, each with its own hooks.
+- `Table::with_rollup` fails with `Unsupported`: "rollup columns aren't supported on MongoDB yet".
+  `get_subquery_as` / `get_subquery_erased` fail with `Unsupported` instead of panicking.
+- `MongoSelect::as_avg` previews `$avg`. Requires vantage-expressions 1.3.0.
+
 ## 3.1.0 — 2026-10-31
 
 Requires vantage-vista 2.6.0 and vantage-table 3.2.0.

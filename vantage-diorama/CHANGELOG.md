@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.5.1 — 2026-11-07
+
+- A paged view drops rows the master lost with no change to say so (a script's transactional
+  `DELETE`, a delete made while the live follow was disconnected). A forced re-pull from the
+  first row that reads the whole set (by its stated total, or a short page) deletes every cached
+  row it didn't list, except one with a flash in flight, and announces each as a removal. The
+  view's own slots past the set's end already went with the total.
+- A paged view opened over a warm cache re-pulls every seeded row (up to ten pages), not only the
+  first page, and the grid's first viewport no longer narrows that re-pull.
+- A view that opens onto rows another view already loaded re-pulls their windows in the
+  background on its first viewport, instead of fetching nothing.
+- A live follow that reconnects, and a lagged follow or view, already re-pull their windows; that
+  re-pull now drops the vanished rows too.
+- A window longer than the view's page (the warm re-pull, a refresh) is fetched one page per
+  request. A source that caps its responses (a REST server serving at most 100 rows) and states no
+  total used to answer the long window short, which read as the end of the set: the re-pull then
+  dropped every cached row past the cap and cut the view there.
+- Views attaching to the same rows within 2 s share one background re-pull, instead of each
+  re-reading the whole loaded block.
+
 ## 1.5.0 — 2026-11-01
 
 - Requires vantage-vista 2.8.0.

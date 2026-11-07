@@ -70,6 +70,25 @@ impl Preview {
         self.note = Some(note.into());
         self
     }
+
+    /// This preview with the row window added to its note, for a shell whose
+    /// query can't carry one.
+    pub fn with_window_note(self, offset: usize, limit: Option<usize>) -> Self {
+        let window = match (offset, limit) {
+            (0, None) => return self,
+            (0, Some(n)) => format!("at most {n} rows are taken at fetch time"),
+            (o, None) => format!("rows {o}.. are taken at fetch time"),
+            (o, Some(n)) => format!("rows {o}.. (at most {n}) are taken at fetch time"),
+        };
+        let note = match self.note {
+            Some(note) => format!("{note}; {window}"),
+            None => window,
+        };
+        Self {
+            note: Some(note),
+            ..self
+        }
+    }
 }
 
 /// A condition in a driver's own type (a SurrealDB expression, a BSON

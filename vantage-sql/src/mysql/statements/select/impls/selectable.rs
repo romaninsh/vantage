@@ -159,4 +159,8 @@ impl Selectable<AnyMysqlType, MysqlCondition> for MysqlSelect {
     fn as_min(&self, column: impl Expressive<AnyMysqlType>) -> Expr {
         self.as_aggregate("min", column)
     }
+
+    fn as_avg(&self, column: impl Expressive<AnyMysqlType>) -> Expr {
+        self.as_aggregate("avg", column)
+    }
 }

@@ -1,6 +1,7 @@
 //! Opening a view: find or build the rows that answer its query, then attach
 //! a view its caller owns.
 
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, RwLock};
 
 use vantage_core::{Result, error};
@@ -20,7 +21,8 @@ use super::seed::{cached_count, seed};
 
 impl TableSceneryBuilder {
     /// Open a view. It reads the live rows of another view of the same query
-    /// when there are some — no seeding, no fetch — and otherwise builds them:
+    /// when there are some — no seeding, no fetch until its first viewport
+    /// re-pulls their windows in the background — and otherwise builds them:
     /// seeds the sparse map from the cache, spawns the reactor and the
     /// viewport loop, and schedules the on-open fetch. Requests a background
     /// refresh when the cache is older than the refresher's `max_age`.
@@ -89,6 +91,11 @@ impl TableSceneryBuilder {
             dio.shared_rows(&key)
                 .filter(|rows| rows.try_attach(id, hook()).is_ok())
         };
+        // Rows another view loaded may hold rows the master dropped with no
+        // change to say so; this view's first viewport re-pulls them.
+        let repull = live.as_ref().is_some_and(|rows| {
+            !rows.two_pass && rows.is_chunk_loaded() && !rows.rows.read().unwrap().is_empty()
+        });
         let shared = match live {
             Some(rows) => rows,
             None => {
@@ -135,6 +142,7 @@ impl TableSceneryBuilder {
             signal,
             master_capabilities: *dio.master.capabilities(),
             repointing: Mutex::new(()),
+            repull_on_viewport: AtomicBool::new(repull),
         });
         dio.register_view(&view);
         if let Some(Cap::Tail(n)) = cap {
@@ -184,14 +192,24 @@ fn register(
 /// this range: the cache is id-keyed (arbitrary order), but the server
 /// applies the query's ordering, so the on-open fetch must actually hit the
 /// server to replace the seed with ordered rows — otherwise the grid shows
-/// cache order until a manual refresh. It is the opening view's request, so
-/// the grid's first real viewport, pushed inside the debounce window,
-/// coalesces with it and keeps the force.
+/// cache order until a manual refresh. Over a cold cache it is the opening
+/// view's request, so the grid's first real viewport, pushed inside the
+/// debounce window, coalesces with it and keeps the force.
+///
+/// Over a warm cache the fetch re-pulls every seeded row, up to
+/// [`WARM_REPULL_PAGES`] pages, as a request of the rows' own: the grid's
+/// first viewport doesn't narrow it, so a set that fits is read whole and the
+/// rows the master dropped meanwhile leave the view and the cache. The
+/// opening view is still recorded as asking for the first page.
 async fn fetch_on_open(rows: &SharedRows, dio: &Arc<DioInner>, view: ViewId) {
     if !dio.lens.tuning().refresh_on_open || !rows.is_chunk_loaded() {
         return;
     }
-    let range = 0..rows.page_size;
+    let seeded_end = rows.rows.read().unwrap().keys().next_back().map(|i| i + 1);
+    let range = match seeded_end {
+        Some(end) => 0..end.clamp(rows.page_size, rows.page_size * WARM_REPULL_PAGES),
+        None => 0..rows.page_size,
+    };
     // `force_load` means this fetch runs even when the cache already covers
     // the range — i.e. opening ALWAYS goes to the master. That is the other
     // half of why a warm cache saves nothing here. Read before the macro: the
@@ -220,10 +238,19 @@ async fn fetch_on_open(rows: &SharedRows, dio: &Arc<DioInner>, view: ViewId) {
             } else {
                 vantage_core::Priority::Background
             },
-            view: Some(view),
+            view: if seeded_end.is_some() {
+                rows.record_viewport(view, 0..rows.page_size);
+                None
+            } else {
+                Some(view)
+            },
         },
     );
 }
+
+/// Most pages the on-open fetch re-pulls over a warm cache. A longer seeded
+/// set isn't read whole on open, so nothing past the re-pull is dropped.
+const WARM_REPULL_PAGES: usize = 10;
 
 /// Whether this view pages rows in lazily rather than warming from the cache.
 ///

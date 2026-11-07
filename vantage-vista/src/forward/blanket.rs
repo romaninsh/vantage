@@ -29,6 +29,9 @@ impl<T: ForwardShell + Clone> TableShell for T {
     fn preview(&self) -> Preview {
         ForwardShell::preview(self)
     }
+    fn preview_window(&self, offset: usize, limit: Option<usize>) -> Preview {
+        ForwardShell::preview_window(self, offset, limit)
+    }
     #[cfg(feature = "rhai")]
     fn register_rhai_extensions(&self, engine: &mut vantage_rhai::rhai::Engine) {
         ForwardShell::register_rhai_extensions(self, engine)

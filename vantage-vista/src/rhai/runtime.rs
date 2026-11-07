@@ -67,7 +67,8 @@ pub async fn run_script(
 /// ```
 ///
 /// Returns the [`Preview`](crate::Preview) from
-/// [`TableShell::preview`](crate::TableShell::preview), as JSON, plus a
+/// [`TableShell::preview_window`](crate::TableShell::preview_window) for the
+/// handle's `offset`/`limit`, as JSON, plus a
 /// `driver` field from [`Vista::driver_name`](crate::Vista::driver_name). A `ref`
 /// step still reads the rows it traverses from, through the resolver and the
 /// [bridge](super::block_on), so an async caller runs this under
@@ -90,7 +91,9 @@ pub fn preview_script(
     let vista = handle
         .resolve(Some(resolver.as_ref()))
         .map_err(|e| e.to_string())?;
-    let mut out = serde_json::to_value(vista.preview()).map_err(|e| e.to_string())?;
+    let window = handle.row_window();
+    let preview = vista.preview_window(window.offset, window.limit);
+    let mut out = serde_json::to_value(preview).map_err(|e| e.to_string())?;
     if let Some(fields) = out.as_object_mut() {
         fields.insert("driver".into(), vista.driver_name().into());
     }

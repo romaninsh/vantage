@@ -7,8 +7,8 @@
 //! before-write hook machinery (see [`crate::table::hooks`]).
 //!
 //! It fills the id only when the inserted record carries none (the field is
-//! absent or null), and only on insert: `patch`/`replace`/`update`/`upsert`
-//! never touch the id. Because a present id is always kept, an id the caller
+//! absent or null), and only on insert (an upsert of a new row is one):
+//! `patch`/`replace`/`update` never touch the id. Because a present id is always kept, an id the caller
 //! assigned once survives a retried insert — generation stays idempotent.
 //!
 //! [`IdGenerator`] itself lives in vantage-vista, so a type-erased `Vista`
@@ -31,8 +31,8 @@ where
     ///
     /// Only insert is affected, and only when the record's id field is absent or
     /// null — a caller-supplied id is always kept, so a retried insert that
-    /// carries the same id stays idempotent. `patch`/`replace`/`update`/`upsert`
-    /// never touch the id. Backends that mint their own id (e.g. the in-memory
+    /// carries the same id stays idempotent. An upsert of a new row is an
+    /// insert; `patch`/`replace`/`update` never touch the id. Backends that mint their own id (e.g. the in-memory
     /// store, a SQL column with a `DEFAULT`) ignore the filled value and need no
     /// generator.
     pub fn with_generated_id(self, generator: IdGenerator) -> Self {

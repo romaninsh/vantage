@@ -122,3 +122,31 @@ async fn delete_all_on_a_conditioned_table_only_deletes_matching_rows() {
     );
     assert_eq!(survivors.len(), 1, "only the matching row should have gone");
 }
+
+/// A before-delete hook makes `delete_all` go row by row. A pagination
+/// window shapes reads, not the set: the whole set goes, as it does with
+/// no hook.
+#[tokio::test]
+async fn delete_all_row_by_row_ignores_the_pagination_window() {
+    use vantage_table::pagination::Pagination;
+    use vantage_table::table::{DeleteCx, Hook, HookReturn, before_delete_hook};
+
+    let (db, mut table) = setup().await;
+    table.set_pagination(Some(Pagination::window(0, 1)));
+    let table = table.with_hook(Hook::BeforeDelete(before_delete_hook(
+        |_cx: DeleteCx<'_, SqliteDB>| Box::pin(async { Ok(HookReturn::Proceed) }),
+    )));
+
+    table.delete_all().await.unwrap();
+
+    let left = Table::<SqliteDB, EmptyEntity>::new("item", db)
+        .with_id_column("id")
+        .list_values()
+        .await
+        .unwrap();
+    assert!(
+        left.is_empty(),
+        "left {:?}",
+        left.keys().collect::<Vec<_>>()
+    );
+}

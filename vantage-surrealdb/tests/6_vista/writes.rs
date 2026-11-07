@@ -2,6 +2,7 @@
 
 use ciborium::Value as CborValue;
 use vantage_dataset::prelude::*;
+use vantage_surrealdb::types::AnySurrealType;
 use vantage_types::Record;
 use vantage_vista::FilterOp;
 
@@ -61,6 +62,61 @@ async fn vista_insert_without_id_reads_back_the_stored_row() -> TestResult {
         .from_table(product_table(db.clone(), &table_name))?;
     let stored = all.get_value(&id).await?.expect("stored");
     assert_eq!(stored.get("name"), Some(&CborValue::Text("Echo".into())));
+    Ok(())
+}
+
+/// Rhai's `now()` and the audit logger hand over `Tag(0, rfc3339)`, which
+/// SurrealDB refuses; the vista writes it as a datetime, nested ones too.
+#[tokio::test]
+async fn vista_writes_tag0_datetimes_as_datetimes() -> TestResult {
+    let (db, table_name) = setup().await;
+    let table = product_table(db.clone(), &table_name)
+        .with_column_of::<AnySurrealType>("ran_at")
+        .with_column_of::<AnySurrealType>("at")
+        .with_column_of::<AnySurrealType>("meta")
+        .with_column_of::<AnySurrealType>("history");
+    let vista = db.vista_factory().from_table(table)?;
+    let tag0 = || CborValue::Tag(0, Box::new(CborValue::Text("2026-01-02T03:04:05Z".into())));
+    let tag12 = CborValue::Tag(
+        12,
+        Box::new(CborValue::Array(vec![
+            CborValue::Integer(1767323045i64.into()),
+            CborValue::Integer(0i64.into()),
+        ])),
+    );
+    let is_datetime = |stored: &Record<CborValue>, key: &str| {
+        matches!(stored.get(key), Some(CborValue::Tag(12, _)))
+    };
+
+    let record: Record<CborValue> = [
+        ("ran_at".to_string(), tag0()),
+        (
+            "meta".to_string(),
+            CborValue::Map(vec![(CborValue::Text("at".into()), tag0())]),
+        ),
+        ("history".to_string(), CborValue::Array(vec![tag0()])),
+    ]
+    .into_iter()
+    .collect();
+    vista.insert_value("a", &record).await?;
+    vista.upsert_value("b", &record).await?;
+    vista
+        .patch_value("a", &[("at".to_string(), tag0())].into_iter().collect())
+        .await?;
+
+    let a = vista.get_value("a").await?.expect("inserted");
+    let b = vista.get_value("b").await?.expect("upserted");
+    assert!(is_datetime(&a, "ran_at"), "{:?}", a.get("ran_at"));
+    assert!(is_datetime(&a, "at"), "{:?}", a.get("at"));
+    assert!(is_datetime(&b, "ran_at"), "{:?}", b.get("ran_at"));
+    assert_eq!(
+        a.get("meta"),
+        Some(&CborValue::Map(vec![(
+            CborValue::Text("at".into()),
+            tag12.clone()
+        )]))
+    );
+    assert_eq!(a.get("history"), Some(&CborValue::Array(vec![tag12])));
     Ok(())
 }
 

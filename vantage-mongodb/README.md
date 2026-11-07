@@ -199,7 +199,7 @@ With the `vista` feature, a MongoDB vista advertises:
 
 `$lookup` joins are type-strict: a string foreign key does not join an `ObjectId` `_id`. Each hop
 matches `localField` against `foreignField`. Correlated subqueries are not implemented:
-`Table::get_subquery_*` panics on MongoDB (`related_correlated_condition` is `unimplemented!`).
+`Table::get_subquery_*` and `Table::with_rollup` fail with an `Unsupported` error on MongoDB.
 Reference keys must be stored under their own field name: a reference whose foreign key, or the id
 column it matches, is renamed (`field:`) or nested (`nested_path:`) is refused when the vista is
 built, unless the reference carries a `mongo: { rhai: }` script. A typed

@@ -17,6 +17,7 @@ impl SurrealDB {
             inner: Arc::new(tokio::sync::Mutex::new(client)),
             key: Arc::new(()),
             tx: None,
+            references: Default::default(),
         }
     }
 

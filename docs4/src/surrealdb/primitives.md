@@ -145,13 +145,21 @@ surreal::select().field("price").from("product").split("tags")
 ```
 
 `.subquery()` parenthesizes a select so it composes as a scalar expression — it bridges a select into
-the expression layer, where it pairs with the `[n]` indexer, `.alias()`, comparisons, and `from()`:
+the expression layer, where it pairs with the `[n]` indexer, `.alias()`, comparisons, and `from()`.
+
+Don't use it for a per-row roll-up such as each client's biggest order: a subquery on
+`WHERE client = $parent.id` runs once per client row, and each run scans the whole `order` table.
+Mark the link field `REFERENCE` and read the referencing rows with `<~order` instead:
+
+```sql
+DEFINE FIELD client ON order TYPE record<client> REFERENCE;
+```
 
 ```rhai
-surreal::select().value().expression(surreal::max(surreal::ident("total")))
-    .from("order").where(surreal::ident("client") == surreal::parent("id")).group_all()
-    .subquery()[0].alias("biggest_order")
-// → (SELECT VALUE math::max(total) FROM order WHERE client = $parent.id GROUP ALL)[0] AS biggest_order
+surreal::select().field("name")
+    .expression(surreal::max(surreal::expr("<~order.total")).alias("biggest_order"))
+    .from("client")
+// → SELECT name, math::max(<~order.total) AS biggest_order FROM client
 ```
 
 ## Parameters

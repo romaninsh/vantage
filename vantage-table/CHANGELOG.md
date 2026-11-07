@@ -1,5 +1,50 @@
 # Changelog
 
+## 3.5.0 — 2026-11-07
+
+- `Hook::AfterLoad` rewrites each row a list, get, get-some or stream returns, before the lazy
+  expressions (`LoadCx`, `after_load_hook`, `after_load_hook_sync`). Counts, aggregates,
+  conditions and order still use the stored values. `Table::finish_read` runs the hooks and the
+  lazy expressions on a row, for shells that read the data source directly.
+- `Table::upsert_value` inserts a row the set doesn't hold and replaces one it does, so the insert
+  hooks (the id generator, timestamps) run only on a new row and the update hooks see `stored`. A
+  table without insert or update hooks replaces in one write, as before.
+- On a table with a `BeforeDelete` hook, `delete_all` now deletes row by row, where before it was
+  one statement that skipped the row hooks. It runs the `BeforeDelete` hooks on every row of the
+  set first, then deletes each row and runs its `AfterDelete` hooks, so a soft-delete hook
+  (`HookReturn::Handled`) and per-row `AfterDelete` hooks now take part in `delete_all`.
+  `BeforeDeleteAll` / `AfterDeleteAll` still run once. A refusal deletes nothing, except that a
+  `Handled` hook on an earlier row has already done its own write, outside any transaction. The
+  set is the conditioned one, whole: a pagination window doesn't limit it. Without a
+  `BeforeDelete` hook it stays one statement.
+- Update, patch and delete hooks get `stored` (and the delete row) as stored: the write path reads
+  it without the `AfterLoad` hooks and lazy expressions. Before, hooks saw the rewritten row, and
+  a replace wrote the `AfterLoad` values of read-only columns back to the database.
+- `upsert_value` with hooks reads the row through the set, so it needs read access, and a row
+  outside the table's conditions takes the insert path.
+- The default `rollup_expression` refuses a self-referencing relation
+  (`employee.with_many("reports", "manager_id", employee)`) with `Unsupported`: its unaliased
+  subquery would compare the inner row with itself and give wrong numbers.
+- Roll-up columns: `Table::with_rollup(name, relation, op, column, condition)` adds a read-only
+  column holding `RollupOp::{Count, Sum, Min, Max, Avg}` over a has_many relation's rows, narrowed
+  by an optional child condition. The backend renders it through
+  `TableSource::rollup_expression`, whose default is a correlated subquery built from
+  `get_subquery_erased` and the new `Table::aggregate_query`. Over no rows, count and sum read 0
+  (the sum is wrapped in `COALESCE(…, 0)`), min, max and avg read null. An unknown relation or
+  column, or a backend that refuses, is an error from `with_rollup`.
+- `get_min_query`, `get_max_query` and `get_avg_query`, next to `get_sum_query`. Requires
+  vantage-expressions 1.3.0 (`Selectable::as_avg`).
+- `TableSource::try_related_correlated_condition`, a fallible sibling of
+  `related_correlated_condition` (unchanged). `get_subquery_as`, `get_subquery_erased` and the
+  roll-up default call it. Its default is an `Unsupported` error, so on MongoDB, CSV or REST they
+  now fail cleanly instead of panicking. Non-breaking, but a driver with correlated subqueries
+  should also override `try_related_correlated_condition` to return
+  `Ok(self.related_correlated_condition(..))`; the SQL and SurrealDB drivers do.
+- Driver authors: `get_subquery_*` now go through `try_related_correlated_condition`, so an
+  out-of-tree source that overrides only `related_correlated_condition` gets `Unsupported` from
+  them, and from roll-ups and dotted columns, until it overrides `try_related_correlated_condition`
+  too. `MockTableSource` now implements both.
+
 ## 3.4.1 — 2026-11-04
 
 - A dotted column whose relation leads back to its own table (`manager.name` on `employee`), or

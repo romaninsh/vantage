@@ -271,17 +271,17 @@ impl TableSource for CborSource {
         )
     }
 
-    fn related_correlated_condition(
+    fn try_related_correlated_condition(
         &self,
         target_table: &str,
         target_field: &str,
         source_table: &str,
         source_column: &str,
-    ) -> Expression<CborValue> {
-        Expression::new(
+    ) -> Result<Expression<CborValue>> {
+        Ok(Expression::new(
             format!("{target_table}.{target_field} = {source_table}.{source_column}"),
             vec![],
-        )
+        ))
     }
 
     fn column_table_values_expr<'a, E, Type: ColumnType>(

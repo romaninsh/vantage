@@ -118,7 +118,8 @@ fn table_from_rhai(
 
 /// A derived table: build `base_name` through the resolver (injected as
 /// [`BuildKind::Base`]), transform its `select()` by the `rhai:` script if
-/// there is one, and inherit the listed columns and relations.
+/// there is one, inherit the listed columns and relations, and add the
+/// references the spec declares itself (`nominal: { references: nominal }`).
 fn build_derived_table(
     spec: &SurrealVistaSpec,
     base_name: &str,
@@ -147,7 +148,8 @@ fn build_derived_table(
         &inherit.columns,
         &inherit.relations,
         build_column,
-    )
+    )?
+    .with_spec_references(spec, env, build_surreal_table)
 }
 
 /// Apply a `rhai:` transform to a base select. Feature-gated like

@@ -161,6 +161,37 @@ where
         expr_any!("({})", (self.select_empty().as_sum(column.expr())))
     }
 
+    /// Create a min query expression for a column (does not execute), in
+    /// parentheses like [`Self::get_sum_query`].
+    pub fn get_min_query<Type>(&self, column: &T::Column<Type>) -> Expression<T::Value>
+    where
+        Type: ColumnType,
+        T::Column<Type>: Expressive<T::Value>,
+    {
+        expr_any!("({})", (self.select_empty().as_min(column.expr())))
+    }
+
+    /// Create a max query expression for a column (does not execute), in
+    /// parentheses like [`Self::get_sum_query`].
+    pub fn get_max_query<Type>(&self, column: &T::Column<Type>) -> Expression<T::Value>
+    where
+        Type: ColumnType,
+        T::Column<Type>: Expressive<T::Value>,
+    {
+        expr_any!("({})", (self.select_empty().as_max(column.expr())))
+    }
+
+    /// Create an average query expression for a column (does not execute), in
+    /// parentheses like [`Self::get_sum_query`].
+    pub fn get_avg_query<Type>(&self, column: &T::Column<Type>) -> Expression<T::Value>
+    where
+        Type: ColumnType,
+        T::Column<Type>: Expressive<T::Value>,
+        T::Select: Expressive<T::Value>,
+    {
+        expr_any!("({})", (self.select_empty().as_avg(column.expr())))
+    }
+
     /// Create a subquery expression that selects a single column from this table.
     ///
     /// Builds `SELECT field FROM table WHERE conditions` — useful as a correlated

@@ -11,6 +11,8 @@ use super::super::ViewportRequest;
 use super::super::view::ViewId;
 use super::SharedRows;
 
+const ATTACH_REPULL_WINDOW: std::time::Duration = std::time::Duration::from_secs(2);
+
 impl SharedRows {
     /// The cache this view reads rows from: the Dio's own, or the sugared
     /// wrapper over it. Writes — and read-backs that feed a write — always
@@ -105,6 +107,21 @@ impl SharedRows {
                 },
             );
         }
+    }
+
+    /// The re-pull a view attaching to live rows asks for on its first
+    /// viewport. Skipped when another attaching view re-pulled within
+    /// [`ATTACH_REPULL_WINDOW`], so K views opening together cost one re-pull.
+    pub(crate) fn repull_for_attach(&self) {
+        {
+            let mut last = self.last_attach_repull.lock().unwrap();
+            let now = std::time::Instant::now();
+            if last.is_some_and(|t| now.duration_since(t) < ATTACH_REPULL_WINDOW) {
+                return;
+            }
+            *last = Some(now);
+        }
+        self.refresh_loaded_viewport(vantage_core::Priority::Background);
     }
 
     /// The range a refresh re-fetches for `viewport`. Two-pass rows seed

@@ -170,9 +170,44 @@ pub(super) async fn run_chunk_callback(
         armed: true,
         writer: writer.clone(),
     };
-    let result = priority
-        .scope(cb(cx, effective_range.clone(), query, sink))
-        .await;
+    let mark = dio_inner.pending_flashes.mark();
+    // One page per request while the source states no total: a source that
+    // caps its responses (a REST server serving at most 100 rows) answers a
+    // longer window short, and a short answer with no total reads as the end
+    // of the set — the warm re-pull would then drop every cached row past the
+    // cap. A stated total settles the end by itself, so once there is one the
+    // rest of the window goes in one request.
+    let mut result = Ok(());
+    let mut start = effective_range.start;
+    while start < effective_range.end {
+        let total_known = state.total_ever_stated()
+            || state
+                .load_total_reported
+                .load(std::sync::atomic::Ordering::SeqCst);
+        let page = if total_known {
+            start..effective_range.end
+        } else {
+            start..(start + state.page_size.max(1)).min(effective_range.end)
+        };
+        let before = state.load_push_count();
+        result = priority
+            .scope(cb(cx.clone(), page.clone(), query.clone(), sink.clone()))
+            .await;
+        let short = state.load_push_count() - before < page.len();
+        let stated = state
+            .load_total_reported
+            .load(std::sync::atomic::Ordering::SeqCst)
+            .then(|| *state.total.read().unwrap());
+        let ended = match stated {
+            Some(total) => total.is_some_and(|t| t <= page.end),
+            None => short,
+        };
+        if result.is_err() || ended {
+            break;
+        }
+        start = page.end;
+    }
+    drop(sink);
     cancel_guard.armed = false;
 
     Some(PendingChunk {
@@ -187,6 +222,7 @@ pub(super) async fn run_chunk_callback(
         t,
         force_load,
         priority,
+        mark,
         _in_flight: in_flight,
     })
 }

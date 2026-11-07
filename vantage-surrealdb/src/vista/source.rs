@@ -14,10 +14,11 @@ use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::Result;
 use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet, WritableValueSet};
+use vantage_expressions::traits::selectable::Selectable;
 use vantage_table::conditions::ConditionHandle;
 use vantage_table::pagination::Pagination;
 use vantage_table::table::Table;
-use vantage_types::{EmptyEntity, Entity, Record};
+use vantage_types::{EmptyEntity, Entity, Record, rfc3339_to_tag12};
 use vantage_vista::{
     Condition, NativeCondition, Page, Preview, SortDirection, TableShell, Transaction, Vista,
     VistaCapabilities, VistaChangeStream, VistaMetadata, direct,
@@ -91,8 +92,38 @@ fn to_cbor_record(record: Record<AnySurrealType>) -> Record<CborValue> {
 fn to_native_record(record: &Record<CborValue>) -> Record<AnySurrealType> {
     record
         .iter()
-        .map(|(k, v)| (k.clone(), AnySurrealType::from(v.clone())))
+        .map(|(k, v)| {
+            (
+                k.clone(),
+                AnySurrealType::from(datetimes_as_tag12(v.clone())),
+            )
+        })
         .collect()
+}
+
+/// SurrealDB refuses `Tag(0, rfc3339)` (Rhai's `now()`, the audit logger's
+/// `at`) and takes only `Tag(12, [seconds, nanos])`; text that isn't RFC 3339
+/// is left for the server to reject.
+fn datetimes_as_tag12(value: CborValue) -> CborValue {
+    match value {
+        CborValue::Tag(0, inner) => match *inner {
+            CborValue::Text(s) => rfc3339_to_tag12(&s)
+                .unwrap_or_else(|| CborValue::Tag(0, Box::new(CborValue::Text(s)))),
+            other => CborValue::Tag(0, Box::new(other)),
+        },
+        CborValue::Array(items) => {
+            CborValue::Array(items.into_iter().map(datetimes_as_tag12).collect())
+        }
+        CborValue::Map(entries) => CborValue::Map(
+            entries
+                .into_iter()
+                .map(|(k, v)| (k, datetimes_as_tag12(v)))
+                .collect(),
+        ),
+        // Other tags (a record id, a decimal) are left whole: nothing inside
+        // them is rewritten.
+        other => other,
+    }
 }
 
 fn to_cbor_rows(
@@ -120,10 +151,19 @@ where
     }
 
     /// The SurrealQL SELECT as it stands, with every condition and order
-    /// rendered inline. A window's `LIMIT`/`START` is added at fetch time, so
-    /// it is absent here.
+    /// rendered inline. A fetched window's `LIMIT`/`START` is added at fetch
+    /// time, so it is absent here; `preview_window` renders one.
     fn preview(&self) -> Preview {
         Preview::new().with_query(self.table.select().preview())
+    }
+
+    fn preview_window(&self, offset: usize, limit: Option<usize>) -> Preview {
+        let mut select = self.table.select();
+        select.set_limit(
+            limit.map(|n| n as i64),
+            (offset > 0).then_some(offset as i64),
+        );
+        Preview::new().with_query(select.preview())
     }
 
     async fn list(&self) -> Result<IndexMap<String, Record<CborValue>>> {
@@ -194,10 +234,15 @@ where
         Ok(to_cbor_record(replaced))
     }
 
-    /// The replace statement is an `UPSERT … CONTENT` for a row outside the
-    /// set, so it already creates a missing row in one operation.
+    /// An insert of a missing row, a replace of a stored one, each with its
+    /// own hooks. Without them it is the replace statement, an
+    /// `UPSERT … CONTENT` that creates a missing row in one operation.
     async fn upsert(&self, id: &str, record: &Record<CborValue>) -> Result<Record<CborValue>> {
-        self.replace(id, record).await
+        let upserted = self
+            .table
+            .upsert_value(self.parse_id(id), &to_native_record(record))
+            .await?;
+        Ok(to_cbor_record(upserted))
     }
 
     async fn patch(&self, id: &str, partial: &Record<CborValue>) -> Result<Record<CborValue>> {

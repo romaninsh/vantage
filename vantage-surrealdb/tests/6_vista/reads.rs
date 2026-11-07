@@ -137,9 +137,10 @@ async fn vista_capabilities_advertise_read_write() -> TestResult {
 }
 
 /// The preview is the SurrealQL SELECT as it stands, with every condition and
-/// order inline; a window's `LIMIT`/`START` is added at fetch time.
+/// order inline. A fetched window leaves it as it was; a window asked for
+/// renders as `LIMIT`/`START`.
 #[tokio::test]
-async fn preview_renders_the_narrowed_select_without_a_window() -> TestResult {
+async fn preview_renders_the_narrowed_select_and_a_window_on_request() -> TestResult {
     let (db, table_name) = setup().await;
     seed_row(&db, &table_name, "alpha", "Alpha", 10, false).await?;
     let mut vista = db
@@ -149,12 +150,19 @@ async fn preview_renders_the_narrowed_select_without_a_window() -> TestResult {
     vista.set_order(Some(("name", SortDirection::Ascending)))?;
     let _ = vista.fetch_window(0, 2).await?;
 
-    assert_eq!(
-        vista.preview().query,
-        Some(format!(
-            "SELECT id, name, price, is_deleted FROM {table_name} WHERE price > 5 ORDER BY name"
-        ))
+    let select = format!(
+        "SELECT id, name, price, is_deleted FROM {table_name} WHERE price > 5 ORDER BY name"
     );
+    assert_eq!(vista.preview().query, Some(select.clone()));
+    assert_eq!(
+        vista.preview_window(10, Some(20)).query,
+        Some(format!("{select} LIMIT 20 START 10"))
+    );
+    assert_eq!(
+        vista.preview_window(0, Some(20)).query,
+        Some(format!("{select} LIMIT 20"))
+    );
+    assert_eq!(vista.preview_window(0, None).query, Some(select));
     Ok(())
 }
 

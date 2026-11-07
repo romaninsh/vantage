@@ -13,7 +13,7 @@ use vantage_expressions::{Expression, ExpressiveEnum, expr, expr_any};
 use vantage_table::conditions::literal_equality;
 use vantage_table::mocks::MockColumn;
 use vantage_table::prelude::*;
-use vantage_table::table::{Hook, SelectCx, select_hook};
+use vantage_table::table::{Hook, SelectCx, after_load_hook_sync, select_hook};
 use vantage_types::{EmptyEntity, Record};
 
 type MockTable = Table<MockTableSource, EmptyEntity>;
@@ -717,4 +717,67 @@ async fn before_select_sees_the_set_and_the_context_and_ok_lets_the_read_through
 fn before_select_does_not_run_when_the_table_is_only_built_into_an_expression() {
     let table = users(json!(0)).with_hook(refusing());
     assert!(table.get_count_query().preview().contains("COUNT"));
+}
+
+// --- after-load hook ----------------------------------------------------------
+
+/// Rewrites `name` to upper case as each row is read.
+fn shouting() -> Hook<MockTableSource> {
+    Hook::AfterLoad(after_load_hook_sync::<MockTableSource>(
+        |record, _context| {
+            if let Some(Value::String(name)) = record.get("name") {
+                let loud = name.to_uppercase();
+                record.insert("name".to_string(), json!(loud));
+            }
+            Ok(())
+        },
+    ))
+}
+
+fn names(rows: impl IntoIterator<Item = Record<Value>>) -> Vec<Value> {
+    rows.into_iter().map(|row| row["name"].clone()).collect()
+}
+
+#[tokio::test]
+async fn after_load_rewrites_lists_gets_and_streams() {
+    let table = people().await.with_hook(shouting());
+
+    let listed = table.list_values().await.unwrap();
+    assert_eq!(names(listed.into_values()), [json!("ALICE"), json!("BOB")]);
+    let got = table.get_value("1").await.unwrap().unwrap();
+    assert_eq!(got["name"], json!("ALICE"));
+    let (_, some) = table.get_some_value().await.unwrap().unwrap();
+    assert_eq!(some["name"], json!("ALICE"));
+
+    let mut values = table.stream_values();
+    let (_, streamed) = std::future::poll_fn(|cx| values.as_mut().poll_next(cx))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(streamed["name"], json!("ALICE"));
+}
+
+#[tokio::test]
+async fn after_load_leaves_counts_and_conditions_on_the_stored_values() {
+    let all = people().await.with_hook(shouting());
+    let stored = all
+        .data_source()
+        .eq_value_condition("name", json!("Alice"))
+        .unwrap();
+    let rewritten = all
+        .data_source()
+        .eq_value_condition("name", json!("ALICE"))
+        .unwrap();
+
+    let alice = all.clone().with_condition(stored);
+    assert_eq!(
+        names(alice.list_values().await.unwrap().into_values()),
+        [json!("ALICE")]
+    );
+    assert_eq!(alice.get_count().await.unwrap(), 1);
+
+    let none = all.clone().with_condition(rewritten);
+    assert!(none.list_values().await.unwrap().is_empty());
+    assert_eq!(none.get_count().await.unwrap(), 0);
+    assert_eq!(all.get_count().await.unwrap(), 2);
 }

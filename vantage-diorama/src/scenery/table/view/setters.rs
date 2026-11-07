@@ -5,6 +5,7 @@
 //! tail records the slot and stays put until an order lifts the refusal.
 
 use std::ops::Range;
+use std::sync::atomic::Ordering;
 
 use vantage_vista::{Condition, SortDirection, VistaQuery};
 
@@ -31,6 +32,9 @@ impl TableView {
                 Placing::Unplaced(cap) => cap.shared_range(loaded, 0, shared.two_pass),
             };
             self.ask(&shared, range);
+            if self.repull_on_viewport.swap(false, Ordering::SeqCst) {
+                shared.repull_for_attach();
+            }
         }
         let shown = self.cap().map_or(shown.clone(), |cap| cap.clamp(shown));
         let shown = Some(shown).filter(|r| !r.is_empty());

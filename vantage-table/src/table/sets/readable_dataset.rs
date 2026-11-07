@@ -22,7 +22,7 @@ where
         let mut entities = IndexMap::new();
 
         for (id, mut record) in records {
-            self.apply_lazy_expressions(&mut record).await?;
+            self.finish_read(&id, &mut record).await?;
             let entity: E = E::try_from_record(&record)
                 .map_err(|_| vantage_core::error!("Failed to convert record to entity"))?;
             entities.insert(id, entity);
@@ -37,7 +37,7 @@ where
         let Some(mut record) = self.data_source().get_table_value(self, &id).await? else {
             return Ok(None);
         };
-        self.apply_lazy_expressions(&mut record).await?;
+        self.finish_read(&id, &mut record).await?;
         let entity = E::try_from_record(&record)
             .map_err(|_| vantage_core::error!("Failed to convert record to entity"))?;
         Ok(Some(entity))
@@ -46,7 +46,7 @@ where
     async fn get_some(&self) -> Result<Option<(Self::Id, E)>> {
         self.check_read().await?;
         if let Some((id, mut record)) = self.data_source().get_table_some_value(self).await? {
-            self.apply_lazy_expressions(&mut record).await?;
+            self.finish_read(&id, &mut record).await?;
             let entity: E = E::try_from_record(&record)
                 .map_err(|_| vantage_core::error!("Failed to convert record to entity"))?;
             Ok(Some((id, entity)))
@@ -85,13 +85,15 @@ where
                     }).await
                 };
                 let mapped: Option<Result<(T::Id, E)>> = match item {
-                    Some(Ok((id, record))) => {
+                    Some(Ok((id, mut record))) => match self.run_after_load(&id, &mut record).await {
                         // Convert record to entity — handle error before yield to keep Send
-                        let result = E::try_from_record(&record)
-                            .map(|entity| (id, entity))
-                            .map_err(|_| vantage_core::error!("Failed to convert record to entity"));
-                        Some(result)
-                    }
+                        Ok(()) => Some(
+                            E::try_from_record(&record)
+                                .map(|entity| (id, entity))
+                                .map_err(|_| vantage_core::error!("Failed to convert record to entity")),
+                        ),
+                        Err(e) => Some(Err(e)),
+                    },
                     Some(Err(e)) => Some(Err(e)),
                     None => None,
                 };

@@ -159,4 +159,8 @@ impl Selectable<AnyPostgresType, PostgresCondition> for PostgresSelect {
     fn as_min(&self, column: impl Expressive<AnyPostgresType>) -> Expr {
         self.as_aggregate("min", column)
     }
+
+    fn as_avg(&self, column: impl Expressive<AnyPostgresType>) -> Expr {
+        self.as_aggregate("avg", column)
+    }
 }

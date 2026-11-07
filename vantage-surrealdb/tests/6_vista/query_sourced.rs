@@ -10,9 +10,10 @@ use vantage_expressions::ExprDataSource;
 use vantage_surrealdb::surreal_expr;
 use vantage_surrealdb::surrealdb::SurrealDB;
 use vantage_surrealdb::vista::SurrealVistaSpec;
-use vantage_vista::{Capability, SpecResolver, Vista, VistaFactory};
+use vantage_vista::rhai::preview_script;
+use vantage_vista::{Capability, SpecResolver, Vista, VistaFactory, VistaResolver};
 
-use super::{TestResult, seed_row, setup};
+use super::{TestResult, product_table, seed_row, setup};
 
 /// The `args` example from the book's "Tables Defined by a Query" page.
 const ORDERS_BY_BAKERY: &str = r#"
@@ -448,10 +449,93 @@ fn expr_column_that_fails_or_yields_no_expression_fails_the_build() {
     }
 }
 
-/// A derived vista builds only the relations it inherits, so a reference it
-/// declares itself would have no target: the build refuses it.
+/// smbo's trial balance: a grouped `base:` vista whose `nominal` column
+/// references the nominal table. The reference resolves, and traversing it
+/// from a balance row reaches that row's nominal.
+#[tokio::test]
+async fn base_vista_column_reference_resolves_and_traverses() -> TestResult {
+    let (db, _) = setup().await;
+    for statement in [
+        "CREATE nominal:sales SET code = '4000'",
+        "CREATE nominal:bank SET code = '1200'",
+        "CREATE nominal:spare SET code = '9999'",
+        "CREATE nominal_sheet:s1 SET nominal = nominal:sales, amount = -100",
+        "CREATE nominal_sheet:s2 SET nominal = nominal:bank, amount = 100",
+        "CREATE nominal_sheet:s3 SET nominal = nominal:sales, amount = -50",
+        "CREATE nominal_sheet:s4 SET nominal = nominal:bank, amount = 50",
+    ] {
+        db.execute(&surreal_expr!(statement)).await?;
+    }
+
+    let specs: IndexMap<String, SurrealVistaSpec> = [
+        (
+            "nominal",
+            "name: nominal\ncolumns:\n  id: { type: thing, flags: [id] }\n  code: { type: string }\n",
+        ),
+        (
+            "nominal_sheet",
+            "name: nominal_sheet\ncolumns:\n  id: { type: thing, flags: [id] }\n  \
+             nominal: { type: thing }\n  amount: { type: int }\n",
+        ),
+    ]
+    .into_iter()
+    .map(|(name, yaml)| (name.to_string(), serde_yaml_ng::from_str(yaml).unwrap()))
+    .collect();
+    let specs = Arc::new(specs);
+    let resolver: Arc<dyn SpecResolver<SurrealVistaSpec>> =
+        Arc::new(move |name: &str| specs.get(name).cloned());
+
+    let trial_balance: SurrealVistaSpec = serde_yaml_ng::from_str(
+        r#"
+name: trial_balance
+columns:
+  id: { type: string, flags: [id] }
+  nominal: { type: string, references: nominal }
+  postings: { type: int }
+  balance: { type: int }
+surreal:
+  base: nominal_sheet
+  rhai: |
+    surreal::select()
+        .from(surreal::select()
+            .from(base.subquery())
+            .field("nominal")
+            .expression(surreal::expr("math::sum(amount)").alias("total"))
+            .expression(surreal::expr("count()").alias("postings"))
+            .group_by(surreal::ident("nominal"))
+            .subquery())
+        .expression(surreal::expr("type::record('trial_balance', record::id(nominal))").alias("id"))
+        .field("nominal").field("postings")
+        .expression(surreal::expr("total").alias("balance"))
+"#,
+    )?;
+
+    let vista = db
+        .vista_factory()
+        .with_resolver(resolver)
+        .build_from_spec(trial_balance)?;
+    assert!(
+        vista.reference("nominal").is_some(),
+        "the reference resolves"
+    );
+
+    let sales = vista
+        .get_value("trial_balance:sales")
+        .await?
+        .expect("the sales balance");
+    assert_eq!(
+        sales.get("balance"),
+        Some(&CborValue::Integer((-150i64).into()))
+    );
+    let nominal = vista.get_ref("nominal", Some(&sales))?;
+    assert_eq!(sorted_ids(&nominal).await?, vec!["nominal:sales"]);
+    Ok(())
+}
+
+/// A derived vista can't have a has_one reference keyed by a column its rows
+/// don't carry: the build refuses it.
 #[test]
-fn derived_vista_declaring_its_own_reference_fails_the_build() {
+fn derived_vista_reference_over_a_missing_column_fails_the_build() {
     let db = SurrealDB::new(surreal_client::SurrealMockBuilder::new().build());
     let client_spec: SurrealVistaSpec = serde_yaml_ng::from_str(
         r#"
@@ -471,10 +555,10 @@ surreal:
   inherit:
     columns: [id, name]
 references:
-  orders:
-    table: order
-    kind: has_many
-    foreign_key: client
+  bakery:
+    table: bakery
+    kind: has_one
+    foreign_key: bakery
 "#,
     )
     .expect("derived yaml");
@@ -482,7 +566,13 @@ references:
         .vista_factory()
         .with_resolver(resolver("client", client_spec))
         .build_from_spec(derived);
-    assert!(built.is_err());
+    let Err(err) = built else {
+        panic!("the build must fail");
+    };
+    assert!(
+        err.to_string().contains("foreign key as a column"),
+        "{err:?}"
+    );
 }
 
 /// The book's `with_condition` example: a `modify:` script narrows a real
@@ -584,4 +674,28 @@ fn rule_with_condition_narrows_the_table() {
             described: "bakery_id = 3".into()
         }]
     );
+}
+
+/// `preview_script` shows the window the script asked for, as `LIMIT`/`START`.
+#[tokio::test]
+async fn a_preview_script_renders_its_limit_and_offset() -> TestResult {
+    let (db, table_name) = setup().await;
+    let vista = db
+        .vista_factory()
+        .from_table(product_table(db.clone(), &table_name))?;
+    let resolver: Arc<dyn VistaResolver> = Arc::new(move |_: &str| Ok(vista.clone()));
+    let select = format!("SELECT id, name, price, is_deleted FROM {table_name} WHERE price = 5");
+
+    let limited = preview_script(
+        r#"table("p").where("price", 5).limit(20)"#.into(),
+        resolver.clone(),
+    )?;
+    assert_eq!(limited["query"], format!("{select} LIMIT 20"));
+
+    let windowed = preview_script(
+        r#"table("p").where("price", 5).offset(10).limit(20)"#.into(),
+        resolver,
+    )?;
+    assert_eq!(windowed["query"], format!("{select} LIMIT 20 START 10"));
+    Ok(())
 }
