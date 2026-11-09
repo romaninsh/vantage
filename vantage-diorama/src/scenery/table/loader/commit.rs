@@ -1,4 +1,5 @@
 mod totals;
+mod vanished;
 
 use crate::dio::DioEvent;
 use crate::scenery::table::state::SharedRows;
@@ -6,6 +7,7 @@ use crate::scenery::table::state::SharedRows;
 use super::guards::{PendingChunk, restore_bound_rows};
 use super::telemetry::{tap_cache_write, tap_payload_columns};
 use totals::{clamp_to_reachable, settle_total};
+use vanished::{drop_unlisted, read_whole_set};
 
 /// Commits the rows a resolved chunk callback buffered, then runs the
 /// bookkeeping that depends on the commit having happened — total
@@ -26,6 +28,7 @@ pub(super) async fn finish_chunk_load(state: &SharedRows, pending: PendingChunk)
         t,
         force_load,
         priority,
+        mark,
         _in_flight,
     } = pending;
     let tap = dio_inner.tap();
@@ -98,6 +101,7 @@ pub(super) async fn finish_chunk_load(state: &SharedRows, pending: PendingChunk)
                 if ms >= 1_000 { "  ⚠ slow" } else { "" },
             );
             tap_payload_columns(tap, &dio_inner, state, flush_report.as_ref());
+            let whole = read_whole_set(state, &effective_range, pushed, force_load);
             let mut total_changed =
                 settle_total(state, &dio_inner, &effective_range, pushed, total_before).await;
 
@@ -135,6 +139,11 @@ pub(super) async fn finish_chunk_load(state: &SharedRows, pending: PendingChunk)
             let _ = dio_inner.event_bus.send(DioEvent::RangeLoaded {
                 range: effective_range,
             });
+            // The slots past the set's end went with the total; rows the
+            // cache still holds outside the set are gone from the master.
+            if whole {
+                drop_unlisted(state, &dio_inner, &writer, &mark).await;
+            }
         }
         Err(e) => {
             // The callback pushed rows and then failed (or the flush itself

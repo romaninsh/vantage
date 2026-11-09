@@ -9,7 +9,7 @@ use vantage_expressions::traits::datasource::ExprDataSource;
 use vantage_expressions::traits::expressive::ExpressiveEnum;
 use vantage_expressions::{Expression, Expressive};
 use vantage_table::column::core::{Column, ColumnType};
-use vantage_table::table::Table;
+use vantage_table::table::{RollupOp, Table};
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 use vantage_vista::Transaction;
@@ -681,6 +681,37 @@ impl TableSource for SurrealDB {
             (Identifier::new(target_field)),
             (Parent::dot(source_column))
         )
+    }
+
+    /// `<~` over a `REFERENCE` link, else a correlated `$parent` subquery
+    /// (see the `rollup` module).
+    fn rollup_expression<E>(
+        &self,
+        parent: &Table<Self, E>,
+        relation: &str,
+        op: RollupOp,
+        column: Option<&str>,
+        condition: Option<Self::Condition>,
+    ) -> Result<Expression<Self::Value>>
+    where
+        E: Entity<Self::Value> + 'static,
+    {
+        self.render_rollup(parent, relation, op, column, condition)
+    }
+
+    fn try_related_correlated_condition(
+        &self,
+        target_table: &str,
+        target_field: &str,
+        source_table: &str,
+        source_column: &str,
+    ) -> Result<Self::Condition> {
+        Ok(self.related_correlated_condition(
+            target_table,
+            target_field,
+            source_table,
+            source_column,
+        ))
     }
 
     fn supports_traversal(&self) -> bool {

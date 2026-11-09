@@ -271,6 +271,12 @@ impl TableSource for CborSource {
         )
     }
 
+    // Only the infallible method, as a driver written before
+    // `try_related_correlated_condition` existed: traversal still reaches it.
+    fn supports_traversal(&self) -> bool {
+        true
+    }
+
     fn related_correlated_condition(
         &self,
         target_table: &str,

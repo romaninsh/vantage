@@ -52,6 +52,14 @@ pub trait TableShell: CloneTableShell + Send + Sync + 'static {
     /// See [`Preview`] for what `query` and `note` each hold.
     fn preview(&self) -> Preview;
 
+    /// [`preview`](Self::preview) for rows `offset..` of the set, at most
+    /// `limit` of them, as a script's `offset`/`limit` asks. The default
+    /// names the window in the note; a shell that pages in its query renders
+    /// it there instead.
+    fn preview_window(&self, offset: usize, limit: Option<usize>) -> Preview {
+        self.preview().with_window_note(offset, limit)
+    }
+
     // ---- Reads --------------------------------------------------------------
 
     /// Every row of the set, keyed by id, in the set's order.

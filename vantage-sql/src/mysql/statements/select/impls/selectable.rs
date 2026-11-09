@@ -15,7 +15,8 @@ impl MysqlSelect {
         s.clear_fields();
         let agg = Fx::new(func, [column.expr()]);
 
-        let needs_cast = matches!(func, "sum" | "avg");
+        // AVG stays DECIMAL: a cast would truncate 1.5 to 1.
+        let needs_cast = func == "sum";
         if needs_cast {
             let cast = expr_any!("CAST({} AS SIGNED)", (agg));
             s.add_expression(cast);
@@ -158,5 +159,9 @@ impl Selectable<AnyMysqlType, MysqlCondition> for MysqlSelect {
 
     fn as_min(&self, column: impl Expressive<AnyMysqlType>) -> Expr {
         self.as_aggregate("min", column)
+    }
+
+    fn as_avg(&self, column: impl Expressive<AnyMysqlType>) -> Expr {
+        self.as_aggregate("avg", column)
     }
 }

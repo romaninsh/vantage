@@ -171,11 +171,16 @@ where
         Ok(cbor_record::<T>(replaced))
     }
 
-    /// Every dialect's replace statement (`INSERT … ON CONFLICT DO UPDATE`,
-    /// `… ON DUPLICATE KEY UPDATE`, `INSERT OR REPLACE`) already creates a
-    /// missing row in one operation.
+    /// An insert of a missing row, a replace of a stored one, each with its
+    /// own hooks. A table without them writes the dialect's replace statement
+    /// (`INSERT … ON CONFLICT DO UPDATE`, `… ON DUPLICATE KEY UPDATE`,
+    /// `INSERT OR REPLACE`), which creates a missing row in one operation.
     async fn upsert(&self, id: &str, record: &Record<CborValue>) -> Result<Record<CborValue>> {
-        self.replace(id, record).await
+        let upserted = self
+            .table
+            .upsert_value(id, &native_record::<T>(record))
+            .await?;
+        Ok(cbor_record::<T>(upserted))
     }
 
     async fn patch(&self, id: &str, partial: &Record<CborValue>) -> Result<Record<CborValue>> {

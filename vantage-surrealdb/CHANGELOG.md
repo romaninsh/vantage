@@ -1,5 +1,41 @@
 # Changelog
 
+## 2.2.4 — 2026-11-07
+
+- Requires vantage-vista 2.9.0, vantage-table 3.5.0 and vantage-expressions 1.3.0.
+- `SurrealSelect::as_avg` renders `math::mean(column)`. `try_related_correlated_condition`
+  wraps `related_correlated_condition`, so `get_subquery_*` keeps working under vantage-table
+  3.5.0.
+- Roll-up columns (`Table::with_rollup`). Over a link declared `REFERENCE` they read the
+  record-reference lookup off the parent row, `math::sum(<~(line FIELD invoice)[WHERE …].net)`.
+  Over any other link they fall back to a correlated
+  `(SELECT VALUE net FROM line WHERE invoice = $parent.id)` and log a warning, once per link,
+  naming the `DEFINE FIELD invoice ON line TYPE record<invoice> REFERENCE;` that makes it fast.
+  Both forms give the same numbers: count and sum read 0 over no rows, min, max and avg NONE, and
+  rows without the value are skipped. Min and max use `array::min` / `array::max`, so dates work.
+  A query-sourced child always takes the subquery, which keeps its query; `<~` would read the
+  whole stored table. A computed child column is refused: both forms read the stored field.
+- `SurrealDB::check_references` reads the schema (`INFO FOR DB`, `INFO FOR TABLE`) and remembers
+  the `REFERENCE` links. Call it after connecting and after a schema change; until it runs,
+  roll-ups use the `$parent` form.
+- A `base:` vista builds the references it declares itself, such as
+  `nominal: { type: string, references: nominal }` on a grouped trial balance. Before, the build
+  failed with "spec reference is absent from the built table's references". A has_one keyed by a
+  field the derived table has no column for is still refused. Its dotted columns
+  (`nominal.code`) are imported after those references, so they traverse instead of reading a
+  missing ⟨nominal.code⟩ field.
+- The vista's upsert goes through `Table::upsert_value`: an insert of a missing row, a replace of
+  a stored one, each with its own hooks.
+- Vista insert, replace, upsert and patch write a `Tag(0, rfc3339)` datetime as
+  `Tag(12, [seconds, nanos])`, nested in objects and arrays too. SurrealDB refuses tag 0, so
+  Rhai's `now()` and the audit logger's `at` failed to save.
+- The preview renders a window as `LIMIT n START m` (`preview_window`), so `preview_script`
+  shows a script's `limit`/`offset`. With no window asked for it is the plain preview, so a
+  table's own pagination stays in it, as it stays in the read.
+- Tests: a golden pins the book's record-reference roll-up (`<~(order FIELD client)`), which replaces a
+  `$parent.id` subquery that scanned the whole child table per row. It names the link field,
+  so orders referencing the client through another field stay out.
+
 ## 2.2.3 — 2026-11-04
 
 - Requires vantage-table 3.4.1.

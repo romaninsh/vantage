@@ -2,7 +2,7 @@
 //! The commonly used types and traits of vantage-table, for `use vantage_table::prelude::*;`.
 
 pub use crate::table::Table;
-pub use crate::table::{Hook, HookReturn, IdGenerator, Phase, Timestamps};
+pub use crate::table::{Hook, HookReturn, IdGenerator, Phase, RollupOp, Timestamps};
 
 pub use crate::column::collection::ColumnCollectionExt;
 pub use crate::column::core::Column;

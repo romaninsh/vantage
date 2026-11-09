@@ -215,10 +215,15 @@ impl TableShell for MongoTableShell {
         Ok(self.unflatten_to_cbor(replaced))
     }
 
-    /// The driver's replace already creates a missing row (inside the set's
-    /// confinement), so upsert is the same write.
+    /// An insert of a missing row, a replace of a stored one, each with its
+    /// own hooks. Without them it is the driver's replace, which creates a
+    /// missing row (inside the set's confinement).
     async fn upsert(&self, id: &str, record: &Record<CborValue>) -> Result<Record<CborValue>> {
-        self.replace(id, record).await
+        let mongo_id = self.parse_id(id);
+        let stored = self.stored_row(&mongo_id).await?;
+        let mongo_record = self.flatten_for_write(record, stored.as_ref())?;
+        let upserted = self.table.upsert_value(mongo_id, &mongo_record).await?;
+        Ok(self.unflatten_to_cbor(upserted))
     }
 
     async fn patch(&self, id: &str, partial: &Record<CborValue>) -> Result<Record<CborValue>> {

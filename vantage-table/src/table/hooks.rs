@@ -218,6 +218,43 @@ where
     Arc::new(f)
 }
 
+/// What an after-load hook receives: one row as it was read (mutable), its
+/// id, the [`WriteContext`] in scope and the table.
+#[non_exhaustive]
+pub struct LoadCx<'r, T: TableSource> {
+    pub id: &'r T::Id,
+    pub record: &'r mut Record<T::Value>,
+    pub context: Option<&'r WriteContext>,
+    pub table: &'r Table<T, EmptyEntity>,
+}
+
+/// An after-load hook: rewrite the row in place; an `Err` fails the read.
+pub type AfterLoadFn<T> =
+    Arc<dyn for<'r> Fn(LoadCx<'r, T>) -> BoxFuture<'r, vantage_core::Result<()>> + Send + Sync>;
+
+/// Build an [`AfterLoadFn`] from a closure.
+pub fn after_load_hook<T, F>(f: F) -> AfterLoadFn<T>
+where
+    T: TableSource,
+    F: for<'r> Fn(LoadCx<'r, T>) -> BoxFuture<'r, vantage_core::Result<()>> + Send + Sync + 'static,
+{
+    Arc::new(f)
+}
+
+/// Build an [`AfterLoadFn`] from a synchronous closure over the row and the
+/// context in scope.
+pub fn after_load_hook_sync<T: TableSource>(
+    f: impl Fn(&mut Record<T::Value>, Option<&WriteContext>) -> vantage_core::Result<()>
+    + Send
+    + Sync
+    + 'static,
+) -> AfterLoadFn<T> {
+    Arc::new(move |cx: LoadCx<'_, T>| {
+        let outcome = f(cx.record, cx.context);
+        Box::pin(std::future::ready(outcome))
+    })
+}
+
 /// A lifecycle hook attached to a table via [`Table::with_hook`]. Each variant
 /// carries a closure receiving exactly the references available at that stage.
 /// `BeforeSave`/`AfterSave` are sugar that register for both insert and update.
@@ -241,6 +278,13 @@ pub enum Hook<T: TableSource> {
     /// reads from its cache, filled by its own loader, so reads through a
     /// Dio don't run the master table's `BeforeSelect`.
     BeforeSelect(SelectFn<T>),
+    /// On each row a list, get, get-some or stream returns, before the lazy
+    /// expressions: the hook may rewrite the row callers see. Counts and the
+    /// aggregates don't run it, and conditions, search and order still match
+    /// the stored values. It must be idempotent, as a row it rewrote and
+    /// saved back is read through it again. Vista shells that read the
+    /// source directly call [`Table::finish_read`] on each row.
+    AfterLoad(AfterLoadFn<T>),
     BeforeInsert(Phase, BeforeFn<T>),
     BeforeUpdate(Phase, BeforeFn<T>),
     BeforeSave(Phase, BeforeFn<T>),
@@ -249,7 +293,9 @@ pub enum Hook<T: TableSource> {
     AfterUpdate(AfterFn<T>),
     AfterSave(AfterFn<T>),
     AfterDelete(AfterFn<T>),
-    /// Before `delete_all`, once for the whole set; per-row delete hooks don't run.
+    /// Before `delete_all`, once for the whole set. Without a
+    /// [`Hook::BeforeDelete`] the set goes in one statement and the per-row
+    /// delete hooks don't run; with one, `delete_all` deletes row by row.
     BeforeDeleteAll(DeleteAllFn<T>),
     AfterDeleteAll(DeleteAllFn<T>),
 }
@@ -259,6 +305,7 @@ pub enum Hook<T: TableSource> {
 #[derive(Clone)]
 pub struct Hooks<T: TableSource> {
     pub(crate) before_select: Vec<SelectFn<T>>,
+    pub(crate) after_load: Vec<AfterLoadFn<T>>,
     pub(crate) before_insert: Vec<(Phase, BeforeFn<T>)>,
     pub(crate) before_update: Vec<(Phase, BeforeFn<T>)>,
     pub(crate) before_delete: Vec<BeforeDeleteFn<T>>,
@@ -273,6 +320,7 @@ impl<T: TableSource> Default for Hooks<T> {
     fn default() -> Self {
         Self {
             before_select: Vec::new(),
+            after_load: Vec::new(),
             before_insert: Vec::new(),
             before_update: Vec::new(),
             before_delete: Vec::new(),
@@ -318,6 +366,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         let hooks = &mut self.hooks;
         match hook {
             Hook::BeforeSelect(f) => hooks.before_select.push(f),
+            Hook::AfterLoad(f) => hooks.after_load.push(f),
             Hook::BeforeInsert(phase, f) => push_phased(&mut hooks.before_insert, phase, f),
             Hook::BeforeUpdate(phase, f) => push_phased(&mut hooks.before_update, phase, f),
             Hook::BeforeSave(phase, f) => {
@@ -361,6 +410,44 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             .await?;
         }
         Ok(())
+    }
+
+    /// Run the [`Hook::AfterLoad`] hooks on a row as read, then its lazy
+    /// expressions. Every `Table` row read calls this; code that reads rows
+    /// through the data source directly must call it on each row.
+    pub async fn finish_read(
+        &self,
+        id: &T::Id,
+        record: &mut Record<T::Value>,
+    ) -> vantage_core::Result<()> {
+        self.run_after_load(id, record).await?;
+        self.apply_lazy_expressions(record).await
+    }
+
+    pub(crate) async fn run_after_load(
+        &self,
+        id: &T::Id,
+        record: &mut Record<T::Value>,
+    ) -> vantage_core::Result<()> {
+        if self.hooks.after_load.is_empty() {
+            return Ok(());
+        }
+        let context = WriteContext::current();
+        let table = self.as_entity_erased();
+        for hook in &self.hooks.after_load {
+            hook(LoadCx {
+                id,
+                record: &mut *record,
+                context: context.as_ref(),
+                table,
+            })
+            .await?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn reads_rewrite_rows(&self) -> bool {
+        !self.hooks.after_load.is_empty() || !self.lazy_expressions.is_empty()
     }
 }
 

@@ -126,7 +126,7 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
             reference.build_target(self.data_source() as &dyn Any)?,
             relation,
         )?;
-        self.attach_correlated_condition(reference, &mut target);
+        self.attach_correlated_condition(reference, &mut target)?;
         Ok(target)
     }
 
@@ -140,7 +140,7 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
             reference.build_target_erased(self.data_source() as &dyn Any)?,
             relation,
         )?;
-        self.attach_correlated_condition(reference, &mut target);
+        self.attach_correlated_condition(reference, &mut target)?;
         Ok(target)
     }
 
@@ -152,17 +152,18 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
         &self,
         reference: &dyn Reference,
         target: &mut Table<T, E2>,
-    ) {
+    ) -> Result<()> {
         let source_id = self.id_field_name();
         let target_id = target.id_field_name();
         let (src_col, tgt_col) = reference.columns(&source_id, &target_id);
-        let condition = self.data_source().related_correlated_condition(
+        let condition = self.data_source().try_related_correlated_condition(
             target.table_name(),
             &tgt_col,
             self.table_name(),
             &src_col,
-        );
+        )?;
         target.add_condition(condition);
+        Ok(())
     }
 
     /// Build the relation's target table with **no condition** applied, as

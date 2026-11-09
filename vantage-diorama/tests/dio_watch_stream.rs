@@ -23,7 +23,7 @@ use vantage_vista::{
 };
 
 use support::spy_cache::{SpyCache, SpyTable};
-use support::{meta, record};
+use support::{eventually, memory_lens, meta, page_master, record};
 
 const WITHIN: Duration = Duration::from_secs(5);
 
@@ -296,6 +296,57 @@ async fn a_row_the_cache_refuses_is_not_announced_and_the_re_read_is_retried() -
         holds_exactly(&dio, &["a", "b"]).await,
         "the retried re-read never landed b: {:?}",
         cached_ids(&dio).await
+    );
+    Ok(())
+}
+
+/// A reconnect re-reads a paged view's windows: a row deleted while the
+/// follow was away leaves the view and the cache, the kept rows stay.
+#[tokio::test]
+async fn a_reconnect_drops_the_rows_a_paged_view_holds_that_are_gone() -> Result<()> {
+    let shell = ["a", "b", "c"].iter().fold(
+        MockShell::new()
+            .with_metadata(meta(&["id", "name"]))
+            .with_capabilities(VistaCapabilities::new().with(Capability::Window)),
+        |shell, id| shell.with_record(*id, row(id)),
+    );
+    let gate = Arc::new(Semaphore::new(0));
+    let mut streams = streams(vec![vec![Err(vantage_core::error!(
+        "the connection dropped"
+    ))]]);
+    streams.gate = Some(gate.clone());
+    let capabilities = shell.capabilities().with(Capability::Subscribe);
+    let vista = Vista::new("items", shell.clone()).map_shell(|inner| Scripted {
+        inner,
+        capabilities,
+        streams,
+    });
+    let dio = memory_lens(page_master()).dio(vista).live().build().await?;
+    let scenery = dio.table_scenery().open().await?;
+    scenery.set_viewport(0..3, 0..0);
+    let names = || -> Vec<String> {
+        (0..scenery.row_count())
+            .filter_map(|i| scenery.row(i))
+            .filter_map(|r| match r.record.get("name") {
+                Some(CborValue::Text(name)) => Some(name.clone()),
+                _ => None,
+            })
+            .collect()
+    };
+    assert!(eventually(WITHIN, || names().len() == 3).await);
+
+    shell.remove_record("b");
+    gate.add_permits(1);
+
+    assert!(
+        holds_exactly(&dio, &["a", "c"]).await,
+        "cached {:?}",
+        cached_ids(&dio).await
+    );
+    assert!(
+        eventually(WITHIN, || names() == ["a", "c"]).await,
+        "{:?}",
+        names()
     );
     Ok(())
 }

@@ -168,6 +168,12 @@ impl Vista {
         self.shell.preview()
     }
 
+    /// The query a read of rows `offset..` (at most `limit`) would send; see
+    /// [`TableShell::preview_window`].
+    pub fn preview_window(&self, offset: usize, limit: Option<usize>) -> Preview {
+        self.shell.preview_window(offset, limit)
+    }
+
     // ---- metadata ----------------------------------------------------------
 
     fn metadata(&self) -> &VistaMetadata {

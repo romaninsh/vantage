@@ -111,15 +111,31 @@ impl TableShell for RestApiTableShell {
         )
     }
 
+    /// A window with a limit goes into the request, as `fetch_window` sends
+    /// it in place of the table's own. Any other stays a note.
+    fn preview_window(&self, offset: usize, limit: Option<usize>) -> Preview {
+        match limit {
+            Some(limit) if self.capabilities.has(Capability::Window) => {
+                self.table.data_source().preview_request(
+                    self.table.table_name(),
+                    Some((offset as i64, limit as i64)),
+                    self.order(),
+                    self.table.conditions(),
+                )
+            }
+            _ => self.preview().with_window_note(offset, limit),
+        }
+    }
+
     /// The table's own read, plus the shell's order, which the table doesn't
-    /// hold. A typed table's lazy expressions are applied as `list_values`
-    /// would.
+    /// hold. Each row is finished (after-load hooks, lazy expressions) as
+    /// `list_values` would.
     async fn list(&self) -> Result<IndexMap<String, Record<CborValue>>> {
         self.table.check_read().await?;
         let api = self.table.data_source();
         let mut rows = api.list_ordered(&self.table, self.order()).await?;
-        for rec in rows.values_mut() {
-            self.table.apply_lazy_expressions(rec).await?;
+        for (id, rec) in rows.iter_mut() {
+            self.table.finish_read(id, rec).await?;
         }
         Ok(rows)
     }
@@ -169,11 +185,12 @@ impl TableShell for RestApiTableShell {
             )
             .await?;
         // This path fetches straight from the API layer, so the table's
-        // `list_values` never runs: a typed table's lazy expressions are
-        // applied here. Spec `lazy:` columns are the Vista's to fill.
+        // `list_values` never runs: each row is finished (after-load hooks,
+        // a typed table's lazy expressions) here. Spec `lazy:` columns are
+        // the Vista's to fill.
         let mut rows: Vec<(String, Record<CborValue>)> = records.into_iter().collect();
-        for (_, rec) in rows.iter_mut() {
-            self.table.apply_lazy_expressions(rec).await?;
+        for (id, rec) in rows.iter_mut() {
+            self.table.finish_read(id, rec).await?;
         }
         let page = Page::new(rows);
         Ok(match total {

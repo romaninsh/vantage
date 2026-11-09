@@ -11,6 +11,8 @@ use super::super::ViewportRequest;
 use super::super::view::ViewId;
 use super::SharedRows;
 
+const ATTACH_REPULL_WINDOW: std::time::Duration = std::time::Duration::from_secs(2);
+
 impl SharedRows {
     /// The cache this view reads rows from: the Dio's own, or the sugared
     /// wrapper over it. Writes — and read-backs that feed a write — always
@@ -88,7 +90,12 @@ impl SharedRows {
     /// Every view's viewport is re-fetched, each range once: two views on
     /// the same rows may be scrolled to different places.
     pub(crate) fn refresh_loaded_viewport(&self, priority: vantage_core::Priority) {
-        let mut requested = Vec::new();
+        self.refresh_blocks(priority, &mut Vec::new());
+    }
+
+    /// Re-fetch each view's loaded block not in `requested`, adding the ones
+    /// it asks for.
+    fn refresh_blocks(&self, priority: vantage_core::Priority, requested: &mut Vec<Range<usize>>) {
         for (view, viewport) in self.viewports() {
             let range = self.loaded_block(viewport);
             if requested.contains(&range) {
@@ -105,6 +112,22 @@ impl SharedRows {
                 },
             );
         }
+    }
+
+    /// The re-pull a view attaching to live rows asks for on its first
+    /// viewport. A block another attaching view re-pulled within
+    /// [`ATTACH_REPULL_WINDOW`] is skipped, so K views opening together on
+    /// one block cost one re-pull; a view on another block still gets its own.
+    pub(crate) fn repull_for_attach(&self) {
+        let mut last = self.last_attach_repull.lock().unwrap();
+        let now = std::time::Instant::now();
+        // The window runs from the first re-pull in it.
+        let (since, mut covered) = match last.take() {
+            Some((at, covered)) if now.duration_since(at) < ATTACH_REPULL_WINDOW => (at, covered),
+            _ => (now, Vec::new()),
+        };
+        self.refresh_blocks(vantage_core::Priority::Background, &mut covered);
+        *last = Some((since, covered));
     }
 
     /// The range a refresh re-fetches for `viewport`. Two-pass rows seed

@@ -2,6 +2,7 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use crate::dio::DioInner;
+use crate::dio::pending::SettleMark;
 use crate::lens::ChunkSink;
 use crate::scenery::table::state::{InFlightMarker, SharedRows};
 
@@ -57,6 +58,9 @@ pub(super) struct PendingChunk {
     /// The priority the callback ran under; a failed `Background` load is
     /// logged quietly because the next refresh retries it.
     pub(super) priority: vantage_core::Priority,
+    /// Taken before the loader read anything: rows a flash settled since
+    /// may be missing from the window and are not taken as vanished.
+    pub(super) mark: SettleMark,
     /// Held from the moment the range was claimed until `finish_chunk_load`
     /// returns, so the same-range guard in `run_chunk_callback` covers the
     /// whole load, not just its network half.

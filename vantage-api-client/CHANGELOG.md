@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.2.4 — 2026-11-07
+
+Requires vantage-table 3.5.0.
+
+- The REST vista's list and window run the table's `AfterLoad` hooks on each row, as
+  `list_values` does.
+- `GraphqlSelect::as_avg` renders an `avg` aggregate. Requires vantage-expressions 1.3.0.
+- The REST vista's `preview_window` renders a window with a limit in the request, as
+  `fetch_window` sends it, instead of the table's own window plus a note. Without paging params,
+  or without a limit, the window stays a note.
+
 ## 2.2.3 — 2026-10-31
 
 Requires vantage-vista 2.6.0.

@@ -152,6 +152,25 @@ pub trait Selectable<T, C = Expression<T>>: Send + Sync + Debug + Clone {
     /// Creates a MIN(column) expression from this query configuration.
     fn as_min(&self, column: impl Expressive<T>) -> Expression<T>;
 
+    /// Creates an AVG(column) expression from this query configuration.
+    ///
+    /// The default renders SQL's `AVG(column)` as the only field; backends
+    /// with another spelling override it.
+    fn as_avg(&self, column: impl Expressive<T>) -> Expression<T>
+    where
+        Self: Expressive<T>,
+        T: Clone,
+    {
+        let mut select = self.clone();
+        select.clear_fields();
+        select.clear_order_by();
+        select.add_expression(Expression::new(
+            "AVG({})",
+            vec![ExpressiveEnum::Nested(column.expr())],
+        ));
+        select.expr()
+    }
+
     /// Builder pattern method identical to [`Self::add_source`] without alias.
     fn with_source(mut self, source: impl Into<SourceRef<T>>) -> Self
     where

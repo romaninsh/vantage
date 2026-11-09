@@ -143,6 +143,14 @@ impl Selectable<AnyMongoType, MongoCondition> for MongoSelect {
             vec![],
         )
     }
+
+    fn as_avg(&self, column: impl Expressive<AnyMongoType>) -> Expression<AnyMongoType> {
+        let coll = self.collection.as_deref().unwrap_or("?");
+        Expression::new(
+            format!("db.{}.aggregate($avg: {})", coll, column.preview()),
+            vec![],
+        )
+    }
 }
 
 /// A select names its query for display only; MongoDB runs selects through

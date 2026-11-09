@@ -80,6 +80,23 @@ fn a_preview_renders_the_query_and_names_the_driver() {
     assert!(out["query"].is_string(), "{out}");
 }
 
+/// The memory shell can't page in its query, so the window is a note.
+#[test]
+fn a_preview_names_the_window_the_script_set() {
+    let out = preview_script(
+        r#"table("t").offset(10).limit(20)"#.into(),
+        resolver(&store()),
+    )
+    .unwrap();
+    assert_eq!(
+        out["note"],
+        json!("rows 10.. (at most 20) are taken at fetch time")
+    );
+
+    let out = preview_script(r#"table("t")"#.into(), resolver(&store())).unwrap();
+    assert!(out.get("note").is_none(), "{out}");
+}
+
 #[test]
 fn a_preview_script_must_end_on_the_query_itself() {
     let err = preview_script(r#"table("t").list()"#.into(), resolver(&store())).unwrap_err();

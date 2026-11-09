@@ -13,7 +13,7 @@ use vantage_expressions::{
     AssociatedExpression, DeferredFn, ExprDataSource, Expression, ExpressiveEnum, expr_any,
 };
 use vantage_table::column::core::{Column, ColumnType};
-use vantage_table::table::Table;
+use vantage_table::table::{RollupOp, Table};
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 
@@ -406,10 +406,35 @@ impl TableSource for MongoDB {
     /// Dotted columns read through `$lookup` (see the `joins` module), except
     /// over a pipeline view. The lookup matches `localField` against
     /// `foreignField`. Correlated subqueries are not implemented:
-    /// `Table::get_subquery_*` panics here (`related_correlated_condition`
-    /// keeps the trait's `unimplemented!` default).
+    /// `Table::get_subquery_*` fails with `Unsupported` here
+    /// (see `try_related_correlated_condition`).
     fn supports_traversal(&self) -> bool {
         self.view().is_none()
+    }
+
+    fn try_related_correlated_condition(
+        &self,
+        _target_table: &str,
+        _target_field: &str,
+        _source_table: &str,
+        _source_column: &str,
+    ) -> Result<Self::Condition> {
+        Err(error!("correlated subqueries aren't supported on MongoDB").mark_unsupported())
+    }
+
+    /// Until someone builds it from `$lookup` + `$group`.
+    fn rollup_expression<E>(
+        &self,
+        _parent: &Table<Self, E>,
+        _relation: &str,
+        _op: RollupOp,
+        _column: Option<&str>,
+        _condition: Option<Self::Condition>,
+    ) -> Result<Expression<Self::Value>>
+    where
+        E: Entity<Self::Value> + 'static,
+    {
+        Err(error!("rollup columns aren't supported on MongoDB yet").mark_unsupported())
     }
 
     /// Names the path only: reads resolve an imported column's join chain

@@ -2,6 +2,7 @@
 
 mod flush;
 
+use std::collections::HashSet;
 use std::sync::{Arc, Weak};
 
 use ciborium::Value as CborValue;
@@ -78,6 +79,8 @@ pub(crate) struct Buffered {
     /// binding it, so those indices must not appear here — an undone load
     /// restores only these.
     bound: Vec<(usize, Option<Arc<EnrichedRecord>>)>,
+    /// The id of every pushed row, written or not.
+    ids: HashSet<String>,
 }
 
 type BufferedRows = Arc<std::sync::Mutex<Buffered>>;
@@ -142,6 +145,9 @@ impl ChunkSink {
         let Some(target) = self.target.upgrade() else {
             return Err(vantage_core::error!("ChunkSink: scenery dropped"));
         };
+        if let Ok(mut buffer) = self.buffer.lock() {
+            buffer.ids.insert(id.clone());
+        }
         // A row with a flash in flight keeps its staged value: the slot
         // binds to what the cache holds, and the fetched (possibly
         // pre-write) snapshot is dropped. The row is deliberately NOT
@@ -192,6 +198,14 @@ impl ChunkSink {
         self.buffer
             .lock()
             .map(|buffer| buffer.bound.clone())
+            .unwrap_or_default()
+    }
+
+    /// The id of every row pushed so far.
+    pub(crate) fn pushed_ids(&self) -> HashSet<String> {
+        self.buffer
+            .lock()
+            .map(|buffer| buffer.ids.clone())
             .unwrap_or_default()
     }
 }

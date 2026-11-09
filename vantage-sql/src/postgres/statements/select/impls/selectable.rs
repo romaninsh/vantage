@@ -15,7 +15,8 @@ impl PostgresSelect {
         s.clear_fields();
         let agg = Fx::new(func, [column.expr()]);
 
-        let needs_cast = matches!(func, "sum" | "avg");
+        // AVG stays NUMERIC: a cast would truncate 1.5 to 1.
+        let needs_cast = func == "sum";
         if needs_cast {
             let cast = expr_any!("CAST({} AS BIGINT)", (agg));
             s.add_expression(cast);
@@ -158,5 +159,9 @@ impl Selectable<AnyPostgresType, PostgresCondition> for PostgresSelect {
 
     fn as_min(&self, column: impl Expressive<AnyPostgresType>) -> Expr {
         self.as_aggregate("min", column)
+    }
+
+    fn as_avg(&self, column: impl Expressive<AnyPostgresType>) -> Expr {
+        self.as_aggregate("avg", column)
     }
 }

@@ -6,15 +6,20 @@ use futures_core::Stream;
 use indexmap::IndexMap;
 use vantage_dataset::traits::Result;
 use vantage_expressions::{
-    Expression,
+    Expression, Expressive,
     traits::associated_expressions::AssociatedExpression,
-    traits::datasource::{DataSource, ExprDataSource},
+    traits::datasource::{DataSource, ExprDataSource, SelectableDataSource},
     traits::expressive::ExpressiveEnum,
 };
 use vantage_types::{Entity, Record};
 use vantage_vista::Transaction;
 
-use crate::{column::core::ColumnType, table::Table, traits::column_like::ColumnLike};
+use crate::{
+    column::core::ColumnType,
+    source::SelectSeed,
+    table::{RollupOp, Table},
+    traits::column_like::ColumnLike,
+};
 
 /// A data source that holds tables: it names their column, value, id,
 /// source and condition types, and runs `Table`'s reads and writes.
@@ -404,6 +409,10 @@ pub trait TableSource: DataSource + Clone + 'static {
     /// produce table-qualified equality; backends without correlated subqueries
     /// leave the default (which panics — they must also keep
     /// [`supports_traversal`](Self::supports_traversal) `false`).
+    ///
+    /// Callers in this crate go through
+    /// [`try_related_correlated_condition`](Self::try_related_correlated_condition),
+    /// whose default reaches this one when `supports_traversal` is `true`.
     fn related_correlated_condition(
         &self,
         target_table: &str,
@@ -413,6 +422,84 @@ pub trait TableSource: DataSource + Clone + 'static {
     ) -> Self::Condition {
         let _ = (target_table, target_field, source_table, source_column);
         unimplemented!("correlated subqueries not supported by this backend")
+    }
+
+    /// Fallible [`related_correlated_condition`](Self::related_correlated_condition),
+    /// used by `get_subquery_as` / `get_subquery_erased` and so by roll-ups.
+    ///
+    /// The default calls `related_correlated_condition` on a backend that
+    /// [`supports_traversal`](Self::supports_traversal) (which must override
+    /// it), so a driver overriding only that one keeps working. Any other
+    /// backend gets an `Unsupported` error at build time instead of a panic.
+    /// A backend that traverses some other way (MongoDB's `$lookup`) overrides
+    /// this one to refuse.
+    fn try_related_correlated_condition(
+        &self,
+        target_table: &str,
+        target_field: &str,
+        source_table: &str,
+        source_column: &str,
+    ) -> Result<Self::Condition> {
+        if self.supports_traversal() {
+            return Ok(self.related_correlated_condition(
+                target_table,
+                target_field,
+                source_table,
+                source_column,
+            ));
+        }
+        Err(
+            vantage_core::error!("correlated subqueries aren't supported by this backend")
+                .mark_unsupported(),
+        )
+    }
+
+    /// The expression of a roll-up column: `op` over `column` of the rows
+    /// `relation` (a has_many) gives for each `parent` row, narrowed by
+    /// `condition`. [`Table::with_rollup`] calls it.
+    ///
+    /// The default is a correlated subquery built from
+    /// [`Table::get_subquery_erased`] and [`Table::aggregate_query`]:
+    /// `(SELECT SUM("net") FROM "line" WHERE "line"."invoice" = "invoice"."id")`.
+    /// A backend overrides it to render something better, or to refuse with an
+    /// error.
+    fn rollup_expression<E>(
+        &self,
+        parent: &Table<Self, E>,
+        relation: &str,
+        op: RollupOp,
+        column: Option<&str>,
+        condition: Option<Self::Condition>,
+    ) -> Result<Expression<Self::Value>>
+    where
+        E: Entity<Self::Value> + 'static,
+        Self: SelectableDataSource<Self::Value, Self::Condition> + Sized,
+        Self::Source: SelectSeed<
+                <Self as SelectableDataSource<Self::Value, Self::Condition>>::Select,
+                Self::Value,
+                Self::Condition,
+            >,
+        <Self as SelectableDataSource<Self::Value, Self::Condition>>::Select:
+            Expressive<Self::Value>,
+        Self::Value: From<String>,
+        Self::Column<Self::AnyType>: Expressive<Self::Value>,
+    {
+        let mut child = parent.get_subquery_erased(relation)?;
+        // The subquery's table isn't aliased, so over the parent's own table
+        // `child.fk = parent.id` reads the inner row on both sides and counts
+        // the wrong rows.
+        if child.table_name() == parent.table_name() {
+            return Err(vantage_core::error!(
+                "roll-ups over a self-referencing relation aren't supported yet",
+                relation = relation,
+                table = parent.table_name()
+            )
+            .mark_unsupported());
+        }
+        if let Some(condition) = condition {
+            child.add_condition(condition);
+        }
+        child.aggregate_query(op, column)
     }
 
     /// Whether this backend can lower a dotted active column

@@ -111,6 +111,9 @@ impl TableShell for TxShell {
     fn preview(&self) -> Preview {
         self.inner.preview()
     }
+    fn preview_window(&self, offset: usize, limit: Option<usize>) -> Preview {
+        self.inner.preview_window(offset, limit)
+    }
     #[cfg(feature = "rhai")]
     fn register_rhai_extensions(&self, engine: &mut rhai::Engine) {
         self.inner.register_rhai_extensions(engine)

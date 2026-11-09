@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.0 — 2026-11-07
+
+- `Selectable::as_avg`, next to `as_sum`, `as_min` and `as_max`. The default renders SQL's
+  `AVG(column)` as the select's only field; a builder with another spelling overrides it.
+
 ## 1.2.3 — 2026-10-26
 
 - Tests for `Order::suffix` and the `Selectable` builder, inspection and aggregate methods, driven

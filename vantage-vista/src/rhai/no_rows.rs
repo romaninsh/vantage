@@ -53,6 +53,11 @@ forward_table_shell!(NoRowsShell, inner, {
     fn preview(&self) -> Preview {
         Preview::new().with_note("`ref` over no rows: nothing is queried")
     }
+    /// No window either: the forwarded default would preview the target's
+    /// query.
+    fn preview_window(&self, _offset: usize, _limit: Option<usize>) -> Preview {
+        Preview::new().with_note("`ref` over no rows: nothing is queried")
+    }
 
     async fn list(&self) -> Result<IndexMap<String, Rec>> {
         Ok(IndexMap::new())

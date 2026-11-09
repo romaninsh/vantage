@@ -2,7 +2,7 @@
 //!
 //! Most methods are direct field accessors. Grouping and `DISTINCT` are
 //! no-ops (GraphQL has no spelling for either). The
-//! as_field/as_count/as_sum/as_max/as_min constructors return placeholder
+//! as_field/as_count/as_sum/as_max/as_min/as_avg constructors return placeholder
 //! expressions in Hasura's `<table>_aggregate { aggregate { … } }` shape,
 //! since aggregate semantics depend on the schema.
 
@@ -139,6 +139,17 @@ impl Selectable<AnyGraphqlType, GraphqlCondition> for GraphqlSelect {
         Expression::new(
             format!(
                 "{}_aggregate {{ aggregate {{ min {{ {} }} }} }}",
+                self.root_field.clone().unwrap_or_default(),
+                column.preview()
+            ),
+            vec![],
+        )
+    }
+
+    fn as_avg(&self, column: impl Expressive<AnyGraphqlType>) -> Expression<AnyGraphqlType> {
+        Expression::new(
+            format!(
+                "{}_aggregate {{ aggregate {{ avg {{ {} }} }} }}",
                 self.root_field.clone().unwrap_or_default(),
                 column.preview()
             ),
