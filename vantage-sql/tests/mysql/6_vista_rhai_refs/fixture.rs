@@ -44,14 +44,17 @@ impl Fixture {
                 "INSERT INTO `{orders_t}` VALUES ('o1','alice',10),('o2','alice',20),('o3','bob',30)"
             ),
         ] {
-            sqlx::query(&sql).execute(fixture.db.pool()).await.unwrap();
+            sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+                .execute(fixture.db.pool())
+                .await
+                .unwrap();
         }
         fixture
     }
 
     pub(super) async fn drop_tables(&self) {
         for t in [&self.client_t, &self.orders_t] {
-            sqlx::query(&format!("DROP TABLE IF EXISTS `{t}`"))
+            sqlx::query(sqlx::AssertSqlSafe(format!("DROP TABLE IF EXISTS `{t}`")))
                 .execute(self.db.pool())
                 .await
                 .unwrap();

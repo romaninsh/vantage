@@ -25,12 +25,15 @@ struct Product {
 async fn setup(table: &str) -> PostgresDB {
     let db = PostgresDB::connect(PG_URL).await.unwrap();
 
-    sqlx::query(&format!("DROP TABLE IF EXISTS \"{}\"", table))
-        .execute(db.pool())
-        .await
-        .unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP TABLE IF EXISTS \"{}\"",
+        table
+    )))
+    .execute(db.pool())
+    .await
+    .unwrap();
 
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "CREATE TABLE \"{}\" (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
@@ -40,7 +43,7 @@ async fn setup(table: &str) -> PostgresDB {
             inventory_stock BIGINT NOT NULL DEFAULT 0
         )",
         table
-    ))
+    )))
     .execute(db.pool())
     .await
     .unwrap();

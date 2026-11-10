@@ -30,7 +30,10 @@ async fn setup(suffix: &str) -> MysqlDB {
             "INSERT INTO `{orders}` VALUES ('o1','alice',10),('o2','alice',20),('o3','bob',30)"
         ),
     ] {
-        sqlx::query(&sql).execute(db.pool()).await.unwrap();
+        sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+            .execute(db.pool())
+            .await
+            .unwrap();
     }
     db
 }

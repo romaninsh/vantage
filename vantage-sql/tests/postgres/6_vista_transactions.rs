@@ -49,7 +49,10 @@ impl PostgresTx {
                 "CREATE TABLE \"{b}\" (id TEXT PRIMARY KEY, a_id TEXT, n BIGINT NOT NULL CHECK (n >= 0))"
             ),
         ] {
-            sqlx::query(&sql).execute(self.db.pool()).await.unwrap();
+            sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+                .execute(self.db.pool())
+                .await
+                .unwrap();
         }
         (a, b)
     }

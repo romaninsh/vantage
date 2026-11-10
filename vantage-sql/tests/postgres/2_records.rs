@@ -17,12 +17,15 @@ const PG_URL: &str = "postgres://vantage:vantage@localhost:5433/vantage";
 async fn setup(table: &str) -> PostgresDB {
     let db = PostgresDB::connect(PG_URL).await.unwrap();
 
-    sqlx::query(&format!("DROP TABLE IF EXISTS \"{}\"", table))
-        .execute(db.pool())
-        .await
-        .unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP TABLE IF EXISTS \"{}\"",
+        table
+    )))
+    .execute(db.pool())
+    .await
+    .unwrap();
 
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "CREATE TABLE \"{}\" (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
@@ -33,18 +36,18 @@ async fn setup(table: &str) -> PostgresDB {
             description TEXT
         )",
         table
-    ))
+    )))
     .execute(db.pool())
     .await
     .unwrap();
 
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "INSERT INTO \"{}\" VALUES
             ('cupcake', 'Flux Cupcake', 120, 300, 0.25, false, 'A tasty cupcake'),
             ('tart', 'Time Tart', 220, 200, 0.15, true, 'tart'),
             ('plain', 'Plain Bread', 50, 150, NULL, false, NULL)",
         table
-    ))
+    )))
     .execute(db.pool())
     .await
     .unwrap();

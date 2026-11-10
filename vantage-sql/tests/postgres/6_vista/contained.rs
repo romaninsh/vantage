@@ -37,19 +37,19 @@ fn cart_table(db: PostgresDB, table: &str) -> Table<PostgresDB, EmptyEntity> {
 async fn contained_json_column_round_trips_on_postgres() -> TestResult {
     let db = PostgresDB::connect(PG_URL).await.unwrap();
     let t = "vista_cart_contained";
-    sqlx::query(&format!("DROP TABLE IF EXISTS \"{t}\""))
+    sqlx::query(sqlx::AssertSqlSafe(format!("DROP TABLE IF EXISTS \"{t}\"")))
         .execute(db.pool())
         .await
         .unwrap();
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "CREATE TABLE \"{t}\" (id TEXT PRIMARY KEY, items TEXT NOT NULL)"
-    ))
+    )))
     .execute(db.pool())
     .await
     .unwrap();
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         r#"INSERT INTO "{t}" VALUES ('c1', '[{{"sku":"a","qty":1}},{{"sku":"b","qty":2}}]')"#
-    ))
+    )))
     .execute(db.pool())
     .await
     .unwrap();
@@ -85,7 +85,7 @@ async fn contained_json_column_round_trips_on_postgres() -> TestResult {
         Some(&CborValue::Integer(99i64.into()))
     );
 
-    sqlx::query(&format!("DROP TABLE \"{t}\""))
+    sqlx::query(sqlx::AssertSqlSafe(format!("DROP TABLE \"{t}\"")))
         .execute(db.pool())
         .await
         .ok();

@@ -17,12 +17,15 @@ const MYSQL_URL: &str = "mysql://vantage:vantage@localhost:3306/vantage";
 async fn setup(table: &str) -> MysqlDB {
     let db = MysqlDB::connect(MYSQL_URL).await.unwrap();
 
-    sqlx::query(&format!("DROP TABLE IF EXISTS `{}`", table))
-        .execute(db.pool())
-        .await
-        .unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP TABLE IF EXISTS `{}`",
+        table
+    )))
+    .execute(db.pool())
+    .await
+    .unwrap();
 
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "CREATE TABLE `{}` (
             id VARCHAR(255) PRIMARY KEY,
             name TEXT NOT NULL,
@@ -33,18 +36,18 @@ async fn setup(table: &str) -> MysqlDB {
             description TEXT
         )",
         table
-    ))
+    )))
     .execute(db.pool())
     .await
     .unwrap();
 
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "INSERT INTO `{}` VALUES
             ('cupcake', 'Flux Cupcake', 120, 300, 0.25, false, 'A tasty cupcake'),
             ('tart', 'Time Tart', 220, 200, 0.15, true, 'tart'),
             ('plain', 'Plain Bread', 50, 150, NULL, false, NULL)",
         table
-    ))
+    )))
     .execute(db.pool())
     .await
     .unwrap();

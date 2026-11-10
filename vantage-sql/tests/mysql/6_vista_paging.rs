@@ -22,22 +22,25 @@ async fn setup(suffix: &str) -> (MysqlDB, String) {
     let db = MysqlDB::connect(MYSQL_URL).await.unwrap();
     let table_name = format!("vista_paging_{}", suffix);
 
-    sqlx::query(&format!("DROP TABLE IF EXISTS `{}`", table_name))
-        .execute(db.pool())
-        .await
-        .unwrap();
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP TABLE IF EXISTS `{}`",
+        table_name
+    )))
+    .execute(db.pool())
+    .await
+    .unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "CREATE TABLE `{}` (
             id VARCHAR(255) PRIMARY KEY,
             name TEXT NOT NULL,
             price BIGINT NOT NULL
         )",
         table_name
-    ))
+    )))
     .execute(db.pool())
     .await
     .unwrap();
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "INSERT INTO `{}` VALUES \
          ('a', 'Alpha', 10), \
          ('b', 'Beta', 20), \
@@ -45,7 +48,7 @@ async fn setup(suffix: &str) -> (MysqlDB, String) {
          ('d', 'Delta', 20), \
          ('e', 'Epsilon', 30)",
         table_name
-    ))
+    )))
     .execute(db.pool())
     .await
     .unwrap();
@@ -54,10 +57,13 @@ async fn setup(suffix: &str) -> (MysqlDB, String) {
 }
 
 async fn teardown(db: &MysqlDB, name: &str) {
-    sqlx::query(&format!("DROP TABLE IF EXISTS `{}`", name))
-        .execute(db.pool())
-        .await
-        .unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP TABLE IF EXISTS `{}`",
+        name
+    )))
+    .execute(db.pool())
+    .await
+    .unwrap();
 }
 
 fn product_vista(db: &MysqlDB, name: &str) -> Vista {

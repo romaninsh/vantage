@@ -35,16 +35,22 @@ impl Fixture {
                 "INSERT INTO `{orders_t}` VALUES ('o1','alice',10),('o2','alice',20),('o3','bob',30)"
             ),
         ] {
-            sqlx::query(&sql).execute(fixture.db.pool()).await.unwrap();
+            sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+                .execute(fixture.db.pool())
+                .await
+                .unwrap();
         }
         fixture
     }
 
     pub(super) async fn drop_tables(&self) {
-        sqlx::query(&format!("DROP TABLE IF EXISTS `{}`", self.orders_t))
-            .execute(self.db.pool())
-            .await
-            .unwrap();
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "DROP TABLE IF EXISTS `{}`",
+            self.orders_t
+        )))
+        .execute(self.db.pool())
+        .await
+        .unwrap();
     }
 
     /// The `orders` spec with `mysql:` block lines appended (each indented
@@ -95,10 +101,10 @@ pub(super) fn order(client_id: &str, total: i64) -> Record<CborValue> {
 }
 
 pub(super) async fn stored_orders(f: &Fixture) -> Vec<(String, i64)> {
-    sqlx::query_as::<_, (String, i64)>(&format!(
+    sqlx::query_as::<_, (String, i64)>(sqlx::AssertSqlSafe(format!(
         "SELECT id, total FROM `{}` ORDER BY id",
         f.orders_t
-    ))
+    )))
     .fetch_all(f.db.pool())
     .await
     .unwrap()

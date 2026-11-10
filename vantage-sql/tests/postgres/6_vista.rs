@@ -32,12 +32,15 @@ async fn setup(suffix: &str) -> (PostgresDB, String) {
     let db = PostgresDB::connect(PG_URL).await.unwrap();
     let table_name = format!("vista_product_{}", suffix);
 
-    sqlx::query(&format!("DROP TABLE IF EXISTS \"{}\"", table_name))
-        .execute(db.pool())
-        .await
-        .unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP TABLE IF EXISTS \"{}\"",
+        table_name
+    )))
+    .execute(db.pool())
+    .await
+    .unwrap();
 
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "CREATE TABLE \"{}\" (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
@@ -45,18 +48,18 @@ async fn setup(suffix: &str) -> (PostgresDB, String) {
             is_deleted BOOLEAN NOT NULL DEFAULT false
         )",
         table_name
-    ))
+    )))
     .execute(db.pool())
     .await
     .unwrap();
 
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "INSERT INTO \"{}\" VALUES \
          ('a', 'Alpha', 10, false), \
          ('b', 'Beta', 20, true), \
          ('c', 'Gamma', 30, false)",
         table_name
-    ))
+    )))
     .execute(db.pool())
     .await
     .unwrap();
@@ -84,32 +87,32 @@ async fn clients_orders(suffix: &str) -> (PostgresDB, String, String) {
     let orders_t = format!("vista_orders_{suffix}");
 
     for t in [&client_t, &orders_t] {
-        sqlx::query(&format!("DROP TABLE IF EXISTS \"{t}\""))
+        sqlx::query(sqlx::AssertSqlSafe(format!("DROP TABLE IF EXISTS \"{t}\"")))
             .execute(db.pool())
             .await
             .unwrap();
     }
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "CREATE TABLE \"{client_t}\" (id TEXT PRIMARY KEY, name TEXT NOT NULL)"
-    ))
+    )))
     .execute(db.pool())
     .await
     .unwrap();
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "CREATE TABLE \"{orders_t}\" (id TEXT PRIMARY KEY, client_id TEXT NOT NULL, total BIGINT NOT NULL)"
-    ))
+    )))
     .execute(db.pool())
     .await
     .unwrap();
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "INSERT INTO \"{client_t}\" VALUES ('alice','Alice'),('bob','Bob')"
-    ))
+    )))
     .execute(db.pool())
     .await
     .unwrap();
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "INSERT INTO \"{orders_t}\" VALUES ('o1','alice',10),('o2','alice',20),('o3','bob',30)"
-    ))
+    )))
     .execute(db.pool())
     .await
     .unwrap();

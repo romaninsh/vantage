@@ -24,12 +24,15 @@ async fn setup(suffix: &str) -> (MysqlDB, String) {
     let db = MysqlDB::connect(MYSQL_URL).await.unwrap();
     let table_name = format!("vista_product_{}", suffix);
 
-    sqlx::query(&format!("DROP TABLE IF EXISTS `{}`", table_name))
-        .execute(db.pool())
-        .await
-        .unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP TABLE IF EXISTS `{}`",
+        table_name
+    )))
+    .execute(db.pool())
+    .await
+    .unwrap();
 
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "CREATE TABLE `{}` (
             id VARCHAR(255) PRIMARY KEY,
             name TEXT NOT NULL,
@@ -37,18 +40,18 @@ async fn setup(suffix: &str) -> (MysqlDB, String) {
             is_deleted BOOLEAN NOT NULL DEFAULT 0
         )",
         table_name
-    ))
+    )))
     .execute(db.pool())
     .await
     .unwrap();
 
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "INSERT INTO `{}` VALUES \
          ('a', 'Alpha', 10, 0), \
          ('b', 'Beta', 20, 1), \
          ('c', 'Gamma', 30, 0)",
         table_name
-    ))
+    )))
     .execute(db.pool())
     .await
     .unwrap();
@@ -143,19 +146,19 @@ fn cart_table(db: MysqlDB, table: &str) -> Table<MysqlDB, EmptyEntity> {
 async fn contained_json_column_round_trips_on_mysql() -> TestResult {
     let db = MysqlDB::connect(MYSQL_URL).await.unwrap();
     let t = "vista_cart_contained";
-    sqlx::query(&format!("DROP TABLE IF EXISTS `{t}`"))
+    sqlx::query(sqlx::AssertSqlSafe(format!("DROP TABLE IF EXISTS `{t}`")))
         .execute(db.pool())
         .await
         .unwrap();
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "CREATE TABLE `{t}` (id VARCHAR(255) PRIMARY KEY, items TEXT NOT NULL)"
-    ))
+    )))
     .execute(db.pool())
     .await
     .unwrap();
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         r#"INSERT INTO `{t}` VALUES ('c1', '[{{"sku":"a","qty":1}},{{"sku":"b","qty":2}}]')"#
-    ))
+    )))
     .execute(db.pool())
     .await
     .unwrap();
@@ -191,7 +194,7 @@ async fn contained_json_column_round_trips_on_mysql() -> TestResult {
         Some(&CborValue::Integer(99i64.into()))
     );
 
-    sqlx::query(&format!("DROP TABLE `{t}`"))
+    sqlx::query(sqlx::AssertSqlSafe(format!("DROP TABLE `{t}`")))
         .execute(db.pool())
         .await
         .ok();
@@ -233,32 +236,32 @@ async fn clients_orders(suffix: &str) -> (MysqlDB, String, String) {
     let orders_t = format!("vista_orders_{suffix}");
 
     for t in [&client_t, &orders_t] {
-        sqlx::query(&format!("DROP TABLE IF EXISTS `{t}`"))
+        sqlx::query(sqlx::AssertSqlSafe(format!("DROP TABLE IF EXISTS `{t}`")))
             .execute(db.pool())
             .await
             .unwrap();
     }
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "CREATE TABLE `{client_t}` (id VARCHAR(255) PRIMARY KEY, name TEXT NOT NULL)"
-    ))
+    )))
     .execute(db.pool())
     .await
     .unwrap();
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "CREATE TABLE `{orders_t}` (id VARCHAR(255) PRIMARY KEY, client_id VARCHAR(255) NOT NULL, total BIGINT NOT NULL)"
-    ))
+    )))
     .execute(db.pool())
     .await
     .unwrap();
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "INSERT INTO `{client_t}` VALUES ('alice','Alice'),('bob','Bob')"
-    ))
+    )))
     .execute(db.pool())
     .await
     .unwrap();
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "INSERT INTO `{orders_t}` VALUES ('o1','alice',10),('o2','alice',20),('o3','bob',30)"
-    ))
+    )))
     .execute(db.pool())
     .await
     .unwrap();

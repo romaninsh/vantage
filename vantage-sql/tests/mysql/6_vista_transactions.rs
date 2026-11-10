@@ -53,7 +53,10 @@ impl MysqlTx {
                 "CREATE TABLE `{b}` (id VARCHAR(255) PRIMARY KEY, a_id VARCHAR(255), n BIGINT NOT NULL CHECK (n >= 0))"
             ),
         ] {
-            sqlx::query(&sql).execute(self.db.pool()).await.unwrap();
+            sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+                .execute(self.db.pool())
+                .await
+                .unwrap();
         }
         (a, b)
     }
@@ -132,7 +135,10 @@ async fn single_table(db: &MysqlDB, table: &str, columns: &str) -> Vista {
         format!("DROP TABLE IF EXISTS `{table}`"),
         format!("CREATE TABLE `{table}` ({columns})"),
     ] {
-        sqlx::query(&sql).execute(db.pool()).await.unwrap();
+        sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+            .execute(db.pool())
+            .await
+            .unwrap();
     }
     vista_of(db, table)
 }

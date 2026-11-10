@@ -10,7 +10,7 @@ use vantage_types::Record;
 use super::types::{AnySqliteType, SqliteTypeVariants};
 
 pub(crate) type SqliteQuery<'q> =
-    sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments<'q>>;
+    sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments>;
 
 /// Values the binder cannot express as a SQLite parameter come straight
 /// from user data, so they surface as errors — never a panic.

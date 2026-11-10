@@ -9,7 +9,7 @@ const SQLITE_URL: &str = "sqlite::memory:";
 async fn setup(table: &str) -> SqliteDB {
     let db = SqliteDB::connect(SQLITE_URL).await.unwrap();
 
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "CREATE TABLE \"{}\" (
             id INTEGER PRIMARY KEY,
             name TEXT NOT NULL,
@@ -18,15 +18,15 @@ async fn setup(table: &str) -> SqliteDB {
             active BOOLEAN NOT NULL
         )",
         table
-    ))
+    )))
     .execute(db.pool())
     .await
     .unwrap();
 
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "INSERT INTO \"{}\" VALUES (1, 'Apple', 100, 0.2, 1), (2, 'Banana', 50, 0.15, 1), (3, 'Cherry', 200, 0.01, 0)",
         table
-    ))
+    )))
     .execute(db.pool())
     .await
     .unwrap();

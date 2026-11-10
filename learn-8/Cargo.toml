@@ -12,4 +12,4 @@ vantage-sql = { path = "../vantage-sql", features = ["sqlite", "vista"] }
 vantage-diorama = { path = "../vantage-diorama" }
 vantage-types = { path = "../vantage-types" }
 vantage-core = { path = "../vantage-core" }
-sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
+sqlx = { version = "0.9", features = ["runtime-tokio", "sqlite"] }

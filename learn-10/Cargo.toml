@@ -16,5 +16,5 @@ vantage-vista = { path = "../vantage-vista" }
 vantage-dataset = { path = "../vantage-dataset" }
 vantage-types = { path = "../vantage-types" }
 vantage-core = { path = "../vantage-core" }
-sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "postgres"] }
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "postgres"] }
 rand = "0.8"

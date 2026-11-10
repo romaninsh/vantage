@@ -9,14 +9,14 @@ mod defer;
 pub(crate) use defer::{defer_first_cell, first_cell};
 
 use ciborium::Value as CborValue;
-use sqlx::{Database, Executor, IntoArguments, Pool};
+use sqlx::{AssertSqlSafe, Database, Executor, IntoArguments, Pool};
 use vantage_core::{Context, Result, VantageError, error};
 use vantage_expressions::{Expression, ExpressionFlattener, ExpressiveEnum, Flatten};
 use vantage_types::Record;
 
 use crate::sql_tx::SqlTx;
 
-pub(crate) type SqlxQuery<'q, DB> = sqlx::query::Query<'q, DB, <DB as Database>::Arguments<'q>>;
+pub(crate) type SqlxQuery<'q, DB> = sqlx::query::Query<'q, DB, <DB as Database>::Arguments>;
 
 /// How a dialect spells the n-th positional parameter.
 #[derive(Clone, Copy)]
@@ -93,7 +93,7 @@ pub(crate) async fn fetch_rows<D>(db: &D, expr: &Expression<D::Value>) -> Result
 where
     D: SqlDialect,
     for<'c> &'c mut <D::Db as Database>::Connection: Executor<'c, Database = D::Db>,
-    for<'q> <D::Db as Database>::Arguments<'q>: IntoArguments<'q, D::Db>,
+    <D::Db as Database>::Arguments: IntoArguments<D::Db>,
 {
     // Deferred parameters may query this same datasource, so they resolve
     // before the transaction's connection is taken.
@@ -116,7 +116,7 @@ pub(crate) async fn fetch_rows_on<'c, D, X>(
 where
     D: SqlDialect,
     X: Executor<'c, Database = D::Db>,
-    for<'q> <D::Db as Database>::Arguments<'q>: IntoArguments<'q, D::Db>,
+    <D::Db as Database>::Arguments: IntoArguments<D::Db>,
 {
     let (sql, params) = prepare(expr, D::PLACEHOLDER).await?;
     fetch_prepared::<D, _>(executor, &sql, &params).await
@@ -126,7 +126,7 @@ async fn fetch_prepared<'c, D, X>(executor: X, sql: &str, params: &[D::Value]) -
 where
     D: SqlDialect,
     X: Executor<'c, Database = D::Db>,
-    for<'q> <D::Db as Database>::Arguments<'q>: IntoArguments<'q, D::Db>,
+    <D::Db as Database>::Arguments: IntoArguments<D::Db>,
 {
     let rows = bind_all::<D>(sql, params)?
         .fetch_all(executor)
@@ -156,7 +156,7 @@ pub(crate) async fn execute_affected<D>(db: &D, expr: &Expression<D::Value>) -> 
 where
     D: SqlDialect,
     for<'c> &'c mut <D::Db as Database>::Connection: Executor<'c, Database = D::Db>,
-    for<'q> <D::Db as Database>::Arguments<'q>: IntoArguments<'q, D::Db>,
+    <D::Db as Database>::Arguments: IntoArguments<D::Db>,
 {
     let (sql, params) = prepare(expr, D::PLACEHOLDER).await?;
     match db.sql_tx() {
@@ -178,7 +178,7 @@ pub(crate) async fn execute_affected_on<'c, D, X>(
 where
     D: SqlDialect,
     X: Executor<'c, Database = D::Db>,
-    for<'q> <D::Db as Database>::Arguments<'q>: IntoArguments<'q, D::Db>,
+    <D::Db as Database>::Arguments: IntoArguments<D::Db>,
 {
     let (sql, params) = prepare(expr, D::PLACEHOLDER).await?;
     execute_prepared::<D, _>(executor, &sql, &params).await
@@ -188,7 +188,7 @@ async fn execute_prepared<'c, D, X>(executor: X, sql: &str, params: &[D::Value])
 where
     D: SqlDialect,
     X: Executor<'c, Database = D::Db>,
-    for<'q> <D::Db as Database>::Arguments<'q>: IntoArguments<'q, D::Db>,
+    <D::Db as Database>::Arguments: IntoArguments<D::Db>,
 {
     let done = bind_all::<D>(sql, params)?
         .execute(executor)
@@ -213,7 +213,8 @@ pub(crate) fn bind_all<'q, D: SqlDialect>(
     sql: &'q str,
     params: &'q [D::Value],
 ) -> Result<SqlxQuery<'q, D::Db>> {
-    let mut query = sqlx::query(sql);
+    // Values travel as bound parameters, so the rendered text is safe to run.
+    let mut query = sqlx::query(AssertSqlSafe(sql));
     for (i, value) in params.iter().enumerate() {
         query = D::bind(query, value).map_err(|mut e| {
             e.context.insert("parameter".into(), (i + 1).to_string());

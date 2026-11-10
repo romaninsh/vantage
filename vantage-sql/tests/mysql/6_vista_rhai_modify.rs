@@ -227,13 +227,13 @@ references:
 #[tokio::test]
 async fn modify_script_condition_guards_writes() -> TestResult {
     let f = Fixture::new("guard").await;
-    sqlx::query(&format!("DELETE FROM `{}`", f.orders_t))
+    sqlx::query(sqlx::AssertSqlSafe(format!("DELETE FROM `{}`", f.orders_t)))
         .execute(f.db.pool())
         .await?;
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "INSERT INTO `{}` VALUES ('o1','alice',10)",
         f.orders_t
-    ))
+    )))
     .execute(f.db.pool())
     .await?;
     let before = stored_orders(&f).await;
