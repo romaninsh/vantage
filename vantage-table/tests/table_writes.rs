@@ -1428,7 +1428,10 @@ async fn write_context_carries_the_request() {
 
             let debug = format!("{request:?}");
             assert!(debug.contains("referer=***"), "{debug}");
-            assert!(!debug.contains("tok-9") && !debug.contains("GA1.1.123"), "{debug}");
+            assert!(
+                !debug.contains("tok-9") && !debug.contains("GA1.1.123"),
+                "{debug}"
+            );
         })
         .await;
 }
