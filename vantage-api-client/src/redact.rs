@@ -2,7 +2,7 @@
 //! the process: always `***`. Every log line and error message built from
 //! request data goes through here, so a new one has one place to get wrong.
 
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 
 /// The stand-in for a secret value.
 pub(crate) const MASK: &str = "***";
@@ -41,7 +41,7 @@ impl Redaction {
     /// and the bare token inside a `Bearer` one.
     pub(crate) fn sent(&self, header: &str) {
         let token = header.strip_prefix("Bearer ").unwrap_or(header);
-        let mut sent = self.sent.lock().unwrap_or_else(|e| e.into_inner());
+        let mut sent = self.sent.lock().unwrap_or_else(PoisonError::into_inner);
         for value in [header, token] {
             if !value.is_empty() && !sent.iter().any(|v| v == value) {
                 sent.push(value.to_string());
@@ -67,7 +67,7 @@ impl Redaction {
     /// `text` with every masked value replaced, as written and as it would
     /// appear percent-encoded in a URL.
     pub(crate) fn text(&self, text: &str) -> String {
-        let sent = self.sent.lock().unwrap_or_else(|e| e.into_inner());
+        let sent = self.sent.lock().unwrap_or_else(PoisonError::into_inner);
         let mut needles: Vec<String> = self
             .values
             .iter()
