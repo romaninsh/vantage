@@ -19,6 +19,43 @@ mod enabled {
     pub(crate) struct BodyTemplate {
         engine: Arc<Engine>,
         ast: Arc<AST>,
+        /// Every `secret.<name>` and `secret["<name>"]` the source reads.
+        secret_names: Vec<String>,
+    }
+
+    /// The secret names `source` reads, found by scanning its text: a miss
+    /// in a Rhai map is a silent `()`, so an unbound secret would otherwise
+    /// send null. A name built at run time (`secret[x]`) is not seen.
+    fn secret_names(source: &str) -> Vec<String> {
+        let is_ident = |c: char| c.is_alphanumeric() || c == '_';
+        let mut names = Vec::new();
+        for (at, _) in source.match_indices("secret") {
+            let before = source[..at].chars().next_back();
+            if before.is_some_and(|c| is_ident(c) || c == '.') {
+                continue;
+            }
+            let rest = source[at + "secret".len()..].trim_start();
+            let name = if let Some(rest) = rest.strip_prefix('.') {
+                let rest = rest.trim_start();
+                let end = rest.find(|c| !is_ident(c)).unwrap_or(rest.len());
+                &rest[..end]
+            } else if let Some(rest) = rest.strip_prefix('[') {
+                let rest = rest.trim_start();
+                match rest.chars().next() {
+                    Some(quote @ ('"' | '\'')) => {
+                        let rest = &rest[1..];
+                        &rest[..rest.find(quote).unwrap_or(0)]
+                    }
+                    _ => continue,
+                }
+            } else {
+                continue;
+            };
+            if !name.is_empty() && !names.iter().any(|n| n == name) {
+                names.push(name.to_string());
+            }
+        }
+        names
     }
 
     impl fmt::Debug for BodyTemplate {
@@ -31,12 +68,16 @@ mod enabled {
         pub(crate) fn compile(source: &str) -> Result<Self> {
             let mut engine = Engine::new();
             Limits::background().apply(&mut engine);
+            // A template has no business writing to the process's stdout.
+            engine.on_print(|_| {});
+            engine.on_debug(|_, _, _| {});
             let ast = engine
                 .compile_expression(source)
                 .map_err(|e| error!("api.insert.body does not compile", reason = e.to_string()))?;
             Ok(Self {
                 engine: Arc::new(engine),
                 ast: Arc::new(ast),
+                secret_names: secret_names(source),
             })
         }
 
@@ -46,6 +87,13 @@ mod enabled {
             secrets: &IndexMap<String, String>,
             redaction: &Redaction,
         ) -> Result<Value> {
+            if let Some(name) = self.secret_names.iter().find(|n| !secrets.contains_key(*n)) {
+                return Err(error!(
+                    "api.insert.body reads a secret that is not bound; bind it with \
+                     with_insert_secrets (or with_secrets)",
+                    secret = name.as_str()
+                ));
+            }
             let to_scope_err = |e: Box<rhai::EvalAltResult>| {
                 error!(
                     "api.insert.body failed",

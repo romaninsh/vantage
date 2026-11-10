@@ -7,6 +7,7 @@
 //! actor with, and `group` ties together everything one request or action run
 //! caused.
 
+use std::fmt;
 use std::future::Future;
 use std::net::IpAddr;
 
@@ -61,7 +62,9 @@ impl WriteContext {
     }
 }
 
-/// Headers a host may copy into a [`RequestContext`]. Lowercase names.
+/// Headers a host may copy into a [`RequestContext`]. Lowercase names. The
+/// host enforces it: [`RequestContext::with_header`] stores whatever it is
+/// given.
 pub const REQUEST_HEADER_ALLOW_LIST: &[&str] = &[
     "user-agent",
     "referer",
@@ -72,6 +75,7 @@ pub const REQUEST_HEADER_ALLOW_LIST: &[&str] = &[
 
 /// The entry point a write came in through.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Transport {
     Ws,
     Rest,
@@ -91,8 +95,9 @@ impl Transport {
 }
 
 /// What the host saw of the request a write came in on. Built with
-/// [`RequestContext::new`] and the `with_*` builders.
-#[derive(Clone, Debug, PartialEq)]
+/// [`RequestContext::new`] and the `with_*` builders. `Debug` shows cookie
+/// names only: their values are session credentials.
+#[derive(Clone, PartialEq)]
 #[non_exhaustive]
 pub struct RequestContext {
     pub transport: Transport,
@@ -100,6 +105,22 @@ pub struct RequestContext {
     /// Keys are stored lowercase, so [`RequestContext::header`] ignores case.
     pub headers: IndexMap<String, String>,
     pub cookies: IndexMap<String, String>,
+}
+
+impl fmt::Debug for RequestContext {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let cookies: Vec<String> = self
+            .cookies
+            .keys()
+            .map(|name| format!("{name}=***"))
+            .collect();
+        f.debug_struct("RequestContext")
+            .field("transport", &self.transport)
+            .field("ip", &self.ip)
+            .field("headers", &self.headers)
+            .field("cookies", &cookies)
+            .finish()
+    }
 }
 
 impl RequestContext {
@@ -135,6 +156,8 @@ impl RequestContext {
             .map(String::as_str)
     }
 
+    /// The cookie's value; the name must match exactly, as cookie names are
+    /// case-sensitive (RFC 6265).
     pub fn cookie(&self, name: &str) -> Option<&str> {
         self.cookies.get(name).map(String::as_str)
     }

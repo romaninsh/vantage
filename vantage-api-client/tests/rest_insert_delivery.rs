@@ -68,18 +68,22 @@ fn header_of(request: &Request, name: &str) -> Option<String> {
 
 #[tokio::test(start_paused = true)]
 async fn an_insert_without_idempotency_is_not_retried() {
-    let server = MockServer::start().await;
-    failing_then_ok(&server, 503, 100).await;
-    let ep = endpoint(&server, "{}");
+    // A retryable status on a table that never declared a repeat safe, and a
+    // status no repeat can change on one that did.
+    for (block, status) in [("{}", 503), ("{ idempotent: true }", 400)] {
+        let server = MockServer::start().await;
+        failing_then_ok(&server, status, 100).await;
+        let ep = endpoint(&server, block);
 
-    assert!(ep.send(&[record("a")]).await.is_err());
-    assert_eq!(received(&server).await.len(), 1);
+        assert!(ep.send(&[record("a")]).await.is_err());
+        assert_eq!(received(&server).await.len(), 1, "{block} on {status}");
+    }
 }
 
 #[tokio::test(start_paused = true)]
 async fn an_insert_with_an_idempotency_key_retries_with_the_same_key() {
     let server = MockServer::start().await;
-    failing_then_ok(&server, 503, 2).await;
+    failing_then_ok(&server, 408, 2).await;
     let ep = endpoint(&server, "{ batch: 2, idempotency_key: Idempotency-Key }");
     let ids = [Uuid::now_v7(), Uuid::now_v7()];
 
@@ -119,18 +123,10 @@ async fn retries_stop_after_five_attempts() {
     failing_then_ok(&server, 503, 100).await;
     let ep = endpoint(&server, "{ idempotent: true }");
 
+    let started = Instant::now();
     assert!(ep.send(&[record("a")]).await.is_err());
     assert_eq!(received(&server).await.len(), 5);
-}
-
-#[tokio::test(start_paused = true)]
-async fn a_client_error_is_not_retried_even_when_idempotent() {
-    let server = MockServer::start().await;
-    failing_then_ok(&server, 400, 100).await;
-    let ep = endpoint(&server, "{ idempotent: true }");
-
-    assert!(ep.send(&[record("a")]).await.is_err());
-    assert_eq!(received(&server).await.len(), 1);
+    assert_eq!(started.elapsed(), Duration::from_secs(1 + 2 + 4 + 8));
 }
 
 #[tokio::test(start_paused = true)]
@@ -138,7 +134,9 @@ async fn retry_after_is_honoured_up_to_thirty_seconds() {
     for (asked, waited) in [(10, 10), (120, 30)] {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .respond_with(ResponseTemplate::new(429).insert_header("Retry-After", asked.to_string()))
+            .respond_with(
+                ResponseTemplate::new(429).insert_header("Retry-After", asked.to_string()),
+            )
             .up_to_n_times(1)
             .with_priority(1)
             .mount(&server)

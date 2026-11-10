@@ -56,7 +56,7 @@ because `RestApi::build` makes a `reqwest` client, which reads the system's prox
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `api.endpoint` | string | the spec `name` | Path under the API's base URL. May hold `{placeholder}` segments. |
-| `api.read` | bool | `true` | `false` makes an insert-only table; see [Inserting](#inserting). |
+| `api.read` | bool | `true` | `false` makes an insert-only table: a list, get or count is refused before any request is made. See [Inserting](#inserting). |
 | `api.insert` | block | none | How the table inserts; see [Inserting](#inserting). |
 
 The whole `api:` block is optional. Unknown keys are a parse error.
@@ -138,7 +138,6 @@ api:
 
 | Key | Default | Meaning |
 |---|---|---|
-| `api.read` | `true` | `false` makes an insert-only table: a list, get or count is refused before any request is made |
 | `api.insert.method` | `POST` | Only `POST` is accepted; anything else fails the build |
 | `api.insert.path` | the table's endpoint | Path under the base URL |
 | `api.insert.query` | none | Query parameters sent with every insert |
@@ -150,14 +149,52 @@ api:
 | `api.insert.idempotent` | `false` | A repeated request is safe, with no key needed |
 | `api.insert.encoding` | none | `gzip` compresses the body |
 
+`api.read: false`, set beside the `insert` block, makes the table insert-only; it is described
+under [Table keys](#table-keys).
+
 ### Body templates
 
-Without `body`, one record is sent as it is and a batch as an array. A template is for APIs that
+Without `body`, a table with `batch: 1` sends the record as it is. With `batch` above 1 every
+request is an array, even one that holds a single record. A template is for APIs that
 want an envelope. It is a Rhai expression, compiled when the table is built, so a typo fails
 there and not on the first event. It sees `records` (the batch), `record` (the first of them)
-and `secret`, a map of values the host supplies with `RestInsertEndpoint::with_secrets`. Secrets
+and `secret`, a map of values the host supplies. Secrets
 are bound as data. They are never pasted into the template text, so a key holding a quote or
 code can't change what the template does. Templates need the crate's `rhai` feature.
+
+Secrets never come from the YAML. A factory takes them with `with_insert_secrets`, and every
+insert table it builds gets the same map (`RestInsertEndpoint::with_secrets` does the same for a
+single endpoint):
+
+```rust,no_run
+# use indexmap::IndexMap;
+# use vantage_api_client::{ResponseShape, RestApi};
+# fn main() -> vantage_core::Result<()> {
+# let api = RestApi::builder("https://api.example.com")
+#     .response_shape(ResponseShape::BareArray)
+#     .build();
+let mut factory = api.vista_factory().with_insert_secrets(IndexMap::from([(
+    "key".to_string(),
+    std::env::var("EVENTS_KEY").unwrap_or_default(),
+)]));
+factory.register_yaml(
+    "
+name: events
+columns:
+  name: { type: string }
+api:
+  insert: { body: '#{ api_key: secret.key, events: records }' }
+",
+)?;
+let events = factory.build("events")?;
+# let _ = events;
+# Ok(())
+# }
+```
+
+A template that reads `secret.<name>` (or `secret["<name>"]`) for a name the host did not bind
+fails the insert with an error naming it, and nothing is sent. A `record` field the record lacks
+is not an error: it reads as null.
 
 ### Batches and groups
 
@@ -167,8 +204,8 @@ to belong to one client. A failed request stops the insert: later batches are no
 
 ### Delivery
 
-A retry is only safe when the receiver can recognise a repeat, so the client retries a `429`, a
-`5xx` or a transport error only when you say so: either `idempotency_key` names a header that
+A retry is only safe when the receiver can recognise a repeat, so the client retries a `408`, a
+`429`, a `5xx` or a transport error only when you say so: either `idempotency_key` names a header that
 carries the id of the request's first record, or `idempotent: true` says repeats are harmless.
 Without either, a failed insert is reported once and not repeated.
 
@@ -176,7 +213,8 @@ A request is rendered once, and every attempt sends the same bytes, so a receive
 de-duplicates on the body sees the same body. There are at most 5 attempts, with waits of 1, 2, 4
 and 8 seconds between them. A `Retry-After` from the server replaces the wait, capped at 30
 seconds. A status outside `accept` counts as a failure of the same kind, so a `503` is retried
-and a `400` is not.
+and a `400` is not. A non-2xx status listed in `accept`, a `409` for a duplicate say, counts as
+success.
 
 ### Query auth
 

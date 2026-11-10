@@ -2,16 +2,23 @@
 //! the process: always `***`. Every log line and error message built from
 //! request data goes through here, so a new one has one place to get wrong.
 
+use std::sync::Mutex;
+
 /// The stand-in for a secret value.
 pub(crate) const MASK: &str = "***";
 
 /// The credentials of one request: query parameters whose values are masked
 /// wherever a URL is shown, and literal values masked wherever free text is.
 /// Built on demand and never stored, so it cannot leak through `Debug`.
+///
+/// The bearer token a request carries is only known once the request is
+/// built (a source is asked per attempt), so [`Redaction::sent`] records it
+/// as it goes out instead of asking the source a second time.
 #[derive(Default)]
 pub(crate) struct Redaction {
     params: Vec<String>,
     values: Vec<String>,
+    sent: Mutex<Vec<String>>,
 }
 
 impl Redaction {
@@ -28,6 +35,18 @@ impl Redaction {
             self.values.push(value);
         }
         self
+    }
+
+    /// Mask the `Authorization` header value that went out on an attempt,
+    /// and the bare token inside a `Bearer` one.
+    pub(crate) fn sent(&self, header: &str) {
+        let token = header.strip_prefix("Bearer ").unwrap_or(header);
+        let mut sent = self.sent.lock().unwrap_or_else(|e| e.into_inner());
+        for value in [header, token] {
+            if !value.is_empty() && !sent.iter().any(|v| v == value) {
+                sent.push(value.to_string());
+            }
+        }
     }
 
     /// `url` with the value of each masked query parameter replaced.
@@ -48,9 +67,11 @@ impl Redaction {
     /// `text` with every masked value replaced, as written and as it would
     /// appear percent-encoded in a URL.
     pub(crate) fn text(&self, text: &str) -> String {
+        let sent = self.sent.lock().unwrap_or_else(|e| e.into_inner());
         let mut needles: Vec<String> = self
             .values
             .iter()
+            .chain(sent.iter())
             .flat_map(|v| [v.clone(), urlencoding::encode(v).into_owned()])
             .collect();
         needles.sort_by_key(|n| std::cmp::Reverse(n.len()));
@@ -61,7 +82,7 @@ impl Redaction {
 
     fn masks_param(&self, name: &str) -> bool {
         let name = urlencoding::decode(name).map_or_else(|_| name.into(), |n| n.into_owned());
-        self.params.iter().any(|p| *p == name)
+        self.params.contains(&name)
     }
 }
 

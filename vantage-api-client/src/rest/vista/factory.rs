@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, PoisonError, RwLock};
 
 use ciborium::Value as CborValue;
+use indexmap::IndexMap;
 use vantage_core::{Result, error};
 use vantage_table::column::core::Column as TableColumn;
 use vantage_table::table::{Orderable, Table, VistaMetadataOptions};
@@ -33,6 +34,7 @@ pub struct RestApiVistaFactory {
     api: RestApi,
     specs: SpecRegistry,
     resolver: Option<Arc<dyn VistaResolver>>,
+    insert_secrets: IndexMap<String, String>,
 }
 
 /// A registered spec by name; a name never registered is not-found. A writer
@@ -54,7 +56,17 @@ impl RestApiVistaFactory {
             api,
             specs: Arc::new(RwLock::new(HashMap::new())),
             resolver: None,
+            insert_secrets: IndexMap::new(),
         }
+    }
+
+    /// The secrets an `api.insert.body` template reads as `secret.<name>`,
+    /// for every insert target this factory builds. They come from the host
+    /// (its environment or a vault), never from the YAML. A template that
+    /// reads a name not bound here fails the insert with an error naming it.
+    pub fn with_insert_secrets(mut self, secrets: IndexMap<String, String>) -> Self {
+        self.insert_secrets = secrets;
+        self
     }
 
     /// The data source every Vista from this factory reads through.
@@ -120,10 +132,12 @@ impl RestApiVistaFactory {
         }
         let specs = self.specs.clone();
         let api = self.api.clone();
+        let secrets = self.insert_secrets.clone();
         Arc::new(move |name: &str| -> Result<Vista> {
             let spec = registry_get(&specs, name)?;
             // Reuse the same factory pipeline as the top-level build.
-            let mut factory = RestApiVistaFactory::new(api.clone());
+            let mut factory =
+                RestApiVistaFactory::new(api.clone()).with_insert_secrets(secrets.clone());
             factory.specs = specs.clone();
             factory.build_from_spec(spec)
         })
@@ -190,7 +204,10 @@ impl RestApiVistaFactory {
         let read = block.is_none_or(|b| b.read);
         let insert = match block.and_then(|b| b.insert.as_ref()) {
             Some(insert) => Some(TableInsert {
-                endpoint: self.api.insert_endpoint(insert, &endpoint)?,
+                endpoint: self
+                    .api
+                    .insert_endpoint(insert, &endpoint)?
+                    .with_secrets(self.insert_secrets.clone()),
             }),
             None => None,
         };

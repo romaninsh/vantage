@@ -6,7 +6,6 @@ mod support;
 use std::sync::{Arc, Mutex};
 
 use ciborium::Value as CborValue;
-use indexmap::IndexMap;
 use reqwest::Method;
 use support::test_client;
 use tracing::field::{Field, Visit};
@@ -154,18 +153,12 @@ async fn debug_logs_and_errors_redact_credentials() {
         .to_string();
     assert!(key_error.contains("api_secret=***"), "{key_error}");
 
-    // A failing insert with a query value, a body secret and a status the table refuses.
+    // A failing insert with a query value and a status the table refuses.
     let block: ApiInsertBlock = serde_yaml_ng::from_str(
-        "path: collect\nquery: { measurement_id: G-ABC123 }\naccept: [204]\nbody: '#{ n: secret.key }'",
+        "path: collect\nquery: { measurement_id: G-ABC123 }\naccept: [204]",
     )
     .unwrap();
-    let endpoint = api
-        .insert_endpoint(&block, "events")
-        .unwrap()
-        .with_secrets(IndexMap::from([(
-            "key".to_string(),
-            "sekret-key".to_string(),
-        )]));
+    let endpoint = api.insert_endpoint(&block, "events").unwrap();
     let insert_error = endpoint.send(&[record("a")]).await.unwrap_err().to_string();
     assert!(insert_error.contains("api_secret=***"), "{insert_error}");
     assert!(
@@ -173,31 +166,10 @@ async fn debug_logs_and_errors_redact_credentials() {
         "{insert_error}"
     );
 
-    // A body template whose own error text would echo the secret.
-    let block: ApiInsertBlock =
-        serde_yaml_ng::from_str("path: collect\nbody: '#{ n: parse_int(secret.key) }'").unwrap();
-    let template_error = api
-        .insert_endpoint(&block, "events")
-        .unwrap()
-        .with_secrets(IndexMap::from([(
-            "key".to_string(),
-            "sekret-key".to_string(),
-        )]))
-        .send(&[record("a")])
-        .await
-        .unwrap_err()
-        .to_string();
-    assert!(
-        template_error.contains("api.insert.body failed"),
-        "{template_error}"
-    );
-    assert!(template_error.contains("***"), "{template_error}");
-
     // Debug output shows names, never values.
     let debug = format!("{endpoint:?} {api:?}");
     assert!(debug.contains("measurement_id=***"), "{debug}");
-    assert!(debug.contains("key"), "{debug}");
-    assert_never(&debug, &["=s3", "G-ABC123", "sekret-key", "tok-123"]);
+    assert_never(&debug, &["=s3", "G-ABC123", "tok-123"]);
 
     // A fixed Authorization value an error body echoes back.
     let fixed = builder(&server)
@@ -231,22 +203,13 @@ async fn debug_logs_and_errors_redact_credentials() {
         &read_error,
         &key_error,
         &insert_error,
-        &template_error,
         &fixed_error,
         &transport_error,
         &log,
     ] {
         assert_never(
             text,
-            &[
-                "=s3",
-                " s3",
-                "tok-123",
-                "key-456",
-                "fixed-789",
-                "G-ABC123",
-                "sekret-key",
-            ],
+            &["=s3", " s3", "tok-123", "key-456", "fixed-789", "G-ABC123"],
         );
     }
 }

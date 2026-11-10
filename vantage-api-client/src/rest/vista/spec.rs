@@ -120,6 +120,7 @@ impl Default for ApiInsertBlock {
 /// Body compression for an insert request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[non_exhaustive]
 pub enum Encoding {
     /// `Content-Encoding: gzip`.
     Gzip,

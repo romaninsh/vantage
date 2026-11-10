@@ -21,8 +21,8 @@
 
 pub mod graphql;
 pub mod prelude;
-pub mod rest;
 mod redact;
+pub mod rest;
 mod row_keys;
 mod transport;
 

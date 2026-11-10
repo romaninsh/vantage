@@ -299,11 +299,12 @@ impl GraphqlApi {
         let body = Body { query, variables };
 
         let policy = crate::transport::policy_for(Priority::current());
+        let redaction = Redaction::default();
         let response = self
             .client
             .execute_with(&policy, |http| {
                 self.auth_header
-                    .apply(http.post(&self.endpoint).json(&body))
+                    .apply(http.post(&self.endpoint).json(&body), &redaction)
             })
             .await
             .map_err(|e| {
@@ -311,7 +312,7 @@ impl GraphqlApi {
                     e,
                     "GraphQL request failed",
                     &self.endpoint,
-                    &Redaction::default(),
+                    &redaction,
                 )
             })?;
 

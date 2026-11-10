@@ -6,10 +6,11 @@
 //! with no per-record translation. A clone copies the table's query state
 //! (conditions, order) and shares the HTTP client.
 //!
-//! The shell reads, and inserts when the table has `api.insert`. Conditions are equality only: each becomes a URL
-//! path placeholder, a query param, or an in-memory row filter, as the
-//! `RestApi` is configured. A condition names a declared column or a path
-//! placeholder (`teams/{team_id}/users`), which the spec needn't declare.
+//! The shell reads, and inserts when the table has `api.insert`. Conditions
+//! are equality only: each becomes a URL path placeholder, a query param, or
+//! an in-memory row filter, as the `RestApi` is configured. A condition names
+//! a declared column or a path placeholder (`teams/{team_id}/users`), which
+//! the spec needn't declare.
 
 use std::sync::Arc;
 

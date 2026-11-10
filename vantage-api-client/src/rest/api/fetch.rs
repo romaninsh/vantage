@@ -162,7 +162,9 @@ impl RestApi {
         let policy = crate::transport::policy_for(Priority::current());
         let response = self
             .client
-            .execute_with(&policy, |http| self.auth_header.apply(http.get(&url)))
+            .execute_with(&policy, |http| {
+                self.auth_header.apply(http.get(&url), &redaction)
+            })
             .await
             .map_err(|e| {
                 let ms = started.elapsed().as_millis() as u64;

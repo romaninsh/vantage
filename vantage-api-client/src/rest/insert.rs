@@ -88,7 +88,7 @@ const BASE_BACKOFF: Duration = Duration::from_secs(1);
 const RETRY_AFTER_CAP: Duration = Duration::from_secs(30);
 
 fn is_retryable(status: u16) -> bool {
-    status == 429 || (500..600).contains(&status)
+    matches!(status, 408 | 429) || (500..600).contains(&status)
 }
 
 /// The `api.insert` target a table's own copy of the data source carries,
@@ -334,6 +334,11 @@ impl RestInsertEndpoint {
         let response = match answer {
             Ok(response) => response,
             Err(e) => {
+                if let ErrorKind::Status(status) = e.kind
+                    && self.accept.contains(&status)
+                {
+                    return Ok(None);
+                }
                 let retryable = match e.kind {
                     ErrorKind::Status(status) => is_retryable(status),
                     ErrorKind::Transport(_) => true,

@@ -297,7 +297,9 @@ impl TableSource for RestApi {
         if !self.has_insert() {
             return Err(unsupported("insert_table_value"));
         }
-        self.table_insert()?.send(std::slice::from_ref(record)).await?;
+        self.table_insert()?
+            .send(std::slice::from_ref(record))
+            .await?;
         Ok(record.clone())
     }
 
@@ -357,7 +359,9 @@ impl TableSource for RestApi {
         if !self.has_insert() {
             return Err(unsupported("insert_table_return_id_value"));
         }
-        self.table_insert()?.send(std::slice::from_ref(record)).await?;
+        self.table_insert()?
+            .send(std::slice::from_ref(record))
+            .await?;
         Ok(String::new())
     }
 

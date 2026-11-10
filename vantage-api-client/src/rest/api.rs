@@ -141,20 +141,16 @@ impl RestApi {
         }
     }
 
-    /// What this API's own credentials look like in shown text.
+    /// What this API's own credentials look like in shown text. The
+    /// `Authorization` header is not here: a bearer source is asked once per
+    /// attempt, so each attempt notes the value it sent on the redaction
+    /// ([`AuthHeader::apply`]) rather than asking the source again.
     pub(crate) fn redaction(&self) -> Redaction {
-        let redaction = match &self.query_auth {
+        match &self.query_auth {
             Some(auth) => Redaction::default()
                 .param(auth.param.clone())
                 .value(auth.value.clone()),
             None => Redaction::default(),
-        };
-        match self.auth_header.value() {
-            Some(header) => {
-                let token = header.strip_prefix("Bearer ").unwrap_or(&header);
-                redaction.value(token).value(header.as_ref())
-            }
-            None => redaction,
         }
     }
 
@@ -286,7 +282,7 @@ impl RestApi {
                 // configured auth instead of riding alongside it on the wire.
                 let req = self
                     .auth_header
-                    .apply(http.request(method.clone(), &url))
+                    .apply(http.request(method.clone(), &url), redaction)
                     .headers(header_map.clone());
                 match &body {
                     Some(body) => req.body(body.clone()),

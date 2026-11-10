@@ -11,10 +11,15 @@ use flate2::read::GzDecoder;
 use indexmap::IndexMap;
 use serde_json::{Value, json};
 use support::test_client;
-use vantage_api_client::{ApiInsertBlock, ResponseShape, RestApi, RestInsertEndpoint};
+use vantage_api_client::{
+    ApiInsertBlock, ResponseShape, RestApi, RestApiVistaFactory, RestApiVistaSpec,
+    RestInsertEndpoint,
+};
+use vantage_dataset::traits::InsertableValueSet;
 use vantage_types::Record;
+use vantage_vista::VistaFactory;
 use wiremock::matchers::method;
-use wiremock::{Mock, MockServer, ResponseTemplate};
+use wiremock::{Mock, MockServer, Request, ResponseTemplate};
 
 async fn endpoint(server: &MockServer, block: &str) -> vantage_core::Result<RestInsertEndpoint> {
     let api = RestApi::builder(server.uri())
@@ -57,20 +62,22 @@ async fn bodies(server: &MockServer) -> Vec<Value> {
 
 #[tokio::test]
 async fn body_template_renders_a_single_and_a_batch_body() {
+    // The batch carries a hostile secret: it is data, never template source.
     let server = accepting().await;
+    let nasty = "a\"#{x}\\\n";
     let ep = endpoint(
         &server,
         "{ batch: 2, body: '#{ api_key: secret.key, batch: records }' }",
     )
     .await
     .unwrap()
-    .with_secrets(secrets("key", "k"));
+    .with_secrets(secrets("key", nasty));
 
     ep.send(&[record("a", 1), record("b", 1)]).await.unwrap();
     assert_eq!(
         bodies(&server).await,
         vec![json!({
-            "api_key": "k",
+            "api_key": nasty,
             "batch": [
                 {"name": "a", "client_id": 1},
                 {"name": "b", "client_id": 1}
@@ -84,6 +91,45 @@ async fn body_template_renders_a_single_and_a_batch_body() {
         .unwrap();
     ep.send(&[record("a", 1)]).await.unwrap();
     assert_eq!(bodies(&server).await, vec![json!({"who": "a"})]);
+
+    // A table built from YAML gets its secrets from the factory; one it
+    // doesn't bind is an error naming it, not a null in the body.
+    let yaml = "
+name: events
+api:
+  insert: { body: '#{ api_key: secret.key, who: record.name, extra: record.optional_field }' }
+columns:
+  name: { type: string }
+";
+    let spec = |yaml: &str| serde_yaml_ng::from_str::<RestApiVistaSpec>(yaml).unwrap();
+    let server = accepting().await;
+    let factory = RestApiVistaFactory::new(
+        RestApi::builder(server.uri())
+            .http_client(test_client())
+            .build(),
+    );
+    let events = factory
+        .with_insert_secrets(secrets("key", "k"))
+        .build_from_spec(spec(yaml))
+        .unwrap();
+    let row = Record::from_iter([("name".to_string(), CborValue::Text("a".to_string()))]);
+    events.insert_return_id_value(&row).await.unwrap();
+    assert_eq!(
+        bodies(&server).await,
+        vec![json!({"api_key": "k", "who": "a", "extra": null})]
+    );
+
+    let server = accepting().await;
+    let unbound = RestApiVistaFactory::new(
+        RestApi::builder(server.uri())
+            .http_client(test_client())
+            .build(),
+    )
+    .build_from_spec(spec(yaml))
+    .unwrap();
+    let err = unbound.insert_return_id_value(&row).await.unwrap_err();
+    assert!(err.to_string().contains("key"), "{err}");
+    assert!(bodies(&server).await.is_empty());
 }
 
 #[tokio::test]
@@ -96,35 +142,46 @@ async fn a_secret_with_quotes_and_code_is_sent_as_data() {
         .with_secrets(secrets("token", nasty));
     ep.send(&[record("a", 1)]).await.unwrap();
     assert_eq!(bodies(&server).await, vec![json!({"token": nasty})]);
+}
 
-    let server = accepting().await;
-    let ep = endpoint(
-        &server,
-        "{ batch: 2, body: '#{ token: secret.token, batch: records }' }",
-    )
-    .await
-    .unwrap()
-    .with_secrets(secrets("token", nasty));
-    ep.send(&[record("a", 1), record("b", 1)]).await.unwrap();
-    assert_eq!(
-        bodies(&server).await,
-        vec![json!({
-            "token": nasty,
-            "batch": [
-                {"name": "a", "client_id": 1},
-                {"name": "b", "client_id": 1}
-            ]
-        })]
-    );
+#[tokio::test]
+async fn a_body_secret_never_reaches_an_error_or_debug_output() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(|req: &Request| ResponseTemplate::new(422).set_body_bytes(req.body.clone()))
+        .mount(&server)
+        .await;
+    let secret = secrets("key", "sekret-key");
+
+    // The server echoes the body back in its error.
+    let ep = endpoint(&server, "{ body: '#{ n: secret.key }' }")
+        .await
+        .unwrap()
+        .with_secrets(secret.clone());
+    let echoed = ep.send(&[record("a", 1)]).await.unwrap_err().to_string();
+    assert!(echoed.contains("***"), "{echoed}");
+
+    // The template's own error text would quote the secret.
+    let ep = endpoint(&server, "{ body: '#{ n: parse_int(secret.key) }' }")
+        .await
+        .unwrap()
+        .with_secrets(secret);
+    let template = ep.send(&[record("a", 1)]).await.unwrap_err().to_string();
+    assert!(template.contains("api.insert.body failed"), "{template}");
+    let debug = format!("{ep:?}");
+    assert!(debug.contains("key"), "{debug}");
+
+    for text in [&echoed, &template, &debug] {
+        assert!(!text.contains("sekret-key"), "secret leaked in:\n{text}");
+    }
 }
 
 #[tokio::test]
 async fn a_body_template_that_does_not_compile_fails_the_table_build() {
     let server = accepting().await;
-    let err = endpoint(&server, "{ body: '#{ broken: ' }" )
-        .await
-        .err()
-        .expect("a template that does not compile must not build");
+    let Err(err) = endpoint(&server, "{ body: '#{ broken: ' }").await else {
+        panic!("a template that does not compile must not build");
+    };
     assert!(err.to_string().contains("api.insert.body"), "{err}");
 }
 
@@ -169,7 +226,12 @@ async fn gzip_encoding_sets_content_encoding() {
 
     let request = &zipped.received_requests().await.unwrap()[0];
     assert_eq!(
-        request.headers.get("content-encoding").unwrap().to_str().unwrap(),
+        request
+            .headers
+            .get("content-encoding")
+            .unwrap()
+            .to_str()
+            .unwrap(),
         "gzip"
     );
     let mut inflated = Vec::new();

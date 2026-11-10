@@ -60,10 +60,14 @@ impl AuthHeader {
 
     /// `req` with this header added, when there is one to send. Call it
     /// inside the request-building closure so a source is asked again on
-    /// every attempt.
-    pub(crate) fn apply(&self, req: RequestBuilder) -> RequestBuilder {
+    /// every attempt. The value that goes out is noted on `redaction`, so
+    /// the token an error masks is the one that was sent.
+    pub(crate) fn apply(&self, req: RequestBuilder, redaction: &Redaction) -> RequestBuilder {
         match self.value() {
-            Some(value) => req.header(AUTHORIZATION, value.as_ref()),
+            Some(value) => {
+                redaction.sent(&value);
+                req.header(AUTHORIZATION, value.as_ref())
+            }
             None => req,
         }
     }

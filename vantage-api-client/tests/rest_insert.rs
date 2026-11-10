@@ -78,6 +78,13 @@ columns:
         .await
         .unwrap_err();
     assert!(err.to_string().contains("200"), "{err}");
+
+    // A non-2xx status the table lists counts as success: a duplicate that
+    // the API answers 409 is already stored.
+    let server = MockServer::start().await;
+    mount(&server, "POST", 409, "").await;
+    let events = build(&server, &yaml.replace("[204]", "[200, 409]")).unwrap();
+    events.insert_return_id_value(&record("x")).await.unwrap();
 }
 
 #[tokio::test]
@@ -115,7 +122,9 @@ columns:
   name: { type: string }
 ";
     let server = MockServer::start().await;
-    let err = build(&server, yaml).err().expect("PUT must not build");
+    let Err(err) = build(&server, yaml) else {
+        panic!("PUT must not build");
+    };
     assert!(
         err.to_string().contains("api.insert.method must be POST"),
         "{err}"
