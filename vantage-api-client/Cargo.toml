@@ -23,9 +23,10 @@ rhai = { version = ">=1.25, <1.27", optional = true, default-features = false, f
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 serde_yaml_ng = "0.10"
+tokio = { version = "1.52", features = ["time"] }
 tracing = "0.1"
 urlencoding = "2.1"
-uuid = { version = "1", features = ["serde"] }
+uuid = { version = "1", features = ["serde", "v7"] }
 vantage-api-pool = { version = "1.0.1", path = "../vantage-api-pool" }
 vantage-core = { version = "1.0.0", path = "../vantage-core" }
 vantage-dataset = { version = "1.1.2", path = "../vantage-dataset" }
@@ -37,7 +38,7 @@ vantage-vista = { version = "2.6.0", path = "../vantage-vista" }
 
 [dev-dependencies]
 anyhow = "1.0"
-tokio = { version = "1.52", features = ["full"] }
+tokio = { version = "1.52", features = ["full", "test-util"] }
 reqwest = { version = "0.12", features = ["json"] }
 urlencoding = "2.1"
 vantage-cli-util = { path = "../vantage-cli-util" }

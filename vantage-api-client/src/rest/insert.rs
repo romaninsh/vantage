@@ -5,6 +5,7 @@ mod template;
 
 use std::io::Write;
 use std::sync::Arc;
+use std::time::Duration;
 
 use ciborium::Value as CborValue;
 use flate2::Compression;
@@ -12,11 +13,15 @@ use flate2::write::GzEncoder;
 use indexmap::IndexMap;
 use reqwest::Method;
 use serde_json::Value;
-use vantage_core::{Result, error};
+use uuid::Uuid;
+use vantage_api_pool::resilient::{CallPolicy, ErrorKind};
+use vantage_core::{Result, VantageError, error};
 use vantage_types::{PlainDialect, Record, record_to_json};
 
 use self::template::BodyTemplate;
 use super::RestApi;
+use super::api::join_base_path;
+use crate::transport::client_error;
 use super::vista::spec::{ApiInsertBlock, Encoding};
 
 /// An insert target: where a table's records are POSTed and which statuses
@@ -31,6 +36,8 @@ pub struct RestInsertEndpoint {
     group_by: Option<String>,
     body: Option<BodyTemplate>,
     encoding: Option<Encoding>,
+    idempotency_key: Option<String>,
+    idempotent: bool,
     secrets: IndexMap<String, String>,
 }
 
@@ -39,7 +46,25 @@ pub struct RestInsertEndpoint {
 #[derive(Debug)]
 struct RenderedRequest {
     body: Vec<u8>,
-    headers: Vec<(&'static str, &'static str)>,
+    headers: Vec<(String, String)>,
+}
+
+/// A failed attempt and what it says about trying again.
+struct Failure {
+    error: VantageError,
+    retryable: bool,
+    retry_after: Option<Duration>,
+}
+
+/// Attempts per request, the first included.
+const MAX_ATTEMPTS: usize = 5;
+/// The wait before the first retry; it doubles for each one after.
+const BASE_BACKOFF: Duration = Duration::from_secs(1);
+/// The longest a server's `Retry-After` is obeyed.
+const RETRY_AFTER_CAP: Duration = Duration::from_secs(30);
+
+fn is_retryable(status: u16) -> bool {
+    status == 429 || (500..600).contains(&status)
 }
 
 /// The `api.insert` target a table's own copy of the data source carries,
@@ -110,6 +135,8 @@ impl RestApi {
             group_by: block.group_by.clone(),
             body,
             encoding: block.encoding,
+            idempotency_key: block.idempotency_key.clone(),
+            idempotent: block.idempotent,
             secrets: IndexMap::new(),
         })
     }
@@ -123,43 +150,65 @@ impl RestInsertEndpoint {
         self
     }
 
+    /// [`Self::send_with_ids`] with a fresh UUIDv7 per record.
+    pub async fn send(&self, records: &[Record<CborValue>]) -> Result<()> {
+        let ids: Vec<Uuid> = records.iter().map(|_| Uuid::now_v7()).collect();
+        self.send_with_ids(records, &ids).await
+    }
+
     /// POST `records` in requests of at most `batch` records, never mixing
     /// two `group_by` values. Stops at the first failure.
-    pub async fn send(&self, records: &[Record<CborValue>]) -> Result<()> {
-        let records: Vec<Value> = records
+    ///
+    /// `ids` holds one id per record, in order. With `idempotency_key` set,
+    /// each request carries its first record's id in that header. A request
+    /// is rendered once and its bytes are reused on every retry; retries
+    /// happen only when `idempotency_key` or `idempotent` says a repeat is
+    /// safe.
+    pub async fn send_with_ids(&self, records: &[Record<CborValue>], ids: &[Uuid]) -> Result<()> {
+        if records.len() != ids.len() {
+            return Err(error!(
+                "Insert needs one id per record",
+                records = records.len(),
+                ids = ids.len()
+            ));
+        }
+        let records: Vec<(Value, Uuid)> = records
             .iter()
-            .map(|r| record_to_json(&PlainDialect, r.clone()))
+            .zip(ids)
+            .map(|(r, id)| (record_to_json(&PlainDialect, r.clone()), *id))
             .collect();
         for chunk in self.chunks(&records) {
             let rendered = self.render(&chunk)?;
-            self.post(&rendered).await?;
+            self.deliver(&rendered).await?;
         }
         Ok(())
     }
 
     /// Requests in order of each group's first appearance; records keep
     /// their input order within a group.
-    fn chunks(&self, records: &[Value]) -> Vec<Vec<Value>> {
-        let mut groups: IndexMap<String, Vec<Value>> = IndexMap::new();
-        for record in records {
+    fn chunks(&self, records: &[(Value, Uuid)]) -> Vec<Vec<(Value, Uuid)>> {
+        let mut groups: IndexMap<String, Vec<(Value, Uuid)>> = IndexMap::new();
+        for entry in records {
             let key = match &self.group_by {
-                Some(field) => record.get(field).unwrap_or(&Value::Null).to_string(),
+                Some(field) => entry.0.get(field).unwrap_or(&Value::Null).to_string(),
                 None => String::new(),
             };
-            groups.entry(key).or_default().push(record.clone());
+            groups.entry(key).or_default().push(entry.clone());
         }
         groups
             .into_values()
             .flat_map(|group| {
                 group
                     .chunks(self.batch)
-                    .map(<[Value]>::to_vec)
+                    .map(<[(Value, Uuid)]>::to_vec)
                     .collect::<Vec<_>>()
             })
             .collect()
     }
 
-    fn render(&self, records: &[Value]) -> Result<RenderedRequest> {
+    fn render(&self, chunk: &[(Value, Uuid)]) -> Result<RenderedRequest> {
+        let records: Vec<Value> = chunk.iter().map(|(record, _)| record.clone()).collect();
+        let records = records.as_slice();
         let body = match &self.body {
             Some(template) => template.render(records, &self.secrets)?,
             None if self.batch == 1 => records[0].clone(),
@@ -167,10 +216,13 @@ impl RestInsertEndpoint {
         };
         let bytes = serde_json::to_vec(&body)
             .map_err(|e| error!("Insert body is not valid JSON", reason = e.to_string()))?;
-        let mut headers = vec![("content-type", "application/json")];
+        let mut headers = vec![("content-type".to_string(), "application/json".to_string())];
+        if let (Some(name), Some((_, first))) = (&self.idempotency_key, chunk.first()) {
+            headers.push((name.clone(), first.to_string()));
+        }
         let bytes = match self.encoding {
             Some(Encoding::Gzip) => {
-                headers.push(("content-encoding", "gzip"));
+                headers.push(("content-encoding".to_string(), "gzip".to_string()));
                 let mut gz = GzEncoder::new(Vec::new(), Compression::default());
                 gz.write_all(&bytes)
                     .and_then(|()| gz.finish())
@@ -184,26 +236,87 @@ impl RestInsertEndpoint {
         })
     }
 
-    async fn post(&self, request: &RenderedRequest) -> Result<()> {
+    /// Whether a failed request may be sent again: only when the table
+    /// declared the repeat safe.
+    fn repeatable(&self) -> bool {
+        self.idempotent || self.idempotency_key.is_some()
+    }
+
+    /// POST one rendered request, resending the same bytes on a retryable
+    /// failure until [`MAX_ATTEMPTS`] are spent. The pool makes a single
+    /// attempt per call, so the attempt cap, the back-off and the
+    /// `Retry-After` ceiling are decided here.
+    async fn deliver(&self, request: &RenderedRequest) -> Result<()> {
         let path = self.request_path();
-        let response = self
+        let headers: Vec<(&str, &str)> = request
+            .headers
+            .iter()
+            .map(|(name, value)| (name.as_str(), value.as_str()))
+            .collect();
+        let policy = CallPolicy::background();
+        let mut attempt = 1;
+        loop {
+            let failure = self
+                .attempt(&policy, &path, &headers, request.body.clone())
+                .await?;
+            let Some(failure) = failure else {
+                return Ok(());
+            };
+            if !failure.retryable || !self.repeatable() || attempt >= MAX_ATTEMPTS {
+                return Err(failure.error);
+            }
+            let delay = match failure.retry_after {
+                Some(asked) => asked.min(RETRY_AFTER_CAP),
+                None => BASE_BACKOFF * 2u32.pow(attempt as u32 - 1),
+            };
+            tokio::time::sleep(delay).await;
+            attempt += 1;
+        }
+    }
+
+    /// One request. `None` is success; a failure says whether a repeat may
+    /// help and what delay the server asked for.
+    async fn attempt(
+        &self,
+        policy: &CallPolicy,
+        path: &str,
+        headers: &[(&str, &str)],
+        body: Vec<u8>,
+    ) -> Result<Option<Failure>> {
+        let answer = self
             .api
-            .http_request_bytes(
-                Method::POST,
-                &path,
-                &request.headers,
-                Some(request.body.clone()),
-            )
+            .http_request_with_policy(policy, Method::POST, path, headers, Some(body))
             .await?;
+        let response = match answer {
+            Ok(response) => response,
+            Err(e) => {
+                let retryable = match e.kind {
+                    ErrorKind::Status(status) => is_retryable(status),
+                    ErrorKind::Transport(_) => true,
+                    _ => false,
+                };
+                let retry_after = e.retry_after;
+                let url = join_base_path(self.api.base_url(), path);
+                return Ok(Some(Failure {
+                    error: client_error(e, "REST insert failed", &url),
+                    retryable,
+                    retry_after,
+                }));
+            }
+        };
         let status = response.status().as_u16();
-        if !self.accept.is_empty() && !self.accept.contains(&status) {
-            return Err(error!(
+        if self.accept.is_empty() || self.accept.contains(&status) {
+            return Ok(None);
+        }
+        Ok(Some(Failure {
+            error: error!(
                 "REST insert answered a status the table does not accept",
                 path = path,
                 status = status
-            ));
-        }
-        Ok(())
+            ),
+            retryable: is_retryable(status),
+            retry_after: None,
+        }))
     }
 
     fn request_path(&self) -> String {

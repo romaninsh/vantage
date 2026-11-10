@@ -5,7 +5,7 @@
 use std::sync::Arc;
 
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
-use vantage_api_pool::resilient::{ResilientClient, TransportEvent};
+use vantage_api_pool::resilient::{CallPolicy, ClientError, ResilientClient, TransportEvent};
 use vantage_core::{Priority, error};
 
 use crate::rest::TableInsert;
@@ -177,6 +177,26 @@ impl RestApi {
         headers: &[(&str, &str)],
         body: Option<Vec<u8>>,
     ) -> vantage_core::Result<reqwest::Response> {
+        let policy = crate::transport::policy_for(Priority::current());
+        self.http_request_with_policy(&policy, method, path, headers, body)
+            .await?
+            .map_err(|e| {
+                let url = join_base_path(&self.base_url, path);
+                crate::transport::client_error(e, "API request failed", &url)
+            })
+    }
+
+    /// [`Self::http_request_bytes`] under an explicit policy. The outer
+    /// error is a request that could not be built; the inner one keeps the
+    /// transport's own failure, `Retry-After` included.
+    pub(crate) async fn http_request_with_policy(
+        &self,
+        policy: &CallPolicy,
+        method: reqwest::Method,
+        path: &str,
+        headers: &[(&str, &str)],
+        body: Option<Vec<u8>>,
+    ) -> vantage_core::Result<Result<reqwest::Response, ClientError>> {
         let url = join_base_path(&self.base_url, path);
 
         // A fixed value is checked before anything is sent; a bad one would
@@ -197,10 +217,9 @@ impl RestApi {
             header_map.insert(header_name, header_value);
         }
 
-        let policy = crate::transport::policy_for(Priority::current());
         let response = self
             .client
-            .execute_with(&policy, |http| {
+            .execute_with(policy, |http| {
                 // `RequestBuilder::headers` replaces same-named entries
                 // rather than appending, so a caller header overrides the
                 // configured auth instead of riding alongside it on the wire.
@@ -213,10 +232,9 @@ impl RestApi {
                     None => req,
                 }
             })
-            .await
-            .map_err(|e| crate::transport::client_error(e, "API request failed", &url))?;
+            .await;
 
-        if method != reqwest::Method::GET {
+        if response.is_ok() && method != reqwest::Method::GET {
             self.client.report(TransportEvent::WritePushed);
         }
 
@@ -226,7 +244,7 @@ impl RestApi {
 
 /// Join a base URL and a path with exactly one slash between them,
 /// regardless of whether either side already carries one.
-fn join_base_path(base: &str, path: &str) -> String {
+pub(crate) fn join_base_path(base: &str, path: &str) -> String {
     format!(
         "{}/{}",
         base.trim_end_matches('/'),

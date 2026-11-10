@@ -2,6 +2,7 @@
 //! many attempts were made before giving up.
 
 use std::fmt;
+use std::time::Duration;
 
 /// Why a call failed. New kinds may be added; match with a wildcard arm.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,6 +34,9 @@ pub struct ClientError {
     /// response body to read, and for transport, breaker and auth failures.
     /// Not part of [`Display`](fmt::Display).
     pub body: Option<String>,
+    /// The `Retry-After` of the last response, in whole seconds, when the
+    /// server sent a usable one.
+    pub retry_after: Option<Duration>,
 }
 
 impl ClientError {
@@ -42,12 +46,19 @@ impl ClientError {
             kind,
             attempts,
             body: None,
+            retry_after: None,
         }
     }
 
     /// Attach the start of the failing response body.
     pub fn with_body(mut self, body: Option<String>) -> Self {
         self.body = body;
+        self
+    }
+
+    /// Attach the server's `Retry-After`.
+    pub fn with_retry_after(mut self, retry_after: Option<Duration>) -> Self {
+        self.retry_after = retry_after;
         self
     }
 
