@@ -48,16 +48,16 @@ async fn vista_set_order_ascending_descending_and_clear() -> TestResult {
 async fn vista_window_scan_survives_a_non_unique_id_column() -> TestResult {
     let (db, name) = setup("dup_ids").await;
     // Page by `name`, which repeats: 'dup' twice, then a distinct third row.
-    sqlx::query(&format!("DELETE FROM \"{}\"", name))
+    sqlx::query(sqlx::AssertSqlSafe(format!("DELETE FROM \"{}\"", name)))
         .execute(db.pool())
         .await?;
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "INSERT INTO \"{}\" VALUES \
          ('a', 'dup', 10, false), \
          ('b', 'dup', 20, false), \
          ('c', 'tail', 30, false)",
         name
-    ))
+    )))
     .execute(db.pool())
     .await?;
 

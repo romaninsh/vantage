@@ -23,27 +23,30 @@ async fn setup(suffix: &str) -> (MysqlDB, Table<MysqlDB, Item>) {
     let db = MysqlDB::connect(MYSQL_URL).await.unwrap();
     let table_name = format!("edit_item_{}", suffix);
 
-    sqlx::query(&format!("DROP TABLE IF EXISTS `{}`", table_name))
-        .execute(db.pool())
-        .await
-        .unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP TABLE IF EXISTS `{}`",
+        table_name
+    )))
+    .execute(db.pool())
+    .await
+    .unwrap();
 
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "CREATE TABLE `{}` (
             id VARCHAR(255) PRIMARY KEY,
             name TEXT NOT NULL,
             price BIGINT NOT NULL
         )",
         table_name
-    ))
+    )))
     .execute(db.pool())
     .await
     .unwrap();
 
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "INSERT INTO `{}` VALUES ('a', 'Alpha', 10), ('b', 'Beta', 20)",
         table_name
-    ))
+    )))
     .execute(db.pool())
     .await
     .unwrap();

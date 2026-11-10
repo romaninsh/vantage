@@ -200,7 +200,9 @@ where
                 }
             }
             Err(e) => Outcome::Failed {
-                kind: ErrorKind::Transport(e.to_string()),
+                // The URL can carry a credential (query auth); callers add a
+                // redacted one to their own errors.
+                kind: ErrorKind::Transport(e.without_url().to_string()),
                 body: None,
                 hint: None,
                 ms,
@@ -261,7 +263,9 @@ where
                     // A failed auth refresh says nothing about the API.
                     _ => (false, Health::Inconclusive),
                 };
-                let error = ClientError::new(kind, self.attempt + 1).with_body(body);
+                let error = ClientError::new(kind, self.attempt + 1)
+                    .with_body(body)
+                    .with_retry_after(hint);
                 let failed = TransportEvent::Failed {
                     error: error.clone(),
                     ms,

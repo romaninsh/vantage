@@ -25,12 +25,15 @@ struct Product {
 async fn setup(table: &str) -> MysqlDB {
     let db = MysqlDB::connect(MYSQL_URL).await.unwrap();
 
-    sqlx::query(&format!("DROP TABLE IF EXISTS `{}`", table))
-        .execute(db.pool())
-        .await
-        .unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP TABLE IF EXISTS `{}`",
+        table
+    )))
+    .execute(db.pool())
+    .await
+    .unwrap();
 
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "CREATE TABLE `{}` (
             id VARCHAR(255) PRIMARY KEY,
             name TEXT NOT NULL,
@@ -40,7 +43,7 @@ async fn setup(table: &str) -> MysqlDB {
             inventory_stock BIGINT NOT NULL DEFAULT 0
         )",
         table
-    ))
+    )))
     .execute(db.pool())
     .await
     .unwrap();

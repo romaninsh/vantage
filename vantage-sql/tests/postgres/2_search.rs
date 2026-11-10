@@ -28,24 +28,27 @@ async fn setup(suffix: &str, rows: &[&str]) -> (PostgresDB, Table<PostgresDB, It
     let db = PostgresDB::connect(PG_URL).await.unwrap();
     let table_name = format!("search_{}", suffix);
 
-    sqlx::query(&format!("DROP TABLE IF EXISTS \"{}\"", table_name))
-        .execute(db.pool())
-        .await
-        .unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP TABLE IF EXISTS \"{}\"",
+        table_name
+    )))
+    .execute(db.pool())
+    .await
+    .unwrap();
 
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "CREATE TABLE \"{}\" (id TEXT PRIMARY KEY, name TEXT NOT NULL)",
         table_name
-    ))
+    )))
     .execute(db.pool())
     .await
     .unwrap();
 
     for (i, name) in rows.iter().enumerate() {
-        sqlx::query(&format!(
+        sqlx::query(sqlx::AssertSqlSafe(format!(
             "INSERT INTO \"{}\" (id, name) VALUES ($1, $2)",
             table_name
-        ))
+        )))
         .bind(i.to_string())
         .bind(*name)
         .execute(db.pool())

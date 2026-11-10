@@ -2,11 +2,15 @@
 //! requests. Reads are lowered to URLs in `request`, sent in `fetch`, and
 //! assembled into windows in `window` and `page`.
 
+use std::sync::Arc;
+
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
-use vantage_api_pool::resilient::{ResilientClient, TransportEvent};
+use vantage_api_pool::resilient::{CallPolicy, ClientError, ResilientClient, TransportEvent};
 use vantage_core::{Priority, error};
 
-use crate::transport::AuthHeader;
+use crate::redact::{MASK, Redaction, header_line, is_secret_header};
+use crate::rest::TableInsert;
+use crate::transport::{AuthHeader, QueryAuth};
 
 mod builder;
 mod config;
@@ -60,6 +64,13 @@ pub struct RestApi {
     ordering: Option<OrderingParams>,
     /// Emit `tracing` events for window/count requests.
     debug: bool,
+    /// A credential sent as a query parameter on every request.
+    query_auth: Option<QueryAuth>,
+    /// The `api.insert` settings of the table this copy serves.
+    pub(crate) insert: Option<Arc<TableInsert>>,
+    /// False on an insert-only table's copy: every read is refused before a
+    /// request is made.
+    pub(crate) readable: bool,
 }
 
 impl RestApi {
@@ -113,6 +124,36 @@ impl RestApi {
         &self.base_url
     }
 
+    /// `url` with the query credential added: the URL that goes on the wire.
+    pub(crate) fn sent_url(&self, url: &str) -> String {
+        match &self.query_auth {
+            Some(auth) => auth.sent(url),
+            None => url.to_string(),
+        }
+    }
+
+    /// `url` with the query credential added as `param=***`: the URL a log
+    /// line, an error or a preview shows.
+    pub(crate) fn shown_url(&self, url: &str) -> String {
+        match &self.query_auth {
+            Some(auth) => auth.shown(url),
+            None => url.to_string(),
+        }
+    }
+
+    /// What this API's own credentials look like in shown text. The
+    /// `Authorization` header is not here: a bearer source is asked once per
+    /// attempt, so each attempt notes the value it sent on the redaction
+    /// ([`AuthHeader::apply`]) rather than asking the source again.
+    pub(crate) fn redaction(&self) -> Redaction {
+        match &self.query_auth {
+            Some(auth) => Redaction::default()
+                .param(auth.param.clone())
+                .value(auth.value.clone()),
+            None => Redaction::default(),
+        }
+    }
+
     /// A clone whose requests carry the bearer token `source` gives at the
     /// moment each one goes out, in place of the configured `auth`. The
     /// clone shares this API's client — connection pool, parallel cap,
@@ -148,7 +189,56 @@ impl RestApi {
         headers: &[(&str, &str)],
         body: Option<&serde_json::Value>,
     ) -> vantage_core::Result<reqwest::Response> {
-        let url = join_base_path(&self.base_url, path);
+        match body {
+            Some(body) => {
+                let bytes = serde_json::to_vec(body)
+                    .map_err(|e| error!("Request body is not valid JSON", error = e.to_string()))?;
+                let mut with_type = vec![("content-type", "application/json")];
+                with_type.extend_from_slice(headers);
+                self.http_request_bytes(method, path, &with_type, Some(bytes))
+                    .await
+            }
+            None => self.http_request_bytes(method, path, headers, None).await,
+        }
+    }
+
+    /// [`Self::http_request`] with a body that is already bytes, sent as-is.
+    pub(crate) async fn http_request_bytes(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        headers: &[(&str, &str)],
+        body: Option<Vec<u8>>,
+    ) -> vantage_core::Result<reqwest::Response> {
+        let policy = crate::transport::policy_for(Priority::current());
+        let redaction = headers
+            .iter()
+            .filter(|(name, _)| is_secret_header(name))
+            .fold(self.redaction(), |r, (_, value)| r.value(*value));
+        self.http_request_with_policy(&policy, method, path, headers, body, &redaction)
+            .await?
+            .map_err(|e| {
+                let url = self.shown_url(&join_base_path(&self.base_url, path));
+                crate::transport::client_error(e, "API request failed", &url, &redaction)
+            })
+    }
+
+    /// [`Self::http_request_bytes`] under an explicit policy. The outer
+    /// error is a request that could not be built; the inner one keeps the
+    /// transport's own failure, `Retry-After` included. `redaction` covers
+    /// the credentials a caller put in `path` or `headers`, for the debug
+    /// log line.
+    pub(crate) async fn http_request_with_policy(
+        &self,
+        policy: &CallPolicy,
+        method: reqwest::Method,
+        path: &str,
+        headers: &[(&str, &str)],
+        body: Option<Vec<u8>>,
+        redaction: &Redaction,
+    ) -> vantage_core::Result<Result<reqwest::Response, ClientError>> {
+        let shown_url = redaction.url(&self.shown_url(&join_base_path(&self.base_url, path)));
+        let url = self.sent_url(&join_base_path(&self.base_url, path));
 
         // A fixed value is checked before anything is sent; a bad one would
         // otherwise surface as a transport error, which an essential call
@@ -168,26 +258,40 @@ impl RestApi {
             header_map.insert(header_name, header_value);
         }
 
-        let policy = crate::transport::policy_for(Priority::current());
+        if self.debug {
+            let lines: Vec<String> = self
+                .auth_header
+                .masked()
+                .map(|_| format!("Authorization: {MASK}"))
+                .into_iter()
+                .chain(headers.iter().map(|(name, value)| header_line(name, value)))
+                .collect();
+            tracing::info!(
+                target: "vantage_api_client::rest",
+                url = %shown_url,
+                headers = %lines.join(", "),
+                "REST {method}",
+            );
+        }
+
         let response = self
             .client
-            .execute_with(&policy, |http| {
+            .execute_with(policy, |http| {
                 // `RequestBuilder::headers` replaces same-named entries
                 // rather than appending, so a caller header overrides the
                 // configured auth instead of riding alongside it on the wire.
                 let req = self
                     .auth_header
-                    .apply(http.request(method.clone(), &url))
+                    .apply(http.request(method.clone(), &url), redaction)
                     .headers(header_map.clone());
-                match body {
-                    Some(body) => req.json(body),
+                match &body {
+                    Some(body) => req.body(body.clone()),
                     None => req,
                 }
             })
-            .await
-            .map_err(|e| crate::transport::client_error(e, "API request failed", &url))?;
+            .await;
 
-        if method != reqwest::Method::GET {
+        if response.is_ok() && method != reqwest::Method::GET {
             self.client.report(TransportEvent::WritePushed);
         }
 
@@ -197,7 +301,7 @@ impl RestApi {
 
 /// Join a base URL and a path with exactly one slash between them,
 /// regardless of whether either side already carries one.
-fn join_base_path(base: &str, path: &str) -> String {
+pub(crate) fn join_base_path(base: &str, path: &str) -> String {
     format!(
         "{}/{}",
         base.trim_end_matches('/'),

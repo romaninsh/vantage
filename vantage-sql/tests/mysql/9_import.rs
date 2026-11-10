@@ -22,13 +22,15 @@ pub(super) const MYSQL_URL: &str = "mysql://vantage:vantage@localhost:3306/vanta
 pub(super) async fn setup(test: &str) -> (MysqlDB, String) {
     let db = MysqlDB::connect(MYSQL_URL).await.unwrap();
     let name = format!("imp_{test}");
-    sqlx::query(&format!("DROP TABLE IF EXISTS `{name}`"))
-        .execute(db.pool())
-        .await
-        .unwrap();
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP TABLE IF EXISTS `{name}`"
+    )))
+    .execute(db.pool())
+    .await
+    .unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "CREATE TABLE `{name}` (id VARCHAR(64) PRIMARY KEY, title TEXT, status VARCHAR(32), sku VARCHAR(32))"
-    ))
+    )))
     .execute(db.pool())
     .await
     .unwrap();
@@ -36,10 +38,12 @@ pub(super) async fn setup(test: &str) -> (MysqlDB, String) {
 }
 
 pub(super) async fn teardown(db: &MysqlDB, name: &str) {
-    sqlx::query(&format!("DROP TABLE IF EXISTS `{name}`"))
-        .execute(db.pool())
-        .await
-        .unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP TABLE IF EXISTS `{name}`"
+    )))
+    .execute(db.pool())
+    .await
+    .unwrap();
 }
 
 fn table(db: &MysqlDB, name: &str) -> Table<MysqlDB, EmptyEntity> {
@@ -85,9 +89,9 @@ pub(super) async fn stored(
     db: &MysqlDB,
     name: &str,
 ) -> Vec<(String, Option<String>, Option<String>, Option<String>)> {
-    sqlx::query_as(&format!(
+    sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT id, title, status, sku FROM `{name}` ORDER BY id"
-    ))
+    )))
     .fetch_all(db.pool())
     .await
     .unwrap()
@@ -153,9 +157,9 @@ async fn import_runs_insert_hooks_for_new_records_only() -> TestResult {
         .with_hook(Hook::AfterInsert(after));
     let v = db.vista_factory().from_table(hooked)?;
 
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "INSERT INTO `{name}` (id, title, status) VALUES ('old', 'old', 'kept')"
-    ))
+    )))
     .execute(db.pool())
     .await?;
     let rows = batch(vec![

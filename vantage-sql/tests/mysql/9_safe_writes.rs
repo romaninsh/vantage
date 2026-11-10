@@ -11,13 +11,15 @@ const MYSQL_URL: &str = "mysql://vantage:vantage@localhost:3306/vantage";
 async fn item(test: &str) -> Table<MysqlDB, EmptyEntity> {
     let db = MysqlDB::connect(MYSQL_URL).await.unwrap();
     let name = format!("item_{test}");
-    sqlx::query(&format!("DROP TABLE IF EXISTS `{name}`"))
-        .execute(db.pool())
-        .await
-        .unwrap();
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP TABLE IF EXISTS `{name}`"
+    )))
+    .execute(db.pool())
+    .await
+    .unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "CREATE TABLE `{name}` (id VARCHAR(64) PRIMARY KEY, name TEXT, parent TEXT, price BIGINT)"
-    ))
+    )))
     .execute(db.pool())
     .await
     .unwrap();

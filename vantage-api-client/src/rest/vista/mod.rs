@@ -21,7 +21,8 @@ pub mod spec;
 pub use factory::RestApiVistaFactory;
 pub use source::RestApiTableShell;
 pub use spec::{
-    ApiColumnExtras, ApiReferenceExtras, ApiTableBlock, ApiTableExtras, RestApiVistaSpec,
+    ApiColumnExtras, ApiInsertBlock, ApiReferenceExtras, ApiTableBlock, ApiTableExtras, Encoding,
+    RestApiVistaSpec,
 };
 
 use crate::RestApi;

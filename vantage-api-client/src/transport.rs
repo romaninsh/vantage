@@ -14,6 +14,8 @@ use vantage_api_pool::resilient::{
 };
 use vantage_core::{Priority, VantageError, error};
 
+use crate::redact::{MASK, Redaction};
+
 /// Where a request's bearer token comes from when it differs per caller:
 /// asked each time a request goes out, retries included, and answering
 /// the bare token (`Bearer ` is prepended). `None` sends no
@@ -58,10 +60,14 @@ impl AuthHeader {
 
     /// `req` with this header added, when there is one to send. Call it
     /// inside the request-building closure so a source is asked again on
-    /// every attempt.
-    pub(crate) fn apply(&self, req: RequestBuilder) -> RequestBuilder {
+    /// every attempt. The value that goes out is noted on `redaction`, so
+    /// the token an error masks is the one that was sent.
+    pub(crate) fn apply(&self, req: RequestBuilder, redaction: &Redaction) -> RequestBuilder {
         match self.value() {
-            Some(value) => req.header(AUTHORIZATION, value.as_ref()),
+            Some(value) => {
+                redaction.sent(&value);
+                req.header(AUTHORIZATION, value.as_ref())
+            }
             None => req,
         }
     }
@@ -80,6 +86,40 @@ impl AuthHeader {
 impl std::fmt::Debug for AuthHeader {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.masked().fmt(f)
+    }
+}
+
+/// A credential sent as a query parameter on every request. `Debug` keeps
+/// the value out of log lines.
+#[derive(Clone)]
+pub(crate) struct QueryAuth {
+    pub(crate) param: String,
+    pub(crate) value: String,
+}
+
+impl std::fmt::Debug for QueryAuth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("QueryAuth")
+            .field("param", &self.param)
+            .field("value", &MASK)
+            .finish()
+    }
+}
+
+impl QueryAuth {
+    /// `url` with `param=value` appended: the URL that is sent.
+    pub(crate) fn sent(&self, url: &str) -> String {
+        self.append(url, &urlencoding::encode(&self.value))
+    }
+
+    /// `url` as a log line or an error shows it: `param=***`.
+    pub(crate) fn shown(&self, url: &str) -> String {
+        self.append(url, MASK)
+    }
+
+    fn append(&self, url: &str, value: &str) -> String {
+        let joiner = if url.contains('?') { '&' } else { '?' };
+        format!("{url}{joiner}{}={value}", urlencoding::encode(&self.param))
     }
 }
 
@@ -160,13 +200,23 @@ pub(crate) fn policy_for(priority: Priority) -> CallPolicy {
 /// How much of the server's error body an error message keeps.
 const BODY_IN_ERROR: usize = 500;
 
-pub(crate) fn client_error(e: ClientError, what: &'static str, url: &str) -> VantageError {
+/// A transport failure as an error. `url`, the server's body and the
+/// transport's own text all pass through `redaction`: a client error can
+/// quote the request URL.
+pub(crate) fn client_error(
+    e: ClientError,
+    what: &'static str,
+    url: &str,
+    redaction: &Redaction,
+) -> VantageError {
+    let url = redaction.url(url);
+    let url = url.as_str();
     let body = e.body.as_deref().map(|b| {
         let end = b
             .char_indices()
             .nth(BODY_IN_ERROR)
             .map_or(b.len(), |(i, _)| i);
-        b[..end].to_string()
+        redaction.text(&b[..end])
     });
     match (e.status(), body) {
         (Some(status), Some(body)) => error!(
@@ -189,7 +239,7 @@ pub(crate) fn client_error(e: ClientError, what: &'static str, url: &str) -> Van
             url = url,
             attempts = e.attempts,
             kind = e.kind_name(),
-            detail = e.to_string()
+            detail = redaction.text(&e.to_string())
         ),
     }
 }

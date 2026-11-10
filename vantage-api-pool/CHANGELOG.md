@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0 — 2026-11-10
+
+- `ClientError::retry_after` carries the response's `Retry-After`, so a caller running its own
+  retry loop over a single attempt can honour it.
+- A transport error's text no longer includes the request URL, which can carry a credential in
+  its query; `TransportEvent::Failed` observers and callers see the cause without it.
+
 ## 1.1.0 — 2026-10-28
 
 - `TokenBucket` is public (`new`, `try_take`) so a server can answer 429 with the wait as

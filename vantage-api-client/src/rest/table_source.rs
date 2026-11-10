@@ -282,17 +282,25 @@ impl TableSource for RestApi {
         Err(unsupported("get_table_min"))
     }
 
+    /// POSTs the record to the table's `api.insert` target; the id is not
+    /// sent. A table without `api.insert` refuses.
     async fn insert_table_value<E>(
         &self,
         _table: &Table<Self, E>,
         _id: &Self::Id,
-        _record: &Record<Self::Value>,
+        record: &Record<Self::Value>,
     ) -> Result<Record<Self::Value>>
     where
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        Err(unsupported("insert_table_value"))
+        if !self.has_insert() {
+            return Err(unsupported("insert_table_value"));
+        }
+        self.table_insert()?
+            .send(std::slice::from_ref(record))
+            .await?;
+        Ok(record.clone())
     }
 
     async fn replace_table_value<E>(
@@ -337,16 +345,24 @@ impl TableSource for RestApi {
         Err(unsupported("delete_table_all_values"))
     }
 
+    /// POSTs the record to the table's `api.insert` target. The endpoint
+    /// returns no id, and the trait requires one, so the id is empty.
     async fn insert_table_return_id_value<E>(
         &self,
         _table: &Table<Self, E>,
-        _record: &Record<Self::Value>,
+        record: &Record<Self::Value>,
     ) -> Result<Self::Id>
     where
         E: Entity<Self::Value>,
         Self: Sized,
     {
-        Err(unsupported("insert_table_return_id_value"))
+        if !self.has_insert() {
+            return Err(unsupported("insert_table_return_id_value"));
+        }
+        self.table_insert()?
+            .send(std::slice::from_ref(record))
+            .await?;
+        Ok(String::new())
     }
 
     /// Build a child condition for `with_many` / `with_one` traversal.

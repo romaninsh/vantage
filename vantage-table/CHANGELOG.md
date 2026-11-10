@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.6.0 — 2026-11-10
+
+- `WriteContext::with_request` carries a `RequestContext` to the write hooks: the `Transport`
+  (`ws`, `rest`, `mcp`, `internal`), the client ip, headers and cookies. `header()` matches names
+  case-insensitively, `cookie()` exactly. `REQUEST_HEADER_ALLOW_LIST` names the five headers a
+  host should copy. Header and cookie values print as `***` in `Debug`.
+
 ## 3.5.0 — 2026-11-07
 
 - `Hook::AfterLoad` rewrites each row a list, get, get-some or stream returns, before the lazy

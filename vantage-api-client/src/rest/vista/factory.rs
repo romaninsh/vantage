@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, PoisonError, RwLock};
 
 use ciborium::Value as CborValue;
+use indexmap::IndexMap;
 use vantage_core::{Result, error};
 use vantage_table::column::core::Column as TableColumn;
 use vantage_table::table::{Orderable, Table, VistaMetadataOptions};
@@ -20,6 +21,7 @@ use vantage_vista::{
 use super::source::RestApiTableShell;
 use super::spec::{ApiColumnExtras, ApiReferenceExtras, ApiTableExtras, RestApiVistaSpec};
 use crate::RestApi;
+use crate::rest::TableInsert;
 
 type SpecRegistry = Arc<RwLock<HashMap<String, RestApiVistaSpec>>>;
 
@@ -32,6 +34,7 @@ pub struct RestApiVistaFactory {
     api: RestApi,
     specs: SpecRegistry,
     resolver: Option<Arc<dyn VistaResolver>>,
+    insert_secrets: IndexMap<String, String>,
 }
 
 /// A registered spec by name; a name never registered is not-found. A writer
@@ -53,7 +56,17 @@ impl RestApiVistaFactory {
             api,
             specs: Arc::new(RwLock::new(HashMap::new())),
             resolver: None,
+            insert_secrets: IndexMap::new(),
         }
+    }
+
+    /// The secrets an `api.insert.body` template reads as `secret.<name>`,
+    /// for every insert target this factory builds. They come from the host
+    /// (its environment or a vault), never from the YAML. A template that
+    /// reads a name not bound here fails the insert with an error naming it.
+    pub fn with_insert_secrets(mut self, secrets: IndexMap<String, String>) -> Self {
+        self.insert_secrets = secrets;
+        self
     }
 
     /// The data source every Vista from this factory reads through.
@@ -119,10 +132,12 @@ impl RestApiVistaFactory {
         }
         let specs = self.specs.clone();
         let api = self.api.clone();
+        let secrets = self.insert_secrets.clone();
         Arc::new(move |name: &str| -> Result<Vista> {
             let spec = registry_get(&specs, name)?;
             // Reuse the same factory pipeline as the top-level build.
-            let mut factory = RestApiVistaFactory::new(api.clone());
+            let mut factory =
+                RestApiVistaFactory::new(api.clone()).with_insert_secrets(secrets.clone());
             factory.specs = specs.clone();
             factory.build_from_spec(spec)
         })
@@ -154,12 +169,20 @@ impl VistaFactory for RestApiVistaFactory {
     }
 }
 
-/// What the REST shell implements. It only reads: absolute-offset windows
+/// What the REST shell implements. It reads: absolute-offset windows
 /// when the API pages (a `total_key` adds the grand total to each page),
-/// ordering when it has a sort param, and traversal. With no write
-/// capability advertised, the Vista refuses every write.
+/// ordering when it has a sort param, and traversal. A table with
+/// `api.insert` also inserts; with `read: false` it does only that. With no
+/// write capability advertised, the Vista refuses every write.
 fn rest_capabilities(api: &RestApi) -> VistaCapabilities {
-    let mut caps = VistaCapabilities::new().with(Capability::Traverse);
+    let mut caps = VistaCapabilities::new();
+    if api.has_insert() {
+        caps = caps.with(Capability::Insert);
+    }
+    if !api.is_readable() {
+        return caps;
+    }
+    caps = caps.with(Capability::Traverse);
     if api.serves_windows() {
         caps = caps.with(Capability::Window);
     }
@@ -174,16 +197,30 @@ impl RestApiVistaFactory {
     /// EmptyEntity>`. Endpoint defaults to `spec.name` when the
     /// `api.endpoint` block is absent.
     fn table_from_spec(&self, spec: &RestApiVistaSpec) -> Result<Table<RestApi, EmptyEntity>> {
-        let endpoint = spec
-            .driver
-            .api
-            .as_ref()
+        let block = spec.driver.api.as_ref();
+        let endpoint = block
             .and_then(|b| b.endpoint.clone())
             .unwrap_or_else(|| spec.name.clone());
+        let read = block.is_none_or(|b| b.read);
+        let insert = match block.and_then(|b| b.insert.as_ref()) {
+            Some(insert) => Some(TableInsert {
+                endpoint: self
+                    .api
+                    .insert_endpoint(insert, &endpoint)?
+                    .with_secrets(self.insert_secrets.clone()),
+            }),
+            None => None,
+        };
 
-        let mut table = Table::<RestApi, EmptyEntity>::new(endpoint, self.api.clone());
+        let inserts = insert.is_some();
+        let api = self.api.for_table(insert, read);
+        let mut table = Table::<RestApi, EmptyEntity>::new(endpoint, api);
         table.add_spec_columns(&spec.columns, build_column)?;
-        table.set_spec_id_field(&spec.resolve_id_column("id"))?;
+        // A table that inserts has no rows to key, so it needn't declare an id.
+        let id = spec.resolve_id_column("id");
+        if table.columns().contains_key(&id) || (read && !inserts) {
+            table.set_spec_id_field(&id)?;
+        }
         Ok(table)
     }
 }

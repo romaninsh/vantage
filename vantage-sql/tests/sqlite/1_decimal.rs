@@ -44,14 +44,14 @@ async fn setup() -> SqliteDB {
         ("decimal_real", "REAL"),
         ("decimal_integer", "INTEGER"),
     ] {
-        sqlx::query(&format!(
+        sqlx::query(sqlx::AssertSqlSafe(format!(
             "CREATE TABLE \"{}\" (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 value {} NOT NULL
             )",
             name, col_type
-        ))
+        )))
         .execute(db.pool())
         .await
         .unwrap();

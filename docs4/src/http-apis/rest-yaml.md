@@ -56,6 +56,8 @@ because `RestApi::build` makes a `reqwest` client, which reads the system's prox
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `api.endpoint` | string | the spec `name` | Path under the API's base URL. May hold `{placeholder}` segments. |
+| `api.read` | bool | `true` | `false` makes an insert-only table: a list, get or count is refused before any request is made. See [Inserting](#inserting). |
+| `api.insert` | block | none | How the table inserts; see [Inserting](#inserting). |
 
 The whole `api:` block is optional. Unknown keys are a parse error.
 
@@ -111,6 +113,148 @@ models live across several drivers, `with_model_resolver(resolver)` takes an
 `Arc<dyn VistaResolver>` that returns a built `Vista` for a name instead: a closure, or a
 [`Catalog`](vantage_vista::Catalog).
 
+## Inserting
+
+A table with an `api.insert` block can be written to: each insert becomes a `POST`. The aim is
+fire-and-forget targets such as analytics collectors, where you send events and never read them
+back, so the block says nothing about updates or deletes. Those stay unsupported.
+
+```yaml
+name: events
+columns:
+  client_id: { type: string }
+  name: { type: string }
+api:
+  read: false
+  insert:
+    path: mp/collect
+    query: { measurement_id: G-ABC123 }
+    accept: [204]
+    batch: 25
+    group_by: client_id
+    body: '#{ client_id: record.client_id, events: records }'
+    idempotency_key: Idempotency-Key
+```
+
+| Key | Default | Meaning |
+|---|---|---|
+| `api.insert.method` | `POST` | Only `POST` is accepted; anything else fails the build |
+| `api.insert.path` | the table's endpoint | Path under the base URL |
+| `api.insert.query` | none | Query parameters sent with every insert |
+| `api.insert.accept` | any 2xx | Statuses that count as success; any other is an error |
+| `api.insert.batch` | `1` | Records per request |
+| `api.insert.group_by` | none | Field whose value splits records into separate requests |
+| `api.insert.body` | the record | A Rhai expression for the request body |
+| `api.insert.idempotency_key` | none | Name of the header that carries the idempotency key |
+| `api.insert.idempotent` | `false` | A repeated request is safe, with no key needed |
+| `api.insert.encoding` | none | `gzip` compresses the body |
+
+`api.read: false`, set beside the `insert` block, makes the table insert-only; it is described
+under [Table keys](#table-keys).
+
+### Body templates
+
+Without `body`, a table with `batch: 1` sends the record as it is. With `batch` above 1 every
+request is an array, even one that holds a single record. A template is for APIs that
+want an envelope. It is a Rhai expression, compiled when the table is built, so a typo fails
+there and not on the first event. It sees `records` (the batch), `record` (the first of them)
+and `secret`, a map of values the host supplies. Secrets
+are bound as data. They are never pasted into the template text, so a key holding a quote or
+code can't change what the template does. Templates need the crate's `rhai` feature.
+
+Secrets never come from the YAML. A factory takes them with `with_insert_secrets`, and every
+insert table it builds gets the same map (`RestInsertEndpoint::with_secrets` does the same for a
+single endpoint):
+
+```rust,no_run
+# use indexmap::IndexMap;
+# use vantage_api_client::{ResponseShape, RestApi};
+# fn main() -> vantage_core::Result<()> {
+# let api = RestApi::builder("https://api.example.com")
+#     .response_shape(ResponseShape::BareArray)
+#     .build();
+let mut factory = api.vista_factory().with_insert_secrets(IndexMap::from([(
+    "key".to_string(),
+    std::env::var("EVENTS_KEY").unwrap_or_default(),
+)]));
+factory.register_yaml(
+    "
+name: events
+columns:
+  name: { type: string }
+api:
+  insert: { body: '#{ api_key: secret.key, events: records }' }
+",
+)?;
+let events = factory.build("events")?;
+# let _ = events;
+# Ok(())
+# }
+```
+
+A template that reads `secret.<name>` (or `secret["<name>"]`) for a name the host did not bind
+fails the insert with an error naming it, and nothing is sent. A `record` field the record lacks
+is not an error: it reads as null.
+
+### Batches and groups
+
+`batch` caps the records in one request. With `group_by`, records are first split by that field
+and then batched, so one request never mixes two values of it. PostHog and GA4 both want a batch
+to belong to one client. A failed request stops the insert: later batches are not sent.
+
+### Delivery
+
+A retry is only safe when the receiver can recognise a repeat, so the client retries a `408`, a
+`429`, a `5xx` or a transport error only when you say so: either `idempotency_key` names a header that
+carries the id of the request's first record, or `idempotent: true` says repeats are harmless.
+Without either, a failed insert is reported once and not repeated.
+
+A request is rendered once, and every attempt sends the same bytes, so a receiver that
+de-duplicates on the body sees the same body. There are at most 5 attempts, with waits of 1, 2, 4
+and 8 seconds between them. A `Retry-After` from the server replaces the wait, capped at 30
+seconds. A status outside `accept` counts as a failure of the same kind, so a `503` is retried
+and a `400` is not. A non-2xx status listed in `accept`, a `409` for a duplicate say, counts as
+success.
+
+### Query auth
+
+Some collectors take the key in the URL. GA4 reads `api_secret` from the query string. Set it on
+the builder, since it belongs to the API and not to one table:
+
+```rust,no_run
+# use vantage_api_client::{ResponseShape, RestApi};
+# const EVENTS_YAML: &str = r#"
+# name: events
+# columns:
+#   client_id: { type: string }
+#   name: { type: string }
+# api:
+#   read: false
+#   insert:
+#     path: mp/collect
+#     query: { measurement_id: G-ABC123 }
+#     accept: [204]
+# "#;
+# fn main() -> vantage_core::Result<()> {
+let api = RestApi::builder("https://www.google-analytics.com")
+    .response_shape(ResponseShape::BareArray)
+    .query_auth("api_secret", "s3cr3t")
+    .build();
+let mut factory = api.vista_factory();
+factory.register_yaml(EVENTS_YAML)?;
+let events = factory.build("events")?;
+# let _ = events;
+# Ok(())
+# }
+```
+
+`query_auth` adds the parameter to every request, reads included. The real value goes on the
+wire, but a URL, header or error text that leaves the process shows `api_secret=***`: debug log
+lines, errors, and the Vista preview. Headers named like a credential (`Authorization`, `x-api-key`)
+show as `***` too. Every value under `api.insert.query` is treated as a possible key for the same
+purpose, with its name left visible, and so is every value passed to `with_secrets` when an error
+would otherwise echo it.
+
 ## Builder settings
 
 The block is deliberately small. Everything that describes the API, rather than one table, is
@@ -125,6 +269,7 @@ set on `RestApi::builder(base_url)`:
 | `filter_strategy(FilterStrategy)` | `Query` | `Client` keeps non-path conditions off the wire |
 | `ordering(OrderingParams::new("ordering", "-"))` | none | Sort parameter; makes every column orderable |
 | `auth(..)` / `auth_refresher(..)` / `bearer_source(..)` | none | `Authorization` header: fixed, refreshed after a `401`, or asked for on every request |
+| `query_auth("api_secret", value)` | none | A credential sent as a query parameter on every request, shown as `***` |
 | `max_parallel`, `rate_limit`, `request_timeout`, `observer`, `http_client` | 4, none, 30 s, none, default | Transport; see the crate's `README_transport.md` |
 
 When each signed-in session has its own token, build one `RestApi` and hand each session

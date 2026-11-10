@@ -35,7 +35,7 @@ serde_yaml_ng = "0.10"
 surreal-client = { path = "../surreal-client" }
 tower-http = { version = "0.6", features = ["fs"] }
 vantage-api-client = { path = "../vantage-api-client" }
-sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "postgres"] }
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "sqlite", "postgres"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time"] }
 vantage-api-adapters = { path = "../vantage-api-adapters", features = ["axum"] }
 vantage-aws = { path = "../vantage-aws" }

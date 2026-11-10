@@ -17,4 +17,4 @@ vantage-sql = { path = "../vantage-sql", default-features = false, features = ["
 vantage-diorama = { path = "../vantage-diorama" }
 vantage-types = { path = "../vantage-types" }
 vantage-core = { path = "../vantage-core" }
-sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio"] }
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio"] }

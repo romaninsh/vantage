@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.5.2 — 2026-11-10
+
+- The SQL test backend moves to sqlx 0.9 and vantage-sql 0.11. No API or behaviour change.
+
 ## 1.5.1 — 2026-11-07
 
 - A paged view drops rows the master lost with no change to say so (a script's transactional

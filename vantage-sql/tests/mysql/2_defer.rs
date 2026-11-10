@@ -21,41 +21,47 @@ async fn setup(prefix: &str) -> (MysqlDB, MysqlDB) {
     let config_table = format!("{}_config", prefix);
     let product_table = format!("{}_product", prefix);
 
-    sqlx::query(&format!("DROP TABLE IF EXISTS `{}`", config_table))
-        .execute(db.pool())
-        .await
-        .unwrap();
-    sqlx::query(&format!("DROP TABLE IF EXISTS `{}`", product_table))
-        .execute(db.pool())
-        .await
-        .unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP TABLE IF EXISTS `{}`",
+        config_table
+    )))
+    .execute(db.pool())
+    .await
+    .unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP TABLE IF EXISTS `{}`",
+        product_table
+    )))
+    .execute(db.pool())
+    .await
+    .unwrap();
 
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "CREATE TABLE `{}` (`key` VARCHAR(255) PRIMARY KEY, value BIGINT NOT NULL)",
         config_table
-    ))
+    )))
     .execute(db.pool())
     .await
     .unwrap();
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "INSERT INTO `{}` VALUES ('min_price', 150)",
         config_table
-    ))
+    )))
     .execute(db.pool())
     .await
     .unwrap();
 
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "CREATE TABLE `{}` (id VARCHAR(255) PRIMARY KEY, name TEXT NOT NULL, price BIGINT NOT NULL)",
         product_table
-    ))
+    )))
     .execute(db.pool())
     .await
     .unwrap();
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "INSERT INTO `{}` VALUES ('a', 'Cheap Thing', 50), ('b', 'Mid Thing', 150), ('c', 'Expensive Thing', 300)",
         product_table
-    ))
+    )))
     .execute(db.pool())
     .await
     .unwrap();

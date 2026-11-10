@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.11.0 — 2026-11-10
+
+- Moves to sqlx 0.9. `SqliteDB::new`, `PostgresDB::new`, `MysqlDB::new` and `pool()` take and
+  return sqlx 0.9 pools, so a caller that builds its own pool needs sqlx 0.9 too. MySQL no
+  longer pulls in `rsa` (RUSTSEC-2023-0071): sqlx 0.9 makes it opt-in through `mysql-rsa`.
+  `libsqlite3-sys` stays at 0.30.1, as sqlx 0.9 allows nothing past 0.37, so RUSTSEC-2026-0459
+  remains until sqlx raises it.
+
 ## 0.10.7 — 2026-11-07
 
 Requires vantage-table 3.5.0.

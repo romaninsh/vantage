@@ -231,7 +231,7 @@ impl MasterRows {
                 })
                 .collect();
             let create = format!("CREATE TABLE {name} ({})", col_defs.join(", "));
-            sqlx::query(&create)
+            sqlx::query(sqlx::AssertSqlSafe(create.as_str()))
                 .execute(db.pool())
                 .await
                 .map_err(|e| vantage_core::error!("CREATE TABLE", detail = e.to_string()))?;
@@ -257,7 +257,7 @@ impl MasterRows {
                     columns.join(", "),
                     values.join(", ")
                 );
-                sqlx::query(&stmt)
+                sqlx::query(sqlx::AssertSqlSafe(stmt.as_str()))
                     .execute(db.pool())
                     .await
                     .map_err(|e| vantage_core::error!("INSERT", detail = e.to_string()))?;

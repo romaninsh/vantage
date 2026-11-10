@@ -4,6 +4,7 @@
 //! generated ids and audit timestamps. Expected outcomes come from the write
 //! contract on `WritableValueSet` and the record-lifecycle chapter of the book.
 
+use std::net::{IpAddr, Ipv4Addr};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -14,7 +15,7 @@ use vantage_table::table::{
     AfterCx, AfterFn, BeforeCx, BeforeDeleteFn, BeforeFn, DeleteAllCx, DeleteAllFn, DeleteCx,
     SelectCx, after_hook, before_delete_hook, before_hook, delete_all_hook, select_hook,
 };
-use vantage_table::write_context::WriteContext;
+use vantage_table::write_context::{RequestContext, Transport, WriteContext};
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::Capability;
 
@@ -1404,4 +1405,33 @@ async fn write_context_current_is_none_outside_a_scope() {
         .scope(async { WriteContext::current() })
         .await;
     assert_eq!(inside.unwrap().principal, Some(principal("ana")));
+}
+
+#[tokio::test]
+async fn write_context_carries_the_request() {
+    let ip = IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7));
+    WriteContext::new()
+        .with_request(
+            RequestContext::new(Transport::Ws)
+                .with_ip(ip)
+                .with_header("User-Agent", "x")
+                .with_header("Referer", "https://a.test/?token=tok-9")
+                .with_cookie("_ga", "GA1.1.123"),
+        )
+        .scope(async {
+            let request = WriteContext::current().unwrap().request.unwrap();
+            assert_eq!(request.transport.as_str(), "ws");
+            assert_eq!(request.ip, Some(ip));
+            assert_eq!(request.header("user-agent"), Some("x"));
+            assert_eq!(request.cookie("_ga"), Some("GA1.1.123"));
+            assert_eq!(request.cookie("missing"), None);
+
+            let debug = format!("{request:?}");
+            assert!(debug.contains("referer=***"), "{debug}");
+            assert!(
+                !debug.contains("tok-9") && !debug.contains("GA1.1.123"),
+                "{debug}"
+            );
+        })
+        .await;
 }

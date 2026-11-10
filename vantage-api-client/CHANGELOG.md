@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.3.0 — 2026-11-10
+
+Requires vantage-api-pool 1.2.0.
+
+- REST tables can insert: `api.insert` (POST only; `path`, `query`, `accept`) sends each record,
+  and `read: false` makes an insert-only table that lists, gets and counts nothing and never sends
+  a GET. Inserts return no id. `RestApi::insert_endpoint` builds the same endpoint by hand
+  (`RestInsertEndpoint::send`, `send_with_ids`).
+- `api.insert.body` is a Rhai template (feature `rhai`) over `records`, `record` and `secret`.
+  Secrets are bound as data, set with `RestInsertEndpoint::with_secrets` or
+  `RestApiVistaFactory::with_insert_secrets`; a template that reads an unbound secret fails. Runs
+  under vantage-rhai's background limits, with `print` and `debug` silenced.
+- `batch` sends up to that many records per request, `group_by` never mixes two values of a field
+  in one request, `encoding: gzip` compresses the body.
+- An insert is retried only with `idempotency_key` (a header carrying the request's first entry
+  id) or `idempotent: true`: at most 5 attempts on a transport error, 408, 429 or 5xx, backing off
+  1, 2, 4 and 8 s or as `Retry-After` asks, up to 30 s. A retry resends the same bytes.
+- `RestApiBuilder::query_auth(param, value)` adds a credential parameter to every request URL.
+- Credentials show as `***` in debug logs, errors, `Debug` output and previews: the query-auth
+  value, `api.insert.query` values, insert secrets, the `Authorization` value actually sent and
+  credential-named caller headers.
+
 ## 2.2.4 — 2026-11-07
 
 Requires vantage-table 3.5.0.

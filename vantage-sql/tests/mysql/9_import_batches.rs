@@ -12,9 +12,11 @@ use super::import::{MYSQL_URL, TestResult, batch, setup, sku_row, stored, teardo
 #[tokio::test]
 async fn import_rolls_back_on_server_error() -> TestResult {
     let (db, name) = setup("rollback").await;
-    sqlx::query(&format!("CREATE UNIQUE INDEX sku_unique ON `{name}` (sku)"))
-        .execute(db.pool())
-        .await?;
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "CREATE UNIQUE INDEX sku_unique ON `{name}` (sku)"
+    )))
+    .execute(db.pool())
+    .await?;
     let v = vista(&db, &name);
     v.insert_value("existing".to_string(), &sku_row("existing"))
         .await?;
@@ -35,9 +37,11 @@ async fn import_rolls_back_on_server_error() -> TestResult {
 #[tokio::test]
 async fn import_rolls_back_across_chunks() -> TestResult {
     let (db, name) = setup("rollback_chunks").await;
-    sqlx::query(&format!("CREATE UNIQUE INDEX sku_unique ON `{name}` (sku)"))
-        .execute(db.pool())
-        .await?;
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "CREATE UNIQUE INDEX sku_unique ON `{name}` (sku)"
+    )))
+    .execute(db.pool())
+    .await?;
     let v = vista(&db, &name);
 
     // The duplicate sits at the very end, past the first INSERT statement.
@@ -64,14 +68,16 @@ async fn import_wide_table_stays_under_parameter_limit() -> TestResult {
     let db = MysqlDB::connect(MYSQL_URL).await?;
     let name = "imp_wide";
     let columns: Vec<String> = (0..200).map(|i| format!("c{i}")).collect();
-    sqlx::query(&format!("DROP TABLE IF EXISTS `{name}`"))
-        .execute(db.pool())
-        .await?;
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP TABLE IF EXISTS `{name}`"
+    )))
+    .execute(db.pool())
+    .await?;
     let defs: Vec<String> = columns.iter().map(|c| format!("`{c}` INT")).collect();
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "CREATE TABLE `{name}` (id VARCHAR(64) PRIMARY KEY, {})",
         defs.join(", ")
-    ))
+    )))
     .execute(db.pool())
     .await?;
     let mut wide = Table::<MysqlDB, EmptyEntity>::new(name, db.clone()).with_id_column("id");
@@ -90,9 +96,11 @@ async fn import_wide_table_stays_under_parameter_limit() -> TestResult {
         })
         .collect();
     assert_eq!(v.import_values(&rows).await?, 400);
-    let count: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM `{name}`"))
-        .fetch_one(db.pool())
-        .await?;
+    let count: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+        "SELECT COUNT(*) FROM `{name}`"
+    )))
+    .fetch_one(db.pool())
+    .await?;
     assert_eq!(count, 400);
 
     teardown(&db, name).await;
