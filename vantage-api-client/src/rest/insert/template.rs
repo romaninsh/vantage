@@ -13,6 +13,8 @@ mod enabled {
     use vantage_core::{Result, error};
     use vantage_rhai::Limits;
 
+    use crate::redact::Redaction;
+
     #[derive(Clone)]
     pub(crate) struct BodyTemplate {
         engine: Arc<Engine>,
@@ -29,12 +31,9 @@ mod enabled {
         pub(crate) fn compile(source: &str) -> Result<Self> {
             let mut engine = Engine::new();
             Limits::background().apply(&mut engine);
-            let ast = engine.compile_expression(source).map_err(|e| {
-                error!(
-                    "api.insert.body does not compile",
-                    reason = e.to_string()
-                )
-            })?;
+            let ast = engine
+                .compile_expression(source)
+                .map_err(|e| error!("api.insert.body does not compile", reason = e.to_string()))?;
             Ok(Self {
                 engine: Arc::new(engine),
                 ast: Arc::new(ast),
@@ -45,9 +44,14 @@ mod enabled {
             &self,
             records: &[Value],
             secrets: &IndexMap<String, String>,
+            redaction: &Redaction,
         ) -> Result<Value> {
-            let to_scope_err =
-                |e: Box<rhai::EvalAltResult>| error!("api.insert.body failed", reason = e.to_string());
+            let to_scope_err = |e: Box<rhai::EvalAltResult>| {
+                error!(
+                    "api.insert.body failed",
+                    reason = redaction.text(&e.to_string())
+                )
+            };
             let records_value = to_dynamic(records).map_err(to_scope_err)?;
             let record_value = to_dynamic(records.first()).map_err(to_scope_err)?;
             let secret_map: Map = secrets
@@ -75,6 +79,8 @@ mod enabled {
     use serde_json::Value;
     use vantage_core::{Result, error};
 
+    use crate::redact::Redaction;
+
     #[derive(Clone, Debug)]
     pub(crate) struct BodyTemplate;
 
@@ -89,6 +95,7 @@ mod enabled {
             &self,
             _records: &[Value],
             _secrets: &IndexMap<String, String>,
+            _redaction: &Redaction,
         ) -> Result<Value> {
             Err(error!(
                 "api.insert.body needs the `rhai` feature of vantage-api-client"

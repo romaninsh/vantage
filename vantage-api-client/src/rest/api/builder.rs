@@ -5,7 +5,7 @@ use std::sync::Arc;
 use vantage_api_pool::resilient::TransportObserver;
 
 use super::{FilterStrategy, OrderingParams, PaginationParams, ResponseShape, RestApi};
-use crate::transport::AuthHeader;
+use crate::transport::{AuthHeader, QueryAuth};
 
 /// Builder for [`RestApi`]. Lets callers pick a [`ResponseShape`] and
 /// override the pagination parameter names.
@@ -37,6 +37,7 @@ pub struct RestApiBuilder {
     total_key: Option<String>,
     ordering: Option<OrderingParams>,
     debug: bool,
+    query_auth: Option<QueryAuth>,
     transport: crate::transport::ClientConfig,
 }
 
@@ -53,6 +54,7 @@ impl RestApiBuilder {
             total_key: None,
             ordering: None,
             debug: false,
+            query_auth: None,
             transport: crate::transport::ClientConfig::default(),
         }
     }
@@ -122,6 +124,18 @@ impl RestApiBuilder {
     pub fn bearer_source(mut self, source: crate::BearerSource) -> Self {
         self.auth_header = AuthHeader::Source(source);
         self.transport.auth_refresher = None;
+        self
+    }
+
+    /// Send `param=value` on every request, reads and inserts alike, for
+    /// APIs that take their key in the query string (GA4's `api_secret`).
+    /// The real value goes on the wire; logs, errors and previews show
+    /// `param=***`.
+    pub fn query_auth(mut self, param: impl Into<String>, value: impl Into<String>) -> Self {
+        self.query_auth = Some(QueryAuth {
+            param: param.into(),
+            value: value.into(),
+        });
         self
     }
 
@@ -197,6 +211,7 @@ impl RestApiBuilder {
             total_key: self.total_key,
             ordering: self.ordering,
             debug: self.debug,
+            query_auth: self.query_auth,
             insert: None,
             readable: true,
         }

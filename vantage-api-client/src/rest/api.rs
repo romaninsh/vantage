@@ -8,8 +8,9 @@ use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use vantage_api_pool::resilient::{CallPolicy, ClientError, ResilientClient, TransportEvent};
 use vantage_core::{Priority, error};
 
+use crate::redact::{MASK, Redaction, header_line, is_secret_header};
 use crate::rest::TableInsert;
-use crate::transport::AuthHeader;
+use crate::transport::{AuthHeader, QueryAuth};
 
 mod builder;
 mod config;
@@ -63,6 +64,8 @@ pub struct RestApi {
     ordering: Option<OrderingParams>,
     /// Emit `tracing` events for window/count requests.
     debug: bool,
+    /// A credential sent as a query parameter on every request.
+    query_auth: Option<QueryAuth>,
     /// The `api.insert` settings of the table this copy serves.
     pub(crate) insert: Option<Arc<TableInsert>>,
     /// False on an insert-only table's copy: every read is refused before a
@@ -119,6 +122,40 @@ impl RestApi {
     /// The configured base URL requests are joined against.
     pub fn base_url(&self) -> &str {
         &self.base_url
+    }
+
+    /// `url` with the query credential added: the URL that goes on the wire.
+    pub(crate) fn sent_url(&self, url: &str) -> String {
+        match &self.query_auth {
+            Some(auth) => auth.sent(url),
+            None => url.to_string(),
+        }
+    }
+
+    /// `url` with the query credential added as `param=***`: the URL a log
+    /// line, an error or a preview shows.
+    pub(crate) fn shown_url(&self, url: &str) -> String {
+        match &self.query_auth {
+            Some(auth) => auth.shown(url),
+            None => url.to_string(),
+        }
+    }
+
+    /// What this API's own credentials look like in shown text.
+    pub(crate) fn redaction(&self) -> Redaction {
+        let redaction = match &self.query_auth {
+            Some(auth) => Redaction::default()
+                .param(auth.param.clone())
+                .value(auth.value.clone()),
+            None => Redaction::default(),
+        };
+        match self.auth_header.value() {
+            Some(header) => {
+                let token = header.strip_prefix("Bearer ").unwrap_or(&header);
+                redaction.value(token).value(header.as_ref())
+            }
+            None => redaction,
+        }
     }
 
     /// A clone whose requests carry the bearer token `source` gives at the
@@ -178,17 +215,23 @@ impl RestApi {
         body: Option<Vec<u8>>,
     ) -> vantage_core::Result<reqwest::Response> {
         let policy = crate::transport::policy_for(Priority::current());
-        self.http_request_with_policy(&policy, method, path, headers, body)
+        let redaction = headers
+            .iter()
+            .filter(|(name, _)| is_secret_header(name))
+            .fold(self.redaction(), |r, (_, value)| r.value(*value));
+        self.http_request_with_policy(&policy, method, path, headers, body, &redaction)
             .await?
             .map_err(|e| {
-                let url = join_base_path(&self.base_url, path);
-                crate::transport::client_error(e, "API request failed", &url)
+                let url = self.shown_url(&join_base_path(&self.base_url, path));
+                crate::transport::client_error(e, "API request failed", &url, &redaction)
             })
     }
 
     /// [`Self::http_request_bytes`] under an explicit policy. The outer
     /// error is a request that could not be built; the inner one keeps the
-    /// transport's own failure, `Retry-After` included.
+    /// transport's own failure, `Retry-After` included. `redaction` covers
+    /// the credentials a caller put in `path` or `headers`, for the debug
+    /// log line.
     pub(crate) async fn http_request_with_policy(
         &self,
         policy: &CallPolicy,
@@ -196,8 +239,10 @@ impl RestApi {
         path: &str,
         headers: &[(&str, &str)],
         body: Option<Vec<u8>>,
+        redaction: &Redaction,
     ) -> vantage_core::Result<Result<reqwest::Response, ClientError>> {
-        let url = join_base_path(&self.base_url, path);
+        let shown_url = redaction.url(&self.shown_url(&join_base_path(&self.base_url, path)));
+        let url = self.sent_url(&join_base_path(&self.base_url, path));
 
         // A fixed value is checked before anything is sent; a bad one would
         // otherwise surface as a transport error, which an essential call
@@ -215,6 +260,22 @@ impl RestApi {
             let header_value = HeaderValue::from_str(value)
                 .map_err(|_| error!("HTTP header value is not valid", name = *name))?;
             header_map.insert(header_name, header_value);
+        }
+
+        if self.debug {
+            let lines: Vec<String> = self
+                .auth_header
+                .masked()
+                .map(|_| format!("Authorization: {MASK}"))
+                .into_iter()
+                .chain(headers.iter().map(|(name, value)| header_line(name, value)))
+                .collect();
+            tracing::info!(
+                target: "vantage_api_client::rest",
+                url = %shown_url,
+                headers = %lines.join(", "),
+                "REST {method}",
+            );
         }
 
         let response = self

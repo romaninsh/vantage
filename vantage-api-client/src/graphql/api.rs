@@ -18,6 +18,7 @@ use vantage_api_pool::resilient::{ResilientClient, TransportEvent, TransportObse
 use vantage_core::{Priority, Result, error};
 
 use crate::graphql::condition::FilterDialect;
+use crate::redact::Redaction;
 use crate::transport::AuthHeader;
 
 /// GraphQL HTTP data source. Cheap to clone — the inner `ResilientClient`
@@ -306,7 +307,12 @@ impl GraphqlApi {
             })
             .await
             .map_err(|e| {
-                crate::transport::client_error(e, "GraphQL request failed", &self.endpoint)
+                crate::transport::client_error(
+                    e,
+                    "GraphQL request failed",
+                    &self.endpoint,
+                    &Redaction::default(),
+                )
             })?;
 
         let mut envelope: Value = response.json().await.map_err(|e| {

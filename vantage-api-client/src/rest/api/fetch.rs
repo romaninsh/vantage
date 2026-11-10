@@ -10,6 +10,7 @@ use vantage_types::Record;
 
 use super::request::join_query;
 use super::{Order, RestApi};
+use crate::redact::MASK;
 
 impl RestApi {
     /// Fetch data from the API endpoint and return parsed records.
@@ -131,16 +132,24 @@ impl RestApi {
 
         let (query_consumed, client_filters) = self.split_filters(&conds, consumed);
         let query = self.build_query_string(window, &conds, &query_consumed, order);
-        let url = join_query(&endpoint, &query);
+        let path_and_query = join_query(&endpoint, &query);
+        let url = self.sent_url(&path_and_query);
+        let shown = self.shown_url(&path_and_query);
+        let redaction = self.redaction();
 
         // The `(0, 1)` window is the count probe (reads only the envelope's
         // total); log it at debug so it doesn't drown the real data fetches.
         let probe = window == Some((0, 1));
         if self.debug {
+            let headers = self
+                .auth_header
+                .masked()
+                .map(|_| format!("Authorization: {MASK}"))
+                .unwrap_or_default();
             if probe {
-                tracing::debug!(target: "vantage_api_client::rest", table = table_name, url = %url, "REST GET (count probe)");
+                tracing::debug!(target: "vantage_api_client::rest", table = table_name, url = %shown, headers = %headers, "REST GET (count probe)");
             } else {
-                tracing::info!(target: "vantage_api_client::rest", table = table_name, url = %url, "REST GET");
+                tracing::info!(target: "vantage_api_client::rest", table = table_name, url = %shown, headers = %headers, "REST GET");
             }
         }
 
@@ -165,7 +174,7 @@ impl RestApi {
                     tracing::warn!(
                         target: "vantage_api_client::rest",
                         table = table_name,
-                        url = %url,
+                        url = %shown,
                         ms,
                         attempts = e.attempts,
                         "REST GET failed",
@@ -174,27 +183,29 @@ impl RestApi {
                     tracing::debug!(
                         target: "vantage_api_client::rest",
                         table = table_name,
-                        url = %url,
+                        url = %shown,
                         ms,
                         attempts = e.attempts,
                         kind = e.kind_name(),
                         "REST GET gave up on a transient failure",
                     );
                 }
-                crate::transport::client_error(e, "API request failed", &url)
+                crate::transport::client_error(e, "API request failed", &shown, &redaction)
             })?;
 
-        let body: serde_json::Value = response
-            .json()
-            .await
-            .map_err(|e| error!("Failed to parse API response as JSON", detail = e))?;
+        let body: serde_json::Value = response.json().await.map_err(|e| {
+            error!(
+                "Failed to parse API response as JSON",
+                detail = redaction.text(&e.to_string())
+            )
+        })?;
 
         let ms = started.elapsed().as_millis() as u64;
         if ms >= 1000 {
             tracing::info!(
                 target: "vantage_api_client::rest",
                 table = table_name,
-                url = %url,
+                url = %shown,
                 ms,
                 count_probe = probe,
                 "slow REST GET",
@@ -203,7 +214,7 @@ impl RestApi {
             tracing::debug!(
                 target: "vantage_api_client::rest",
                 table = table_name,
-                url = %url,
+                url = %shown,
                 ms,
                 count_probe = probe,
                 "REST GET done",

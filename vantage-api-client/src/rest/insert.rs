@@ -21,12 +21,13 @@ use vantage_types::{PlainDialect, Record, record_to_json};
 use self::template::BodyTemplate;
 use super::RestApi;
 use super::api::join_base_path;
-use crate::transport::client_error;
 use super::vista::spec::{ApiInsertBlock, Encoding};
+use crate::redact::{MASK, Redaction};
+use crate::transport::client_error;
 
 /// An insert target: where a table's records are POSTed and which statuses
 /// count as success. Built by [`RestApi::insert_endpoint`].
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct RestInsertEndpoint {
     api: RestApi,
     path: String,
@@ -39,6 +40,29 @@ pub struct RestInsertEndpoint {
     idempotency_key: Option<String>,
     idempotent: bool,
     secrets: IndexMap<String, String>,
+}
+
+impl std::fmt::Debug for RestInsertEndpoint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let query: Vec<String> = self
+            .query
+            .iter()
+            .map(|(name, _)| format!("{name}={MASK}"))
+            .collect();
+        f.debug_struct("RestInsertEndpoint")
+            .field("api", &self.api)
+            .field("path", &self.path)
+            .field("query", &query)
+            .field("accept", &self.accept)
+            .field("batch", &self.batch)
+            .field("group_by", &self.group_by)
+            .field("body", &self.body)
+            .field("encoding", &self.encoding)
+            .field("idempotency_key", &self.idempotency_key)
+            .field("idempotent", &self.idempotent)
+            .field("secrets", &self.secrets.keys().collect::<Vec<_>>())
+            .finish()
+    }
 }
 
 /// A request ready to send: the exact bytes and the headers that go with
@@ -150,6 +174,21 @@ impl RestInsertEndpoint {
         self
     }
 
+    /// Every credential this target can send: the data source's query
+    /// auth, each `api.insert.query` value (any of them may be a key) and
+    /// the body secrets.
+    fn redaction(&self) -> Redaction {
+        let redaction = self
+            .query
+            .iter()
+            .fold(self.api.redaction(), |r, (name, value)| {
+                r.param(name.clone()).value(value.clone())
+            });
+        self.secrets
+            .values()
+            .fold(redaction, |r, secret| r.value(secret.clone()))
+    }
+
     /// [`Self::send_with_ids`] with a fresh UUIDv7 per record.
     pub async fn send(&self, records: &[Record<CborValue>]) -> Result<()> {
         let ids: Vec<Uuid> = records.iter().map(|_| Uuid::now_v7()).collect();
@@ -177,9 +216,10 @@ impl RestInsertEndpoint {
             .zip(ids)
             .map(|(r, id)| (record_to_json(&PlainDialect, r.clone()), *id))
             .collect();
+        let redaction = self.redaction();
         for chunk in self.chunks(&records) {
-            let rendered = self.render(&chunk)?;
-            self.deliver(&rendered).await?;
+            let rendered = self.render(&chunk, &redaction)?;
+            self.deliver(&rendered, &redaction).await?;
         }
         Ok(())
     }
@@ -206,11 +246,11 @@ impl RestInsertEndpoint {
             .collect()
     }
 
-    fn render(&self, chunk: &[(Value, Uuid)]) -> Result<RenderedRequest> {
+    fn render(&self, chunk: &[(Value, Uuid)], redaction: &Redaction) -> Result<RenderedRequest> {
         let records: Vec<Value> = chunk.iter().map(|(record, _)| record.clone()).collect();
         let records = records.as_slice();
         let body = match &self.body {
-            Some(template) => template.render(records, &self.secrets)?,
+            Some(template) => template.render(records, &self.secrets, redaction)?,
             None if self.batch == 1 => records[0].clone(),
             None => Value::Array(records.to_vec()),
         };
@@ -246,7 +286,7 @@ impl RestInsertEndpoint {
     /// failure until [`MAX_ATTEMPTS`] are spent. The pool makes a single
     /// attempt per call, so the attempt cap, the back-off and the
     /// `Retry-After` ceiling are decided here.
-    async fn deliver(&self, request: &RenderedRequest) -> Result<()> {
+    async fn deliver(&self, request: &RenderedRequest, redaction: &Redaction) -> Result<()> {
         let path = self.request_path();
         let headers: Vec<(&str, &str)> = request
             .headers
@@ -257,7 +297,7 @@ impl RestInsertEndpoint {
         let mut attempt = 1;
         loop {
             let failure = self
-                .attempt(&policy, &path, &headers, request.body.clone())
+                .attempt(&policy, &path, &headers, request.body.clone(), redaction)
                 .await?;
             let Some(failure) = failure else {
                 return Ok(());
@@ -282,11 +322,15 @@ impl RestInsertEndpoint {
         path: &str,
         headers: &[(&str, &str)],
         body: Vec<u8>,
+        redaction: &Redaction,
     ) -> Result<Option<Failure>> {
         let answer = self
             .api
-            .http_request_with_policy(policy, Method::POST, path, headers, Some(body))
+            .http_request_with_policy(policy, Method::POST, path, headers, Some(body), redaction)
             .await?;
+        let shown = self
+            .api
+            .shown_url(&join_base_path(self.api.base_url(), path));
         let response = match answer {
             Ok(response) => response,
             Err(e) => {
@@ -296,9 +340,8 @@ impl RestInsertEndpoint {
                     _ => false,
                 };
                 let retry_after = e.retry_after;
-                let url = join_base_path(self.api.base_url(), path);
                 return Ok(Some(Failure {
-                    error: client_error(e, "REST insert failed", &url),
+                    error: client_error(e, "REST insert failed", &shown, redaction),
                     retryable,
                     retry_after,
                 }));
@@ -311,7 +354,7 @@ impl RestInsertEndpoint {
         Ok(Some(Failure {
             error: error!(
                 "REST insert answered a status the table does not accept",
-                path = path,
+                path = redaction.url(&self.api.shown_url(path)),
                 status = status
             ),
             retryable: is_retryable(status),

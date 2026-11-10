@@ -88,7 +88,8 @@ pub struct ApiInsertBlock {
     /// Request body template; absent sends the record as-is.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<String>,
-    /// Template for the idempotency key header value.
+    /// Name of the header that carries the idempotency key, e.g.
+    /// `Idempotency-Key`. Its value is the first entry id of the request.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub idempotency_key: Option<String>,
     /// Whether a retried request is safe to repeat.
