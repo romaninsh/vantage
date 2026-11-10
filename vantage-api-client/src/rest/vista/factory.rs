@@ -189,13 +189,9 @@ impl RestApiVistaFactory {
             .unwrap_or_else(|| spec.name.clone());
         let read = block.is_none_or(|b| b.read);
         let insert = match block.and_then(|b| b.insert.as_ref()) {
-            Some(insert) => {
-                self.api.insert_endpoint(insert, &endpoint)?;
-                Some(TableInsert {
-                    block: insert.clone(),
-                    endpoint: endpoint.clone(),
-                })
-            }
+            Some(insert) => Some(TableInsert {
+                endpoint: self.api.insert_endpoint(insert, &endpoint)?,
+            }),
             None => None,
         };
 

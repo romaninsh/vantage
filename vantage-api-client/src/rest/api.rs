@@ -156,6 +156,27 @@ impl RestApi {
         headers: &[(&str, &str)],
         body: Option<&serde_json::Value>,
     ) -> vantage_core::Result<reqwest::Response> {
+        match body {
+            Some(body) => {
+                let bytes = serde_json::to_vec(body)
+                    .map_err(|e| error!("Request body is not valid JSON", error = e.to_string()))?;
+                let mut with_type = vec![("content-type", "application/json")];
+                with_type.extend_from_slice(headers);
+                self.http_request_bytes(method, path, &with_type, Some(bytes))
+                    .await
+            }
+            None => self.http_request_bytes(method, path, headers, None).await,
+        }
+    }
+
+    /// [`Self::http_request`] with a body that is already bytes, sent as-is.
+    pub(crate) async fn http_request_bytes(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        headers: &[(&str, &str)],
+        body: Option<Vec<u8>>,
+    ) -> vantage_core::Result<reqwest::Response> {
         let url = join_base_path(&self.base_url, path);
 
         // A fixed value is checked before anything is sent; a bad one would
@@ -187,8 +208,8 @@ impl RestApi {
                     .auth_header
                     .apply(http.request(method.clone(), &url))
                     .headers(header_map.clone());
-                match body {
-                    Some(body) => req.json(body),
+                match &body {
+                    Some(body) => req.body(body.clone()),
                     None => req,
                 }
             })
