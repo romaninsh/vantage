@@ -200,7 +200,9 @@ where
                 }
             }
             Err(e) => Outcome::Failed {
-                kind: ErrorKind::Transport(e.to_string()),
+                // The URL can carry a credential (query auth); callers add a
+                // redacted one to their own errors.
+                kind: ErrorKind::Transport(e.without_url().to_string()),
                 body: None,
                 hint: None,
                 ms,

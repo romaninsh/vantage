@@ -1415,6 +1415,7 @@ async fn write_context_carries_the_request() {
             RequestContext::new(Transport::Ws)
                 .with_ip(ip)
                 .with_header("User-Agent", "x")
+                .with_header("Referer", "https://a.test/?token=tok-9")
                 .with_cookie("_ga", "GA1.1.123"),
         )
         .scope(async {
@@ -1424,6 +1425,10 @@ async fn write_context_carries_the_request() {
             assert_eq!(request.header("user-agent"), Some("x"));
             assert_eq!(request.cookie("_ga"), Some("GA1.1.123"));
             assert_eq!(request.cookie("missing"), None);
+
+            let debug = format!("{request:?}");
+            assert!(debug.contains("referer=***"), "{debug}");
+            assert!(!debug.contains("tok-9") && !debug.contains("GA1.1.123"), "{debug}");
         })
         .await;
 }

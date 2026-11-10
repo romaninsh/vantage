@@ -109,16 +109,15 @@ pub struct RequestContext {
 
 impl fmt::Debug for RequestContext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let cookies: Vec<String> = self
-            .cookies
-            .keys()
-            .map(|name| format!("{name}=***"))
-            .collect();
+        // Values stay out: a cookie is a session, a referer can carry a token.
+        let masked = |map: &IndexMap<String, String>| -> Vec<String> {
+            map.keys().map(|name| format!("{name}=***")).collect()
+        };
         f.debug_struct("RequestContext")
             .field("transport", &self.transport)
             .field("ip", &self.ip)
-            .field("headers", &self.headers)
-            .field("cookies", &cookies)
+            .field("headers", &masked(&self.headers))
+            .field("cookies", &masked(&self.cookies))
             .finish()
     }
 }

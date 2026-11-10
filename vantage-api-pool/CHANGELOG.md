@@ -4,6 +4,8 @@
 
 - `ClientError::retry_after` carries the response's `Retry-After`, so a caller running its own
   retry loop over a single attempt can honour it.
+- A transport error's text no longer includes the request URL, which can carry a credential in
+  its query; `TransportEvent::Failed` observers and callers see the cause without it.
 
 ## 1.1.0 — 2026-10-28
 
