@@ -110,6 +110,13 @@ impl RestApi {
         order: Order<'_>,
         conditions: impl IntoIterator<Item = &'a Expression<CborValue>>,
     ) -> Result<(serde_json::Value, Vec<(String, String)>)> {
+        if !self.readable {
+            return Err(error!(
+                "REST table is insert-only (api.read is false)",
+                table = table_name
+            )
+            .mark_unsupported());
+        }
         // Conditions may carry `DeferredFn` values — typically from
         // `related_in_condition` for `with_one`-style traversals where the FK
         // lives in a parent record we haven't fetched yet. Resolve them once,

@@ -40,8 +40,9 @@ pub use graphql::{
     GraphqlSelect, GraphqlTableExtras, GraphqlType, GraphqlTypeVariants, RenderedQuery, Supports,
 };
 pub use rest::{
-    ApiColumnExtras, ApiReferenceExtras, ApiTableBlock, ApiTableExtras, FilterStrategy,
-    OrderingParams, PaginationMode, PaginationParams, ResponseShape, RestApi, RestApiBuilder,
-    RestApiTableShell, RestApiVistaFactory, RestApiVistaSpec, eq_condition,
+    ApiColumnExtras, ApiInsertBlock, ApiReferenceExtras, ApiTableBlock, ApiTableExtras, Encoding,
+    FilterStrategy, OrderingParams, PaginationMode, PaginationParams, ResponseShape, RestApi,
+    RestApiBuilder, RestApiTableShell, RestApiVistaFactory, RestApiVistaSpec, RestInsertEndpoint,
+    eq_condition,
 };
 pub(crate) use rest::{cbor_to_query_string, condition_to_query_param};

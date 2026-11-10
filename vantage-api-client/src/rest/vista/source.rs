@@ -6,7 +6,7 @@
 //! with no per-record translation. A clone copies the table's query state
 //! (conditions, order) and shares the HTTP client.
 //!
-//! The shell only reads. Conditions are equality only: each becomes a URL
+//! The shell reads, and inserts when the table has `api.insert`. Conditions are equality only: each becomes a URL
 //! path placeholder, a query param, or an in-memory row filter, as the
 //! `RestApi` is configured. A condition names a declared column or a path
 //! placeholder (`teams/{team_id}/users`), which the spec needn't declare.
@@ -17,7 +17,7 @@ use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::{Result, error};
-use vantage_dataset::traits::ReadableValueSet;
+use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet, WritableValueSet};
 use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Record};
@@ -247,6 +247,26 @@ impl TableShell for RestApiTableShell {
         match row {
             Some(row) => reference.narrow(target, row),
             None => Ok(target),
+        }
+    }
+
+    /// POSTs the record through the table, so its insert hooks run. The
+    /// endpoint answers with no row or id: the id is the one given, or empty,
+    /// and the row is the record as sent.
+    async fn insert(
+        &self,
+        id: Option<&str>,
+        record: &Record<CborValue>,
+    ) -> Result<(String, Record<CborValue>)> {
+        match id {
+            Some(id) => {
+                let stored = self.table.insert_value(id, record).await?;
+                Ok((id.to_string(), stored))
+            }
+            None => {
+                let id = self.table.insert_return_id_value(record).await?;
+                Ok((id, record.clone()))
+            }
         }
     }
 

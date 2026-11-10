@@ -20,6 +20,7 @@ use vantage_vista::{
 use super::source::RestApiTableShell;
 use super::spec::{ApiColumnExtras, ApiReferenceExtras, ApiTableExtras, RestApiVistaSpec};
 use crate::RestApi;
+use crate::rest::TableInsert;
 
 type SpecRegistry = Arc<RwLock<HashMap<String, RestApiVistaSpec>>>;
 
@@ -154,12 +155,20 @@ impl VistaFactory for RestApiVistaFactory {
     }
 }
 
-/// What the REST shell implements. It only reads: absolute-offset windows
+/// What the REST shell implements. It reads: absolute-offset windows
 /// when the API pages (a `total_key` adds the grand total to each page),
-/// ordering when it has a sort param, and traversal. With no write
-/// capability advertised, the Vista refuses every write.
+/// ordering when it has a sort param, and traversal. A table with
+/// `api.insert` also inserts; with `read: false` it does only that. With no
+/// write capability advertised, the Vista refuses every write.
 fn rest_capabilities(api: &RestApi) -> VistaCapabilities {
-    let mut caps = VistaCapabilities::new().with(Capability::Traverse);
+    let mut caps = VistaCapabilities::new();
+    if api.has_insert() {
+        caps = caps.with(Capability::Insert);
+    }
+    if !api.is_readable() {
+        return caps;
+    }
+    caps = caps.with(Capability::Traverse);
     if api.serves_windows() {
         caps = caps.with(Capability::Window);
     }
@@ -174,16 +183,31 @@ impl RestApiVistaFactory {
     /// EmptyEntity>`. Endpoint defaults to `spec.name` when the
     /// `api.endpoint` block is absent.
     fn table_from_spec(&self, spec: &RestApiVistaSpec) -> Result<Table<RestApi, EmptyEntity>> {
-        let endpoint = spec
-            .driver
-            .api
-            .as_ref()
+        let block = spec.driver.api.as_ref();
+        let endpoint = block
             .and_then(|b| b.endpoint.clone())
             .unwrap_or_else(|| spec.name.clone());
+        let read = block.is_none_or(|b| b.read);
+        let insert = match block.and_then(|b| b.insert.as_ref()) {
+            Some(insert) => {
+                self.api.insert_endpoint(insert, &endpoint)?;
+                Some(TableInsert {
+                    block: insert.clone(),
+                    endpoint: endpoint.clone(),
+                })
+            }
+            None => None,
+        };
 
-        let mut table = Table::<RestApi, EmptyEntity>::new(endpoint, self.api.clone());
+        let inserts = insert.is_some();
+        let api = self.api.for_table(insert, read);
+        let mut table = Table::<RestApi, EmptyEntity>::new(endpoint, api);
         table.add_spec_columns(&spec.columns, build_column)?;
-        table.set_spec_id_field(&spec.resolve_id_column("id"))?;
+        // A table that inserts has no rows to key, so it needn't declare an id.
+        let id = spec.resolve_id_column("id");
+        if table.columns().contains_key(&id) || (read && !inserts) {
+            table.set_spec_id_field(&id)?;
+        }
         Ok(table)
     }
 }

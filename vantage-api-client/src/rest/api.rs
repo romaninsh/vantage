@@ -2,10 +2,13 @@
 //! requests. Reads are lowered to URLs in `request`, sent in `fetch`, and
 //! assembled into windows in `window` and `page`.
 
+use std::sync::Arc;
+
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use vantage_api_pool::resilient::{ResilientClient, TransportEvent};
 use vantage_core::{Priority, error};
 
+use crate::rest::TableInsert;
 use crate::transport::AuthHeader;
 
 mod builder;
@@ -60,6 +63,11 @@ pub struct RestApi {
     ordering: Option<OrderingParams>,
     /// Emit `tracing` events for window/count requests.
     debug: bool,
+    /// The `api.insert` settings of the table this copy serves.
+    pub(crate) insert: Option<Arc<TableInsert>>,
+    /// False on an insert-only table's copy: every read is refused before a
+    /// request is made.
+    pub(crate) readable: bool,
 }
 
 impl RestApi {

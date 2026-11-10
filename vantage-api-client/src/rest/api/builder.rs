@@ -197,6 +197,8 @@ impl RestApiBuilder {
             total_key: self.total_key,
             ordering: self.ordering,
             debug: self.debug,
+            insert: None,
+            readable: true,
         }
     }
 }
