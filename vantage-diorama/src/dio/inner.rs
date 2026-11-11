@@ -9,8 +9,8 @@ use tokio::task::JoinHandle;
 use vantage_vista::{Capability, Vista, VistaMetadata, VistaQuery};
 
 use super::{
-    AbortOnDrop, DetailState, DioEvent, WriteCapabilities, augment_scheduler, pending, query_index,
-    worker,
+    AbortOnDrop, DetailStates, DioEvent, WriteCapabilities, augment_scheduler, pending,
+    query_index, worker,
 };
 use crate::augment::Augmentation;
 use crate::lens::hub::TableHub;
@@ -86,7 +86,7 @@ pub(crate) struct DioInner {
     pub(crate) augment_worker_handles: std::sync::Mutex<Vec<JoinHandle<()>>>,
     /// The detail pass's last answer per row, one per id. See
     /// [`detail_state`](super::detail_state).
-    pub(crate) detail_state: std::sync::Mutex<HashMap<String, DetailState>>,
+    pub(crate) detail_state: std::sync::Mutex<DetailStates>,
 
     /// False only while a detached eager start is still copying the set into
     /// the cache. True once it finishes — success or failure alike, since a

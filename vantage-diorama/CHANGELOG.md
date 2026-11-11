@@ -14,6 +14,9 @@
   `comparable_condition` to its master, so a Dio over another Dio's facade compares as the
   backend does too. Before, `due = "2026-12-10"` there matched no row holding a datetime.
 - A write wrapper keeps `ErrorKind::InvalidValue` instead of flattening it.
+- An explicit `refresh()` that lands while a row's detail fetch is still running re-probes that
+  row. Before, the in-flight fetch recorded its "no detail record" after the refresh had cleared
+  the answers, and the row stayed unprobed until the next explicit refresh.
 - Requires vantage-vista 2.10.0 and vantage-core 1.3.0.
 
 ## 1.5.2 — 2026-11-10

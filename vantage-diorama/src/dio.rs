@@ -37,7 +37,7 @@ pub(crate) use augmented::AugmentedClause;
 pub use builder::DioBuilder;
 pub(crate) use builder::DioParts;
 pub use derive::DeriveBuilder;
-pub(crate) use detail_state::DetailState;
+pub(crate) use detail_state::{DetailState, DetailStates};
 #[cfg(feature = "diagnostics")]
 pub use diagnostics::{DioDiagnostics, SceneryDiagnostic};
 pub use event_bus::DioEvent;

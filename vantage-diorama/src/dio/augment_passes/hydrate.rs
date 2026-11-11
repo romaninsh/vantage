@@ -36,25 +36,36 @@ async fn load_detail(inner: &DioInner, id: &str) -> Result<Option<Record<CborVal
 /// total), fetch the detail, merge it onto the cheap list-pass row, persist
 /// as `Complete`, and broadcast `RecordChanged` so every open view updates
 /// its slot.
+///
+/// A refresh requested while the fetch ran voids its answer, and the row is
+/// fetched again: the sweep that refresh started found the id in flight and
+/// dropped it, so nothing else would ask.
 pub(crate) async fn hydrate_one(inner: &Arc<DioInner>, id: &str) -> Result<()> {
     if !inner.has_dio_augment() {
         return Ok(());
     }
+    while !hydrate_since(inner, id, inner.detail_epoch()).await? {}
+    Ok(())
+}
+
+/// One pass of [`hydrate_one`] begun at refresh `epoch`. `false` when a
+/// requested refresh came while it fetched, so its answer wasn't recorded.
+async fn hydrate_since(inner: &Arc<DioInner>, id: &str, epoch: u64) -> Result<bool> {
     let augmented = &inner.augmented_columns;
     let gap_aware = !augmented.is_empty();
     if inner.detail_state(id) == Some(DetailState::Empty) {
         // Hydrated before and found no detail record — a legitimate,
         // permanent gap until a requested refresh forgets it.
-        return Ok(());
+        return Ok(true);
     }
     if let Some((row, CacheStatus::Complete)) = inner.cache.get_value_with_status(id).await?
         && (!gap_aware || !has_augment_gap(&row, augmented))
     {
-        return Ok(());
+        return Ok(true);
     }
 
     let Some(detail) = load_detail(inner, id).await? else {
-        return Ok(());
+        return Ok(true);
     };
 
     // Merge the detail columns onto the cheap list-pass row so the list
@@ -68,7 +79,7 @@ pub(crate) async fn hydrate_one(inner: &Arc<DioInner>, id: &str) -> Result<()> {
             id,
             "row deleted while its detail was fetched; the detail is dropped",
         );
-        return Ok(());
+        return Ok(true);
     };
     for (k, v) in detail {
         merged.insert(k, v);
@@ -89,11 +100,11 @@ pub(crate) async fn hydrate_one(inner: &Arc<DioInner>, id: &str) -> Result<()> {
     } else {
         DetailState::Filled
     };
-    inner.set_detail_state(id, settled);
+    let recorded = inner.settle_detail(id, settled, epoch);
     let _ = inner
         .event_bus
         .send(crate::DioEvent::RecordChanged { id: id.to_string() });
-    Ok(())
+    Ok(recorded)
 }
 
 /// Hydrate every row in `rows` that still has an augment gap, blocking until

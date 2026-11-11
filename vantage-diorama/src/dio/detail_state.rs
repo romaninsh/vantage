@@ -11,7 +11,10 @@
 //! again, so every refresh forgets `Filled` and `Failed`. `Empty` survives a
 //! scheduled one: a timed re-pull of the master is no evidence the detail
 //! source gained a record, and re-probing every empty row on each tick keeps
-//! the sweep from ever finishing. A requested refresh forgets it too.
+//! the sweep from ever finishing. A requested refresh forgets it too, and an
+//! answer from a fetch that began before the request doesn't count.
+
+use std::collections::HashMap;
 
 use super::DioInner;
 
@@ -29,24 +32,52 @@ pub(crate) enum DetailState {
     Failed,
 }
 
+/// Every row's [`DetailState`], and how many requested refreshes have
+/// forgotten them.
+#[derive(Debug, Default)]
+pub(crate) struct DetailStates {
+    rows: HashMap<String, DetailState>,
+    requested: u64,
+}
+
 impl DioInner {
     pub(crate) fn detail_state(&self, id: &str) -> Option<DetailState> {
-        self.detail_state.lock().unwrap().get(id).copied()
+        self.detail_state.lock().unwrap().rows.get(id).copied()
     }
 
     pub(crate) fn set_detail_state(&self, id: &str, state: DetailState) {
         self.detail_state
             .lock()
             .unwrap()
+            .rows
             .insert(id.to_string(), state);
+    }
+
+    /// The count of requested refreshes so far. A detail fetch reads it
+    /// before it starts and hands it to [`settle_detail`](Self::settle_detail).
+    pub(crate) fn detail_epoch(&self) -> u64 {
+        self.detail_state.lock().unwrap().requested
+    }
+
+    /// Record `id`'s answer from a fetch that began at `epoch`, unless a
+    /// requested refresh came since: the fetch may predate a record the
+    /// refresh was asked to find, so the row stays unsettled. `false` when
+    /// the answer wasn't recorded.
+    pub(crate) fn settle_detail(&self, id: &str, state: DetailState, epoch: u64) -> bool {
+        let mut states = self.detail_state.lock().unwrap();
+        let current = states.requested == epoch;
+        if current {
+            states.rows.insert(id.to_string(), state);
+        }
+        current
     }
 
     /// Forget `id`'s `Filled`: the list pass wrote its list row back over the
     /// detail, so the row has to be read again.
     pub(crate) fn forget_filled(&self, id: &str) {
         let mut states = self.detail_state.lock().unwrap();
-        if states.get(id) == Some(&DetailState::Filled) {
-            states.remove(id);
+        if states.rows.get(id) == Some(&DetailState::Filled) {
+            states.rows.remove(id);
         }
     }
 
@@ -55,9 +86,10 @@ impl DioInner {
     pub(crate) fn clear_detail_states(&self, keep_empty: bool) {
         let mut states = self.detail_state.lock().unwrap();
         if keep_empty {
-            states.retain(|_, state| *state == DetailState::Empty);
+            states.rows.retain(|_, state| *state == DetailState::Empty);
         } else {
-            states.clear();
+            states.rows.clear();
+            states.requested += 1;
         }
     }
 }

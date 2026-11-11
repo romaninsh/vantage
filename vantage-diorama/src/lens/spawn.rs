@@ -72,7 +72,7 @@ impl Lens {
             augmented_columns,
             augment_scheduler: Arc::new(crate::dio::augment_scheduler::AugmentScheduler::new()),
             augment_worker_handles: std::sync::Mutex::new(Vec::new()),
-            detail_state: std::sync::Mutex::new(std::collections::HashMap::new()),
+            detail_state: std::sync::Mutex::default(),
             // Set before any scenery can open, so one opening over the cold
             // cache waits for the detached start instead of showing no rows.
             seed_complete: AtomicBool::new(!detached),
