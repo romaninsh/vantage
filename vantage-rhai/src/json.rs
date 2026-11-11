@@ -1,5 +1,6 @@
 //! `Dynamic` ⇄ `serde_json::Value`.
 
+use chrono::{DateTime, Utc};
 use rhai::{Array, Dynamic, Map};
 use serde_json::{Map as JsonMap, Number, Value};
 
@@ -40,6 +41,9 @@ pub fn to_json(value: &Dynamic) -> Value {
             out.insert(k.to_string(), to_json(v));
         }
         return Value::Object(out);
+    }
+    if let Some(dt) = value.clone().try_cast::<DateTime<Utc>>() {
+        return Value::String(dt.to_rfc3339());
     }
     Value::String(value.to_string())
 }

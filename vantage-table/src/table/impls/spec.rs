@@ -90,23 +90,34 @@ where
                 relation,
                 &reference.table,
                 reference.kind,
-                &foreign_key,
+                (&foreign_key, &reference.keys),
                 env,
                 build,
             )?;
         }
         for (column, sugar) in column_references(spec) {
-            let (target, kind, foreign_key) = match sugar {
-                ReferenceSugar::Sugar(target) => (target, ReferenceKind::HasOne, column.clone()),
-                ReferenceSugar::Full(r) => (&r.table, r.kind, r.foreign_key(column)),
+            let (target, kind, foreign_key, keys) = match sugar {
+                ReferenceSugar::Sugar(target) => {
+                    (target, ReferenceKind::HasOne, column.clone(), &[][..])
+                }
+                ReferenceSugar::Full(r) => (&r.table, r.kind, r.foreign_key(column), &r.keys[..]),
                 _ => return Err(unknown_sugar(column)),
             };
-            self =
-                self.with_spec_join(&spec.name, column, target, kind, &foreign_key, env, build)?;
+            self = self.with_spec_join(
+                &spec.name,
+                column,
+                target,
+                kind,
+                (&foreign_key, keys),
+                env,
+                build,
+            )?;
         }
         Ok(self)
     }
 
+    /// `join` is the foreign key and the `keys:`, which supersede it when
+    /// given.
     #[allow(clippy::too_many_arguments)]
     fn with_spec_join<S: 'static>(
         self,
@@ -114,7 +125,7 @@ where
         relation: &str,
         target: &str,
         kind: ReferenceKind,
-        foreign_key: &str,
+        join: (&str, &[JoinKey]),
         env: &BuildEnv<S, T>,
         build: SpecTableBuilder<S, T>,
     ) -> Result<Self> {
@@ -150,12 +161,17 @@ where
                 )
             })
         };
+        let (foreign_key, keys) = join;
         match kind {
-            ReferenceKind::HasOne => {
+            ReferenceKind::HasOne if keys.is_empty() => {
                 Ok(self.try_with_one(relation, foreign_key, target, build_target))
             }
-            ReferenceKind::HasMany => {
+            ReferenceKind::HasOne => self.try_with_one_keyed(relation, keys, target, build_target),
+            ReferenceKind::HasMany if keys.is_empty() => {
                 Ok(self.try_with_many(relation, foreign_key, target, build_target))
+            }
+            ReferenceKind::HasMany => {
+                self.try_with_many_keyed(relation, keys, target, build_target)
             }
             _ => Err(error!(
                 "references: entries must be has_one or has_many",

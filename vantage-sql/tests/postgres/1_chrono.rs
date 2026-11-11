@@ -381,3 +381,23 @@ async fn test_timestamptz_fixed() {
     assert_eq!(fetched.value, orig.value.with_timezone(&Utc).fixed_offset());
     assert_eq!(fetched.value.offset().local_minus_utc(), 0);
 }
+
+// ═════════════════════════════════════════════════════════════════════════
+// 8. The binder refuses what it can't place, instead of binding NULL
+// ═════════════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn binder_refuses_a_datetime_it_cannot_place() {
+    use ciborium::Value as CborValue;
+    use vantage_expressions::ExprDataSource;
+    use vantage_sql::postgres::types::PostgresTypeVariants;
+    use vantage_sql::postgres_expr;
+
+    let garbage = AnyPostgresType::with_variant(
+        CborValue::Text("not a time".into()),
+        PostgresTypeVariants::DateTime,
+    );
+    let probe = postgres_expr!("SELECT {} AS v", garbage);
+    let err = db().await.execute(&probe).await.expect_err("refused");
+    assert!(err.to_string().contains("not a time"), "{err}");
+}

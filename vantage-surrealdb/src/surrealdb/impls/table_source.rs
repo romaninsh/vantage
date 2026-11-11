@@ -21,6 +21,7 @@ use crate::statements::insert::SurrealInsert;
 use crate::statements::update::SurrealUpdate;
 
 use crate::surrealdb::SurrealDB;
+use crate::surrealdb::declared::coerce_column;
 use crate::thing::Thing;
 use crate::types::{AnySurrealType, SurrealType};
 
@@ -157,6 +158,22 @@ impl TableSource for SurrealDB {
             return AnySurrealType::from(thing.to_cbor());
         }
         value
+    }
+
+    /// Typed by the column's declared type (see `surrealdb::declared`): date
+    /// and timestamp text as datetimes, `table:key` text and bare keys on a
+    /// has-one key column as record links, no value on a typed column as
+    /// `NONE`.
+    fn coerce_column_value<E>(
+        &self,
+        table: &Table<Self, E>,
+        column: &str,
+        value: AnySurrealType,
+    ) -> Result<AnySurrealType>
+    where
+        E: Entity<AnySurrealType>,
+    {
+        coerce_column(table, column, value)
     }
 
     fn condition_equality(&self, condition: &Self::Condition) -> Option<(String, Self::Value)> {

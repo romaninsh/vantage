@@ -35,6 +35,20 @@ pub(super) fn declared_kinds(
         .collect()
 }
 
+/// How many leading segments of `path` name the shallowest ancestor of the
+/// leaf that the stored row holds as absent, null or anything other than a
+/// sub-document; `None` when every ancestor is a sub-document, or when there
+/// is no stored row to look at.
+fn broken_ancestor(stored: Option<&IndexMap<String, Bson>>, path: &[String]) -> Option<usize> {
+    let stored = stored?;
+    (1..path.len()).find(|&depth| {
+        !matches!(
+            walk_bson_path(stored, &path[..depth]),
+            Some(Bson::Document(_))
+        )
+    })
+}
+
 impl MongoTableShell {
     /// Build a `Record<AnyMongoType>` ready for the table's write path. For
     /// columns with a multi-segment path, intermediate sub-documents are
@@ -46,7 +60,27 @@ impl MongoTableShell {
         record: &Record<CborValue>,
         stored: Option<&IndexMap<String, Bson>>,
     ) -> Result<Record<AnyMongoType>> {
-        let mut flat = self.flatten_paths(record, stored)?;
+        self.flatten(record, stored, false)
+    }
+
+    /// Like `flatten_for_write`, but a multi-segment path stays one dotted
+    /// key (`"address.city"`), so the patch's `$set` writes that leaf alone
+    /// and leaves the rest of the sub-document as stored.
+    pub(super) fn flatten_for_patch(
+        &self,
+        partial: &Record<CborValue>,
+        stored: Option<&IndexMap<String, Bson>>,
+    ) -> Result<Record<AnyMongoType>> {
+        self.flatten(partial, stored, true)
+    }
+
+    fn flatten(
+        &self,
+        record: &Record<CborValue>,
+        stored: Option<&IndexMap<String, Bson>>,
+        dotted: bool,
+    ) -> Result<Record<AnyMongoType>> {
+        let mut flat = self.flatten_paths(record, stored, dotted)?;
         // CBOR carries an ObjectId as its hex text, so a value read from the
         // set arrives in the other spelling than the set's invariant, and the
         // table's conflict check compares raw values.
@@ -65,6 +99,7 @@ impl MongoTableShell {
         &self,
         record: &Record<CborValue>,
         stored: Option<&IndexMap<String, Bson>>,
+        dotted: bool,
     ) -> Result<Record<AnyMongoType>> {
         let mut top = Document::new();
         for (col_name, value) in record {
@@ -91,6 +126,26 @@ impl MongoTableShell {
             };
             if self.column_paths.is_empty() {
                 top.insert(col_name.clone(), bson_value);
+            } else if dotted {
+                match broken_ancestor(stored, path) {
+                    // MongoDB refuses a dotted `$set` through a null or
+                    // scalar parent, so that parent is set whole, built from
+                    // the leaves this patch writes under it.
+                    Some(depth) => {
+                        let parent = top
+                            .entry(path[..depth].join("."))
+                            .or_insert_with(|| Bson::Document(Document::new()));
+                        if !matches!(parent, Bson::Document(_)) {
+                            *parent = Bson::Document(Document::new());
+                        }
+                        if let Bson::Document(sub) = parent {
+                            insert_at_path(sub, &path[depth..], bson_value);
+                        }
+                    }
+                    None => {
+                        top.insert(path.join("."), bson_value);
+                    }
+                }
             } else {
                 insert_at_path(&mut top, path, bson_value);
             }
@@ -113,23 +168,25 @@ impl MongoTableShell {
 }
 
 /// Insert `value` at `path` inside `doc`, creating intermediate sub-documents
-/// as needed. If a non-document scalar is in the way, it gets overwritten.
+/// and overwriting a scalar in the way. It walks the path's segments, not the
+/// dots: a joined column (`client.name`) is one segment, a top-level key the
+/// table's write path strips.
 fn insert_at_path(doc: &mut Document, path: &[String], value: Bson) {
-    if path.is_empty() {
-        return;
-    }
-    if path.len() == 1 {
-        doc.insert(path[0].clone(), value);
-        return;
-    }
-    let head = path[0].clone();
-    let entry = doc
-        .entry(head)
-        .or_insert_with(|| Bson::Document(Document::new()));
-    if !matches!(entry, Bson::Document(_)) {
-        *entry = Bson::Document(Document::new());
-    }
-    if let Bson::Document(sub) = entry {
-        insert_at_path(sub, &path[1..], value);
+    match path {
+        [] => {}
+        [leaf] => {
+            doc.insert(leaf.clone(), value);
+        }
+        [head, rest @ ..] => {
+            let entry = doc
+                .entry(head.clone())
+                .or_insert_with(|| Bson::Document(Document::new()));
+            if !matches!(entry, Bson::Document(_)) {
+                *entry = Bson::Document(Document::new());
+            }
+            if let Bson::Document(sub) = entry {
+                insert_at_path(sub, rest, value);
+            }
+        }
     }
 }

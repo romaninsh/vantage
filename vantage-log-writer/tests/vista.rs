@@ -73,6 +73,39 @@ columns:
 }
 
 #[tokio::test]
+async fn display_types_load_and_write_as_text() {
+    let dir = tempdir().unwrap();
+    let writer = LogWriter::new(dir.path());
+    let yaml = r#"
+name: events
+columns:
+  id: { type: string, flags: [id] }
+  due: { type: date }
+  starts: { type: time }
+  at: { type: timestamp }
+  size: { type: bytes }
+"#;
+    let vista = writer.vista_factory().from_yaml(yaml).unwrap();
+    let mut record = Record::<CborValue>::new();
+    for (column, value) in [
+        ("due", "2026-12-10"),
+        ("starts", "09:30:00"),
+        ("at", "2026-12-10T09:30:00Z"),
+        ("size", "1536"),
+    ] {
+        record.insert(column.into(), CborValue::Text(value.into()));
+    }
+    vista.insert_return_id_value(&record).await.unwrap();
+    sleep(Duration::from_millis(100)).await;
+
+    let rows = read_lines(&dir.path().join("events.jsonl")).await;
+    assert_eq!(rows[0]["due"], "2026-12-10");
+    assert_eq!(rows[0]["starts"], "09:30:00");
+    assert_eq!(rows[0]["at"], "2026-12-10T09:30:00Z");
+    assert_eq!(rows[0]["size"], "1536");
+}
+
+#[tokio::test]
 async fn a_table_vista_is_insert_only_and_names_its_driver() {
     let (_dir, _writer, vista) = events();
 

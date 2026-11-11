@@ -1,12 +1,19 @@
 //! Narrowing a vista: conditions (including on an `expr:` column), order and
 //! search.
 
+#[cfg(feature = "rhai")]
+use std::sync::Arc;
+
 use ciborium::Value as CborValue;
 use vantage_dataset::prelude::*;
 use vantage_expressions::ExprDataSource;
 use vantage_surrealdb::surreal_expr;
 #[cfg(feature = "rhai")]
+use vantage_surrealdb::vista::SurrealVistaSpec;
+#[cfg(feature = "rhai")]
 use vantage_types::Record;
+#[cfg(feature = "rhai")]
+use vantage_vista::SpecResolver;
 use vantage_vista::{
     Capability, Condition, FilterOp, SortDirection, Vista, VistaFactory, VistaQuery,
 };
@@ -294,6 +301,102 @@ surreal:
         assert_eq!(
             sorted_ids(&vista).await?,
             [format!("{table_name}:marty")],
+            "condition on {column}"
+        );
+    }
+    Ok(())
+}
+
+/// lender #12: an `IN` set on an `expr:` column reading through a record
+/// link, next to an `IN` set on a stored column and a dotted import.
+#[cfg(feature = "rhai")]
+#[tokio::test]
+async fn in_set_on_an_expr_column_over_a_record_link() -> TestResult {
+    let (db, _) = setup().await;
+    let sql = "CREATE loan:l1 SET status = 'finished', purpose = 'car'; \
+               CREATE loan:l2 SET status = 'settled', purpose = 'home'; \
+               CREATE loan:l3 SET status = 'open', purpose = 'boat'; \
+               CREATE bid:b1 SET status = 'won', loan = loan:l1; \
+               CREATE bid:b2 SET status = 'won', loan = loan:l2; \
+               CREATE bid:b3 SET status = 'won', loan = loan:l3; \
+               CREATE bid:b4 SET status = 'lost', loan = loan:l1";
+    for statement in sql.split("; ") {
+        db.execute(&surreal_expr!(statement)).await?;
+    }
+    let loan: SurrealVistaSpec = serde_yaml_ng::from_str(
+        r#"
+name: loan
+columns:
+  id: { type: thing, flags: [id] }
+  status: { type: string }
+  purpose: { type: string }
+"#,
+    )?;
+    let resolver: Arc<dyn SpecResolver<SurrealVistaSpec>> =
+        Arc::new(move |name: &str| (name == "loan").then(|| loan.clone()));
+    let yaml = r#"
+name: bid
+columns:
+  id: { type: thing, flags: [id] }
+  status: { type: string }
+  loan: { type: string, references: loan }
+  loan.purpose: { type: string }
+  loan_status: { type: string, expr: 'surreal::expr("loan.status")' }
+"#;
+    let mut vista = db.vista_factory().with_resolver(resolver).from_yaml(yaml)?;
+    vista.add_condition(
+        "status",
+        FilterOp::InSet,
+        CborValue::Array(vec![
+            CborValue::Text("won".into()),
+            CborValue::Text("~v1".into()),
+        ]),
+    )?;
+    vista.add_condition(
+        "loan_status",
+        FilterOp::InSet,
+        CborValue::Array(vec![
+            CborValue::Text("finished".into()),
+            CborValue::Text("settled".into()),
+        ]),
+    )?;
+    assert_eq!(sorted_ids(&vista).await?, ["bid:b1", "bid:b2"]);
+    assert_eq!(vista.count().await?, 2);
+    let page = vista.fetch_window(1, 1).await?;
+    assert_eq!(page.rows.len(), 1);
+    Ok(())
+}
+
+/// A condition's value is typed by its column exactly as a write would be:
+/// date text compares as a datetime, a bare key on a link column as that
+/// table's record, number text as a number.
+#[tokio::test]
+async fn conditions_type_their_values_like_writes() -> TestResult {
+    let (db, _) = setup().await;
+    let sql = "CREATE loan:a SET due = d'2026-01-10T00:00:00Z', borrower = client:ann, term = 12; \
+               CREATE loan:b SET due = d'2026-03-10T00:00:00Z', borrower = client:bob, term = 24";
+    for statement in sql.split("; ") {
+        db.execute(&surreal_expr!(statement)).await?;
+    }
+    let yaml = r#"
+name: loan
+columns:
+  id: { type: thing, flags: [id] }
+  due: { type: date }
+  borrower: { type: string, references: client }
+  term: { type: int }
+"#;
+    let cases = [
+        ("due", FilterOp::Gt, CborValue::Text("2026-02-01".into())),
+        ("borrower", FilterOp::Eq, CborValue::Text("bob".into())),
+        ("term", FilterOp::Gte, CborValue::Text("20".into())),
+    ];
+    for (column, op, value) in cases {
+        let mut vista = db.vista_factory().from_yaml(yaml)?;
+        vista.add_condition(column, op, value)?;
+        assert_eq!(
+            sorted_ids(&vista).await?,
+            ["loan:b"],
             "condition on {column}"
         );
     }

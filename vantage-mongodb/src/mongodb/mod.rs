@@ -7,6 +7,7 @@ pub mod impls;
 mod streams;
 pub mod topology;
 pub(crate) mod tx;
+pub(crate) mod validation;
 pub mod view;
 
 use std::sync::Arc;

@@ -1004,6 +1004,183 @@ async fn finish_insert_runs_the_after_insert_hooks() {
     assert_eq!(*log.lock().unwrap(), ["ins:7"]);
 }
 
+// --- typed writes -------------------------------------------------------------
+
+/// A source that types `age` the way a driver types a declared integer
+/// column: text that holds a number becomes the number, other text doesn't
+/// fit. Every column it is asked about goes to `log`.
+async fn typed(rows: Vec<Value>, log: Log) -> MockTable {
+    let src = MockTableSource::new()
+        .with_column_coercion(move |column, value| {
+            log.lock().unwrap().push(column.to_string());
+            match (column, value) {
+                ("age", Value::String(text)) => {
+                    text.parse::<i64>().map(Value::from).map_err(|_| {
+                        vantage_core::error!("not an integer", column = column, value = text)
+                            .mark_invalid_value()
+                    })
+                }
+                (_, value) => Ok(value),
+            }
+        })
+        .with_data("t", rows)
+        .await;
+    MockTable::new("t", src)
+        .with_id_column("id")
+        .with_column_of::<String>("name")
+        .with_column_of::<i64>("age")
+}
+
+fn seeing(column: &'static str, seen: Arc<Mutex<Vec<Value>>>) -> BeforeFn<MockTableSource> {
+    before_hook(move |cx: BeforeCx<'_, MockTableSource>| {
+        seen.lock().unwrap().push(cx.record[column].clone());
+        Box::pin(async move { Ok(()) })
+    })
+}
+
+#[tokio::test]
+async fn insert_replace_and_patch_type_declared_columns_through_the_source() {
+    let log: Log = Arc::default();
+    let table = typed(vec![], log.clone()).await;
+    table
+        .insert_value("1", &rec(json!({"name": "a", "age": "41", "note": "7"})))
+        .await
+        .unwrap();
+    assert_eq!(
+        table.get_value("1").await.unwrap().unwrap()["age"],
+        json!(41)
+    );
+    table
+        .replace_value(
+            "1",
+            &rec(json!({"id": "1", "name": "a", "age": "42", "note": "7"})),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        table.get_value("1").await.unwrap().unwrap()["age"],
+        json!(42)
+    );
+    table
+        .patch_value("1", &rec(json!({"age": "43"})))
+        .await
+        .unwrap();
+    let row = table.get_value("1").await.unwrap().unwrap();
+    assert_eq!(row["age"], json!(43));
+    assert_eq!(row["note"], json!("7"));
+    // The id column and the undeclared `note` never reach the source.
+    let mut seen = log.lock().unwrap().clone();
+    seen.sort();
+    assert_eq!(seen, ["age", "age", "age", "name", "name"]);
+}
+
+#[tokio::test]
+async fn values_are_typed_after_populate_hooks_and_before_validate_hooks() {
+    let seen: Arc<Mutex<Vec<Value>>> = Arc::default();
+    let table = typed(vec![], Log::default())
+        .await
+        .with_hook(Hook::BeforeSave(
+            Phase::Validate,
+            seeing("age", seen.clone()),
+        ))
+        .with_hook(Hook::BeforeSave(Phase::Populate, setting("age", "5")));
+    table
+        .insert_value("1", &rec(json!({"name": "a"})))
+        .await
+        .unwrap();
+    table
+        .patch_value("1", &rec(json!({"name": "b"})))
+        .await
+        .unwrap();
+    assert_eq!(*seen.lock().unwrap(), [json!(5), json!(5)]);
+    assert_eq!(
+        table.get_value("1").await.unwrap().unwrap()["age"],
+        json!(5)
+    );
+}
+
+#[tokio::test]
+async fn invariants_compare_typed_values() {
+    let table = typed(vec![], Log::default())
+        .await
+        .with_invariant("age", json!(5));
+    table
+        .insert_value("1", &rec(json!({"name": "a", "age": "5"})))
+        .await
+        .unwrap();
+    table
+        .patch_value("1", &rec(json!({"age": "5"})))
+        .await
+        .unwrap();
+    table
+        .replace_value("1", &rec(json!({"name": "b", "age": "5"})))
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn untyped_invariants_are_typed_before_they_compare_or_stamp() {
+    let table = typed(vec![], Log::default())
+        .await
+        .with_invariant("age", json!("5"));
+    table
+        .insert_value("1", &rec(json!({"name": "a", "age": "5"})))
+        .await
+        .unwrap();
+    table
+        .patch_value("1", &rec(json!({"age": 5})))
+        .await
+        .unwrap();
+    table
+        .replace_value("1", &rec(json!({"name": "b", "age": "5"})))
+        .await
+        .unwrap();
+    table
+        .insert_value("2", &rec(json!({"name": "c"})))
+        .await
+        .unwrap();
+    assert_eq!(
+        table.get_value("2").await.unwrap().unwrap()["age"],
+        json!(5)
+    );
+}
+
+#[tokio::test]
+async fn a_value_that_does_not_fit_is_invalid_value_and_writes_nothing() {
+    let log: Log = Arc::default();
+    let table = typed(
+        vec![json!({"id": "1", "name": "a", "age": 1})],
+        Log::default(),
+    )
+    .await
+    .with_hook(Hook::BeforeSave(
+        Phase::Validate,
+        recording_before("validate", log.clone()),
+    ));
+    let bad = rec(json!({"name": "b", "age": "old"}));
+    let err = table.insert_value("2", &bad).await.unwrap_err();
+    assert!(err.is_invalid_value(), "{err}");
+    let err = table.replace_value("1", &bad).await.unwrap_err();
+    assert!(err.is_invalid_value(), "{err}");
+    let err = table.patch_value("1", &bad).await.unwrap_err();
+    assert!(err.is_invalid_value(), "{err}");
+    assert!(log.lock().unwrap().is_empty(), "no Validate hook ran");
+    let rows = table.list_values().await.unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows["1"]["age"], json!(1));
+    assert_eq!(rows["1"]["name"], json!("a"));
+}
+
+#[tokio::test]
+async fn a_row_read_and_written_back_unchanged_stays_unchanged() {
+    let table = typed(
+        vec![json!({"id": "1", "name": "a", "age": 41, "note": "x"})],
+        Log::default(),
+    )
+    .await;
+    vantage_dataset::contract::check_round_trip(&table, "1".to_string()).await;
+}
+
 // --- generated ids ------------------------------------------------------------
 
 #[test]

@@ -173,6 +173,10 @@ impl SharedRows {
 /// refused: the cache holds the Dio's rows, which no view clause narrowed.
 /// The Dio's residual is applied through [`admitted_by_dio`], because a
 /// query holds one search and the view's may stand beside the Dio's.
+///
+/// `query` must already hold its values as the master compares them
+/// (`dio.master.comparable(query)`, typed once per batch): the cached rows
+/// hold the master's typed values.
 pub(crate) fn admitted_by_view(
     dio: &DioInner,
     query: &VistaQuery,

@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.5.0 — 2026-11-11
+
+- `Dates`, a `Vocab` that gives scripts one date and datetime vocabulary. A host opts in with
+  `Host::builder(..).vocab(Dates)`; `ui_host()` and `background_host()` stay without it. Values
+  are `chrono::DateTime<Utc>`, and a date is that type at midnight UTC, so one type serves `date`
+  and `timestamp` columns and comparisons need no mixed-type rules.
+  - `date(text)` (RFC 3339 with any offset, `YYYY-MM-DD`, or a datetime without an offset read
+    as UTC), `date(y, m, d)`, `now()`, `today()`; bad input throws with the function name.
+  - `add_days`, `add_hours`, `add_minutes`, `add_seconds`, `add_months`, `add_years`; a month
+    that is too short clamps to its last day (`add_months(1)` on Jan 31 is Feb 28).
+  - `start_of_day`, `start_of_month`, the getters `year`, `month`, `day`, `weekday` (1 = Monday),
+    `hour`, `minute`, `second`, `days_between(a, b)`, `to_date_string`, `format(fmt)`.
+  - `==`, `!=`, `<` ... between two datetimes, and between a datetime and date text. Text that is
+    not a date compares false (`!=` true) and never throws.
+- `ModuleDir::new(root)` and `HostBuilder::modules(&dir)`: `import "plans"` reads
+  `<root>/plans.rhai`, `import "checks/kind"` reads `<root>/checks/kind.rhai`. Only root-relative
+  names of `[A-Za-z0-9_-]` segments resolve; `..`, absolute paths and extensions are errors.
+  A module evaluates in a fresh scope, so it sees neither the body's variables nor its resolver.
+  Import cycles are reported, not a stack overflow.
+- `ModuleDir::changed(path)` drops that module and every cached module importing it, runs the
+  `on_reload` hooks with the affected names and returns them; `Compiled::imports()` lists a
+  slot's `import` names so a consumer can re-run the bodies that need it. A load that overlaps a
+  `changed` call is not cached, so it can't keep serving the code from before the edit.
+  `ModuleDir::is_helper_call(ctx)` tells a host verb it was called from a module function.
+- Behaviour change: a host built with `Host::builder` no longer carries rhai's default
+  `FileModuleResolver` rooted at the working directory, which let any body `import` an
+  arbitrary file. Without `modules(..)`, `import` fails.
+
 ## 1.4.0 — 2026-10-31
 
 - `atomic { BODY } rollback (e, committed) { ARM }`: a second name in the rollback arm binds the

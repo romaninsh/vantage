@@ -33,6 +33,10 @@ pub(crate) struct DioInner {
     /// The clauses the master refused, or never saw because they name an
     /// augmented column. Evaluated by diorama over the rows it holds.
     pub(crate) residual: VistaQuery,
+    /// `residual` with each condition's value as the master compares it
+    /// ([`Vista::comparable`]): what cached rows, which hold the master's
+    /// typed values, are judged by.
+    pub(crate) comparable_residual: VistaQuery,
     /// The master's applied query with the residual laid over it: everything
     /// this Dio is narrowed by. Its key is the cache identity.
     pub(crate) query: VistaQuery,

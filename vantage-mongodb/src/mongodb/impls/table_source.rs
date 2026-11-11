@@ -24,6 +24,7 @@ use vantage_vista::Transaction;
 use crate::mongodb::MongoDB;
 use crate::mongodb::impls::joins::{imported_columns, join_alias_of, table_joins};
 use crate::mongodb::tx::in_session;
+use crate::mongodb::validation::validation_failed;
 use crate::mongodb::view::undeclared_view;
 use crate::select::join::{alias_index, filter_uses_joins};
 use crate::select::{JoinColumn, MongoSelect};
@@ -184,6 +185,27 @@ fn record_to_doc(record: &Record<AnyMongoType>) -> bson::Document {
     d
 }
 
+/// Put `value` where `$set` would: a dotted key (`"address.city"`) walks
+/// into sub-documents, creating them and overwriting a scalar in the way.
+pub(crate) fn set_dotted(doc: &mut bson::Document, key: &str, value: Bson) {
+    match key.split_once('.') {
+        None => {
+            doc.insert(key, value);
+        }
+        Some((head, rest)) => {
+            let entry = doc
+                .entry(head.to_string())
+                .or_insert_with(|| Bson::Document(bson::Document::new()));
+            if !matches!(entry, Bson::Document(_)) {
+                *entry = Bson::Document(bson::Document::new());
+            }
+            if let Bson::Document(sub) = entry {
+                set_dotted(sub, rest, value);
+            }
+        }
+    }
+}
+
 fn is_duplicate_key(e: &mongodb::error::Error) -> bool {
     use mongodb::error::{ErrorKind, WriteFailure};
     matches!(
@@ -196,21 +218,25 @@ fn is_duplicate_key(e: &mongodb::error::Error) -> bool {
 const WRITE_CONFLICT: i32 = 112;
 
 /// A failed write to `collection`: an undeclared server-side view gets its
-/// own unsupported error, anything else `message` with the driver's details,
-/// marked a conflict when another transaction holds the document.
+/// own unsupported error, a validator refusal names the broken rules,
+/// anything else `message` with the driver's details, marked a conflict when
+/// another transaction holds the document.
 fn write_failed(
     e: &mongodb::error::Error,
     collection: &str,
     message: &'static str,
 ) -> vantage_core::VantageError {
-    undeclared_view(e, collection).unwrap_or_else(|| {
-        let err = error!(message, details = e.to_string());
-        if matches!(&*e.kind, mongodb::error::ErrorKind::Command(c) if c.code == WRITE_CONFLICT) {
-            err.mark_conflict()
-        } else {
-            err
-        }
-    })
+    undeclared_view(e, collection)
+        .or_else(|| validation_failed(e, collection))
+        .unwrap_or_else(|| {
+            let err = error!(message, details = e.to_string());
+            if matches!(&*e.kind, mongodb::error::ErrorKind::Command(c) if c.code == WRITE_CONFLICT)
+            {
+                err.mark_conflict()
+            } else {
+                err
+            }
+        })
 }
 
 impl MongoDB {
@@ -786,9 +812,11 @@ impl TableSource for MongoDB {
             merged.remove(name);
         }
         let mut set_doc = bson::Document::new();
+        // A dotted key sets one leaf of a sub-document; `merged` mirrors it so
+        // the set check reads the row the update stores.
         for (k, v) in partial.iter() {
             set_doc.insert(k, v.value().clone());
-            merged.insert(k, v.value().clone());
+            set_dotted(&mut merged, k, v.value().clone());
         }
         if !self.row_in_set(table, &merged).await? {
             return Err(error!(

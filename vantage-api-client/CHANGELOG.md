@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.3.1 — 2026-11-11
+
+- The REST vista factory accepts the YAML types `date`, `time`, `timestamp` and `bytes`, read
+  and written as text. The GraphQL factory accepts `bytes` as an integer byte count.
+
 ## 2.3.0 — 2026-11-10
 
 Requires vantage-api-pool 1.2.0.

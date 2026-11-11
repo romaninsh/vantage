@@ -8,7 +8,7 @@ use crate::{
     id_generator::{IdGenerator, IdGeneratorShell},
     metadata::VistaMetadata,
     page::Preview,
-    query::VistaQuery,
+    query::{Condition, VistaQuery},
     reference::Reference,
     shell::TableShell,
 };
@@ -113,6 +113,30 @@ impl Vista {
     /// methods. A refused clause is not recorded.
     pub fn query(&self) -> &VistaQuery {
         &self.applied
+    }
+
+    /// [`query`](Self::query) with each condition's value as the backend
+    /// compares it ([`TableShell::comparable_condition`]): what to hold the
+    /// rows this Vista reads or pushes against in memory.
+    pub fn comparable_query(&self) -> VistaQuery {
+        self.comparable(&self.applied)
+    }
+
+    /// `condition` with its value as the backend compares it
+    /// ([`TableShell::comparable_condition`]).
+    pub fn comparable_condition(&self, condition: &Condition) -> Condition {
+        self.shell.comparable_condition(condition)
+    }
+
+    /// `query` with each condition's value as the backend compares it: what
+    /// to hold rows read from this Vista against in memory, for clauses it
+    /// never applied.
+    pub fn comparable(&self, query: &VistaQuery) -> VistaQuery {
+        let mut query = query.clone();
+        for condition in &mut query.conditions {
+            *condition = self.shell.comparable_condition(condition);
+        }
+        query
     }
 
     /// Whether a condition, search or native condition limits this set.

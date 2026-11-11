@@ -11,11 +11,12 @@ use std::time::Duration;
 
 use futures::StreamExt;
 use uuid::Uuid;
+use vantage_dataset::prelude::ReadableValueSet;
 use vantage_surrealdb::surrealdb::SurrealDB;
 use vantage_surrealdb::vista::factory::SurrealVistaFactory;
 use vantage_table::table::Table;
 use vantage_types::EmptyEntity;
-use vantage_vista::{Capability, VistaChange};
+use vantage_vista::{Capability, FilterOp, VistaChange, VistaFactory, VistaMetadata};
 
 use surreal_client::{SurrealClient, SurrealConnection};
 
@@ -111,5 +112,113 @@ async fn vista_watch_reports_insert_update_delete() -> TestResult {
         other => panic!("expected Deleted, got {other:?}"),
     }
 
+    Ok(())
+}
+
+/// The database compares a bare key on a link column as a record and date
+/// text on a date column as a datetime. A row pushed by a live update must
+/// match the same filter in memory, which is how a diorama cache decides it
+/// stays in the set.
+#[tokio::test]
+async fn typed_filter_matches_its_own_pushed_row() -> TestResult {
+    let database = format!("watch_{}", Uuid::new_v4().simple());
+    let writer = connect(&database).await;
+    writer
+        .query(
+            "DEFINE TABLE loan SCHEMALESS; \
+             CREATE loan:a SET client = client:abc, due = d'2026-12-10T00:00:00Z', n = 1; \
+             CREATE loan:b SET client = client:xyz, due = d'2026-12-11T00:00:00Z', n = 1;",
+            None,
+        )
+        .await?;
+
+    let db = SurrealDB::new(connect(&database).await);
+    let vista = db
+        .vista_factory()
+        .from_yaml(
+            r#"
+name: loan
+columns:
+  id: { type: thing, flags: [id] }
+  client: { type: string, references: client }
+  due: { type: date }
+  n: { type: int }
+"#,
+        )?
+        .with_condition("client", FilterOp::Eq, "abc")?
+        .with_condition("due", FilterOp::Eq, "2026-12-10")?;
+    let mut metadata = VistaMetadata::new();
+    metadata.columns = vista.columns().clone();
+    let comparable = vista.comparable_query();
+
+    let rows = vista.list_values().await?;
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    for row in rows.values() {
+        assert!(comparable.matches(row, &metadata)?, "{row:?}");
+    }
+
+    let mut stream = vista.watch().await?;
+    writer.query("UPDATE loan:a SET n = 2", None).await?;
+    match next_change(&mut stream).await {
+        VistaChange::Updated { value, .. } => {
+            assert!(comparable.matches(&value, &metadata)?, "{value:?}");
+        }
+        other => panic!("expected Updated, got {other:?}"),
+    }
+    writer
+        .query(&format!("REMOVE DATABASE {database}"), None)
+        .await?;
+    Ok(())
+}
+
+/// The server closes the watched socket (a burst of notifications overflows
+/// its queue): the vista's stream ends, and watching again over the same
+/// datasource works, because the client reconnected in place.
+#[tokio::test]
+async fn vista_watch_ends_on_close_and_watches_again() -> TestResult {
+    let database = format!("watch_{}", Uuid::new_v4().simple());
+    let table_name = format!("bar_{}", Uuid::new_v4().simple());
+    let writer = connect(&database).await;
+    writer
+        .query(&format!("DEFINE TABLE {table_name} SCHEMALESS"), None)
+        .await?;
+
+    let client = connect(&database).await;
+    let db = SurrealDB::new(client.clone());
+    let vista =
+        SurrealVistaFactory::new(db.clone()).from_table(product_table(db.clone(), &table_name))?;
+    let mut stream = vista.watch().await?;
+    // More live queries on the same socket multiply the burst.
+    let mut amplifiers = Vec::new();
+    for _ in 0..4 {
+        amplifiers.push(client.live(&table_name).await?);
+    }
+
+    writer
+        .query(
+            &format!("BEGIN; FOR $i IN 1..=1000 {{ CREATE {table_name} SET n = $i; }}; COMMIT;"),
+            None,
+        )
+        .await?;
+    let ended = tokio::time::timeout(Duration::from_secs(3), async {
+        while let Some(Ok(_)) = stream.next().await {}
+    })
+    .await;
+    assert!(
+        ended.is_ok(),
+        "the watch stream ends when the socket closes"
+    );
+
+    let mut again = vista.watch().await?;
+    writer
+        .query(&format!("CREATE {table_name}:late SET name = 'Late'"), None)
+        .await?;
+    match next_change(&mut again).await {
+        VistaChange::Inserted { id, .. } => assert!(id.ends_with(":late"), "{id}"),
+        other => panic!("expected Inserted, got {other:?}"),
+    }
+    writer
+        .query(&format!("REMOVE DATABASE {database}"), None)
+        .await?;
     Ok(())
 }

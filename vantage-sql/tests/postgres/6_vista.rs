@@ -119,6 +119,32 @@ async fn clients_orders(suffix: &str) -> (PostgresDB, String, String) {
     (db, client_t, orders_t)
 }
 
+async fn typed_events(suffix: &str) -> (PostgresDB, String) {
+    let db = PostgresDB::connect(PG_URL).await.unwrap();
+    let name = format!("vista_events_{suffix}");
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP TABLE IF EXISTS \"{name}\""
+    )))
+    .execute(db.pool())
+    .await
+    .unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "CREATE TABLE \"{name}\" (
+            id TEXT PRIMARY KEY,
+            due DATE,
+            at TIMESTAMPTZ,
+            amount NUMERIC(10, 2),
+            qty BIGINT,
+            starts TIME,
+            size BIGINT
+        )"
+    )))
+    .execute(db.pool())
+    .await
+    .unwrap();
+    (db, name)
+}
+
 vista_tests!(PostgresVistaSpec, "postgres");
 
 #[tokio::test]

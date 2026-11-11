@@ -63,6 +63,9 @@ impl<T: ForwardShell + Clone> TableShell for T {
     fn add_condition(&mut self, condition: &Condition) -> Result<()> {
         ForwardShell::add_condition(self, condition)
     }
+    fn comparable_condition(&self, condition: &Condition) -> Condition {
+        ForwardShell::comparable_condition(self, condition)
+    }
     fn add_native_condition(&mut self, condition: NativeCondition) -> Result<()> {
         ForwardShell::add_native_condition(self, condition)
     }

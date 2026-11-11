@@ -10,10 +10,7 @@ use crate::{
     table::HookReturn,
     table::Table,
     table::sets::{
-        hooks::{
-            UpdateOf, run_after, run_after_delete_all, run_before, run_before_delete,
-            run_delete_all,
-        },
+        hooks::{UpdateOf, run_after, run_after_delete_all, run_before_delete, run_delete_all},
         invariants::{enforce_invariants, validate_invariants},
     },
 };
@@ -81,17 +78,11 @@ where
             stored: former.as_ref(),
             patch: true,
         };
-        run_before(
-            self.before_update_hooks(),
-            &mut partial,
-            Some(update),
-            erased,
-        )
-        .await?;
-        self.strip_imported_columns(&mut partial);
-        // A before-update hook may have set one; it isn't stored either way.
-        self.strip_expression_columns(&mut partial);
-        validate_invariants(&partial, self.invariants())?;
+        // Strips an expression column a before-update hook set; it isn't
+        // stored either way.
+        self.before_write(self.before_update_hooks(), &mut partial, Some(update))
+            .await?;
+        validate_invariants(&partial, &self.typed_invariants())?;
         let result = self
             .data_source()
             .patch_table_value(self, &id, &partial)
@@ -234,16 +225,9 @@ where
             stored: former.as_ref(),
             patch: false,
         };
-        run_before(
-            self.before_update_hooks(),
-            &mut record,
-            Some(update),
-            erased,
-        )
-        .await?;
-        self.strip_imported_columns(&mut record);
-        self.strip_expression_columns(&mut record);
-        enforce_invariants(&mut record, self.invariants())?;
+        self.before_write(self.before_update_hooks(), &mut record, Some(update))
+            .await?;
+        enforce_invariants(&mut record, &self.typed_invariants())?;
         let result = self
             .data_source()
             .replace_table_value(self, &id, &record)

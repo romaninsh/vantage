@@ -32,6 +32,7 @@ impl Lens {
             augmentations,
             augmented_columns,
             live,
+            retry_subscribe,
             cache_table_name,
             hub_key,
             explicit_hub,
@@ -46,11 +47,13 @@ impl Lens {
         let (write_tx, write_rx) = mpsc::channel(self.tuning().write_queue);
         let (event_bus, _event_rx) = broadcast::channel(EVENT_BUS_CAPACITY);
 
+        let comparable_residual = master.comparable(&residual);
         let inner = Arc::new(DioInner {
             _tally: crate::stats::Tally::dio(),
             lens: self.clone(),
             master,
             residual,
+            comparable_residual,
             query,
             metadata,
             id_column,
@@ -105,7 +108,7 @@ impl Lens {
         let follows = Follows {
             hub: HubFollower::join(&dio.inner),
             live: if dio.inner.live {
-                live_follow(&dio).await?
+                live_follow(&dio, retry_subscribe).await?
             } else {
                 None
             },
@@ -153,10 +156,21 @@ impl Follows {
 /// subscribes itself, as it always has. Should the feed and an older
 /// subscription both deliver a change, the second one finds the row already
 /// equal and writes nothing.
-async fn live_follow(dio: &Dio) -> Result<Option<Follower>> {
+///
+/// With `retry`, a failed subscription doesn't fail the build: the follow
+/// starts in its resubscribe loop (a feed among them, so its followers
+/// recover with it).
+async fn live_follow(dio: &Dio, retry: bool) -> Result<Option<Follower>> {
+    let subscribe = async || {
+        if retry {
+            Ok(dio.subscribe_or_retry().await)
+        } else {
+            dio.subscribe().await
+        }
+    };
     let inner = &dio.inner;
     let Some(hub) = inner.hub.as_ref() else {
-        return dio.subscribe().await;
+        return subscribe().await;
     };
     if !inner.master.capabilities().has(Capability::Subscribe) {
         return Ok(None);
@@ -166,7 +180,7 @@ async fn live_follow(dio: &Dio) -> Result<Option<Follower>> {
         let _ = inner.feed_source.set(feed);
         return Ok(None);
     }
-    let follower = dio.subscribe().await?;
+    let follower = subscribe().await?;
     if covers_the_table {
         hub.claim_feed(dio);
     }

@@ -33,10 +33,44 @@ pub(crate) fn path_get<'a>(row: &'a Record<CborValue>, path: &str) -> Option<&'a
         let CborValue::Map(entries) = current else {
             return None;
         };
-        current = entries.iter().find_map(|(key, value)| match key {
-            CborValue::Text(name) if name == segment => Some(value),
-            _ => None,
-        })?;
+        current = entry(entries, segment)?;
     }
     Some(current)
+}
+
+/// For a `column` [`cell_get`] reads as a path: the prefix whose cell holds
+/// a value that isn't a map (nor null), so the rest of the path can't be
+/// read in memory. `None` when the path reads, or stops at an absent key or
+/// a null.
+pub(crate) fn blocked_at<'a>(
+    row: &Record<CborValue>,
+    column: &'a str,
+    metadata: &VistaMetadata,
+) -> Option<&'a str> {
+    if !column.contains('.') || metadata.columns.contains_key(column) {
+        return None;
+    }
+    path_blocked_at(row, column)
+}
+
+fn path_blocked_at<'a>(row: &Record<CborValue>, path: &'a str) -> Option<&'a str> {
+    let mut segments = path.split('.');
+    let first = segments.next()?;
+    let mut current = row.get(first)?;
+    let mut end = first.len();
+    for segment in segments {
+        let CborValue::Map(entries) = current else {
+            return (!current.is_null()).then(|| &path[..end]);
+        };
+        current = entry(entries, segment)?;
+        end += 1 + segment.len();
+    }
+    None
+}
+
+fn entry<'a>(entries: &'a [(CborValue, CborValue)], segment: &str) -> Option<&'a CborValue> {
+    entries.iter().find_map(|(key, value)| match key {
+        CborValue::Text(name) if name == segment => Some(value),
+        _ => None,
+    })
 }

@@ -168,6 +168,39 @@ csv:
     Ok(())
 }
 
+/// CSV has no date or byte-count cell: the display types read the cell as
+/// text.
+#[tokio::test]
+async fn yaml_display_types_read_as_text() -> Result<()> {
+    let csv = Csv::new(data_dir());
+    let yaml = r#"
+name: client
+columns:
+  id: { type: string, flags: [id] }
+  name: { type: date }
+  email: { type: time }
+  contact_details: { type: timestamp }
+  is_paying_client: { type: bytes }
+csv:
+  path: client.csv
+"#;
+    let vista = csv.vista_factory().from_yaml(yaml)?;
+    let rows = vista.list_values().await?;
+    for (column, cell) in [
+        ("name", "Marty McFly"),
+        ("email", "marty@gmail.com"),
+        ("contact_details", "555-1955"),
+        ("is_paying_client", "true"),
+    ] {
+        assert_eq!(
+            rows["marty"].get(column),
+            Some(&CborValue::Text(cell.to_string())),
+            "{column}"
+        );
+    }
+    Ok(())
+}
+
 #[test]
 fn yaml_rejects_unknown_column_type() {
     let csv = Csv::new(data_dir());

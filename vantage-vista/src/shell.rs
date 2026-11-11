@@ -128,6 +128,15 @@ pub trait TableShell: CloneTableShell + Send + Sync + 'static {
     /// error. It never accepts the path and matches nothing.
     fn add_condition(&mut self, condition: &Condition) -> Result<()>;
 
+    /// `condition` with its value as the backend compares it: a shell that
+    /// types condition values by column (date text as a datetime, a key as a
+    /// record link) answers the typed value, so the rows it returns and
+    /// pushes match the condition in memory as they did in the database.
+    /// Default: as given.
+    fn comparable_condition(&self, condition: &Condition) -> Condition {
+        condition.clone()
+    }
+
     /// Narrow the set by a condition in the driver's own type
     /// ([`NativeConditions`](Capability::NativeConditions)). A condition of
     /// a type the driver doesn't take is an `IncorrectUsage` error.

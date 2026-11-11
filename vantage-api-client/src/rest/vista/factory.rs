@@ -245,7 +245,10 @@ fn column_for_type(name: &str, ty: &str) -> Result<TableColumn<CborValue>> {
             TableColumn::from_column(TableColumn::<f64>::new(name))
         }
         "bool" | "boolean" => TableColumn::from_column(TableColumn::<bool>::new(name)),
-        "string" | "text" | "str" => TableColumn::from_column(TableColumn::<String>::new(name)),
+        // The display types keep the API's value as given.
+        "string" | "text" | "str" | "date" | "time" | "timestamp" | "bytes" => {
+            TableColumn::from_column(TableColumn::<String>::new(name))
+        }
         "json" | "any" => TableColumn::from_column(TableColumn::<CborValue>::new(name)),
         other => {
             return Err(error!(

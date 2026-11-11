@@ -39,6 +39,17 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             .collect()
     }
 
+    /// The stored table name a has-one reference keyed by `column` points
+    /// at: the column holds links to that table. Drivers with typed links
+    /// (SurrealDB record ids) use it to type the column's values. `None`
+    /// when no has-one reads `column`.
+    pub fn has_one_target(&self, column: &str) -> Option<String> {
+        self.refs
+            .as_ref()?
+            .values()
+            .find_map(|r| r.has_one_target(column, &self.data_source))
+    }
+
     /// The contained relations declared on this table as Vista references of
     /// a contained kind, for driver factories to fold into `VistaMetadata`.
     /// The records' schema is derived at traversal from each relation's

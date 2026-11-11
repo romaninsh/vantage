@@ -58,7 +58,10 @@ pub struct Notification {
 
 /// A stream of [`Notification`]s for one live query.
 ///
-/// Yields until the underlying WebSocket closes. Dropping the stream sends
+/// Yields until the underlying WebSocket closes, then ends: the client
+/// reconnects on its next call, but the query is gone and changes made in
+/// the gap are not replayed, so a consumer subscribes again and re-reads.
+/// Dropping the stream sends
 /// `KILL` for its query in the background, so the server-side query is
 /// released without further action; the result is ignored. Outside a Tokio
 /// runtime nothing is sent. Use [`close`](Self::close) to kill the query
@@ -71,13 +74,15 @@ pub struct LiveStream {
     pub(crate) rx: mpsc::UnboundedReceiver<Notification>,
     /// Taken once the query has been killed, so it is killed only once.
     pub(crate) client: Option<SurrealClient>,
+    /// The client's socket generation when the query started.
+    pub(crate) generation: u64,
 }
 
 impl LiveStream {
     /// Kill the server-side live query and wait for the reply.
     pub async fn close(mut self) -> Result<()> {
         match self.client.take() {
-            Some(client) => client.kill(&self.query_id).await,
+            Some(client) => client.kill_on(&self.query_id, Some(self.generation)).await,
             None => Ok(()),
         }
     }
@@ -101,8 +106,9 @@ impl Drop for LiveStream {
         // `kill` locks the engine, so it must run on a task rather than block here.
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             let query_id = std::mem::take(&mut self.query_id);
+            let generation = self.generation;
             handle.spawn(async move {
-                let _ = client.kill(&query_id).await;
+                let _ = client.kill_on(&query_id, Some(generation)).await;
             });
         }
     }

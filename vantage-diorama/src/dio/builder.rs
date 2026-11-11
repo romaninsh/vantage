@@ -22,6 +22,7 @@ pub struct DioBuilder {
     master: Vista,
     augmentations: Option<Arc<Vec<Augmentation>>>,
     live: bool,
+    retry_subscribe: bool,
     residual: VistaQuery,
     hub: Option<String>,
     recheck_facts: bool,
@@ -37,6 +38,7 @@ pub(crate) struct DioParts {
     pub(crate) augmentations: Option<Arc<Vec<Augmentation>>>,
     pub(crate) augmented_columns: HashSet<String>,
     pub(crate) live: bool,
+    pub(crate) retry_subscribe: bool,
     pub(crate) cache_table_name: String,
     /// The hub this Dio joins, `None` for one that joins none.
     pub(crate) hub_key: Option<String>,
@@ -52,6 +54,7 @@ impl DioBuilder {
             master,
             augmentations: None,
             live: false,
+            retry_subscribe: false,
             residual: VistaQuery::new(),
             hub: None,
             recheck_facts: false,
@@ -125,6 +128,16 @@ impl DioBuilder {
         self
     }
 
+    /// With [`live`](Self::live): when the first subscription fails, build
+    /// anyway instead of failing, and let the follow keep subscribing with
+    /// back-off (0.2 s doubling to 30 s), re-reading the set once it does.
+    /// For a backend whose connection can drop and come back, where a Dio
+    /// built during the outage would otherwise never follow again.
+    pub fn retry_subscribe(mut self) -> Self {
+        self.retry_subscribe = true;
+        self
+    }
+
     /// A derived Dio: the parent's augmentations (the same `Arc`), its live
     /// setting, and the residual the derivation computed.
     pub(crate) fn derived(
@@ -160,13 +173,15 @@ impl DioBuilder {
     ///
     /// Fails when the master declares no id column, since every cached row
     /// is keyed by it; when the cache table can't be opened; when a blocking
-    /// eager start fails; and when the live subscription can't be made.
+    /// eager start fails; and when the live subscription can't be made,
+    /// unless [`retry_subscribe`](Self::retry_subscribe) is set.
     pub async fn build(self) -> Result<Dio> {
         let Self {
             lens,
             master,
             augmentations,
             live,
+            retry_subscribe,
             residual,
             hub,
             recheck_facts,
@@ -213,6 +228,7 @@ impl DioBuilder {
                 augmentations,
                 augmented_columns,
                 live,
+                retry_subscribe,
                 cache_table_name,
                 hub_key,
                 explicit_hub: hub,

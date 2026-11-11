@@ -81,7 +81,10 @@ fn column_for_type(name: &str, ty: &str) -> Result<TableColumn<AnyJsonType>> {
             TableColumn::from_column(TableColumn::<f64>::new(name))
         }
         "bool" | "boolean" => TableColumn::from_column(TableColumn::<bool>::new(name)),
-        "string" | "text" | "str" => TableColumn::from_column(TableColumn::<String>::new(name)),
+        // The display types are written as given.
+        "string" | "text" | "str" | "date" | "time" | "timestamp" | "bytes" => {
+            TableColumn::from_column(TableColumn::<String>::new(name))
+        }
         "json" | "object" | "array" => {
             TableColumn::from_column(TableColumn::<serde_json::Value>::new(name))
         }

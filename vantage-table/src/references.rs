@@ -82,4 +82,14 @@ pub trait Reference: Send + Sync {
     /// Otherwise, the table name of the target built over `data_source`
     /// (`&T`).
     fn target_table_name(&self, data_source: &dyn Any) -> String;
+
+    /// The stored table name of the target, when this is a has-one whose
+    /// key on the source is `column`. See [`Table::has_one_target`].
+    /// Default `None`.
+    ///
+    /// [`Table::has_one_target`]: crate::table::Table::has_one_target
+    fn has_one_target(&self, column: &str, data_source: &dyn Any) -> Option<String> {
+        let _ = (column, data_source);
+        None
+    }
 }

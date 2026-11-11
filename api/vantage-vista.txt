@@ -88,6 +88,7 @@ impl vantage_vista::TableShell for vantage_vista::mocks::MockShell
 pub fn vantage_vista::mocks::MockShell::add_condition(&mut self, &vantage_vista::Condition) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::mocks::MockShell::add_native_condition(&mut self, vantage_vista::NativeCondition) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::mocks::MockShell::capabilities(&self) -> &vantage_vista::VistaCapabilities
+pub fn vantage_vista::mocks::MockShell::comparable_condition(&self, &vantage_vista::Condition) -> vantage_vista::Condition
 pub fn vantage_vista::mocks::MockShell::count<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<i64>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
 pub fn vantage_vista::mocks::MockShell::delete<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
 pub fn vantage_vista::mocks::MockShell::delete_all<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
@@ -270,6 +271,9 @@ impl vantage_vista::Vista
 pub fn vantage_vista::Vista::capabilities(&self) -> &vantage_vista::VistaCapabilities
 pub fn vantage_vista::Vista::column(&self, &str) -> core::option::Option<&vantage_vista::Column>
 pub fn vantage_vista::Vista::columns(&self) -> &indexmap::map::IndexMap<alloc::string::String, vantage_vista::Column>
+pub fn vantage_vista::Vista::comparable(&self, &vantage_vista::VistaQuery) -> vantage_vista::VistaQuery
+pub fn vantage_vista::Vista::comparable_condition(&self, &vantage_vista::Condition) -> vantage_vista::Condition
+pub fn vantage_vista::Vista::comparable_query(&self) -> vantage_vista::VistaQuery
 pub fn vantage_vista::Vista::denials(&self) -> vantage_vista::Denials
 pub fn vantage_vista::Vista::deny(self, vantage_vista::Denials) -> Self
 pub fn vantage_vista::Vista::driver_name(&self) -> &'static str
@@ -1374,6 +1378,9 @@ impl vantage_vista::Vista
 pub fn vantage_vista::Vista::capabilities(&self) -> &vantage_vista::VistaCapabilities
 pub fn vantage_vista::Vista::column(&self, &str) -> core::option::Option<&vantage_vista::Column>
 pub fn vantage_vista::Vista::columns(&self) -> &indexmap::map::IndexMap<alloc::string::String, vantage_vista::Column>
+pub fn vantage_vista::Vista::comparable(&self, &vantage_vista::VistaQuery) -> vantage_vista::VistaQuery
+pub fn vantage_vista::Vista::comparable_condition(&self, &vantage_vista::Condition) -> vantage_vista::Condition
+pub fn vantage_vista::Vista::comparable_query(&self) -> vantage_vista::VistaQuery
 pub fn vantage_vista::Vista::denials(&self) -> vantage_vista::Denials
 pub fn vantage_vista::Vista::deny(self, vantage_vista::Denials) -> Self
 pub fn vantage_vista::Vista::driver_name(&self) -> &'static str
@@ -1570,6 +1577,7 @@ pub trait vantage_vista::TableShell: vantage_vista::CloneTableShell + core::mark
 pub fn vantage_vista::TableShell::add_condition(&mut self, &vantage_vista::Condition) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::TableShell::add_native_condition(&mut self, vantage_vista::NativeCondition) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::TableShell::capabilities(&self) -> &vantage_vista::VistaCapabilities
+pub fn vantage_vista::TableShell::comparable_condition(&self, &vantage_vista::Condition) -> vantage_vista::Condition
 pub fn vantage_vista::TableShell::count<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<i64>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
 pub fn vantage_vista::TableShell::delete<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
 pub fn vantage_vista::TableShell::delete_all<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
@@ -1597,6 +1605,7 @@ impl vantage_vista::TableShell for vantage_vista::mocks::MockShell
 pub fn vantage_vista::mocks::MockShell::add_condition(&mut self, &vantage_vista::Condition) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::mocks::MockShell::add_native_condition(&mut self, vantage_vista::NativeCondition) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::mocks::MockShell::capabilities(&self) -> &vantage_vista::VistaCapabilities
+pub fn vantage_vista::mocks::MockShell::comparable_condition(&self, &vantage_vista::Condition) -> vantage_vista::Condition
 pub fn vantage_vista::mocks::MockShell::count<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<i64>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
 pub fn vantage_vista::mocks::MockShell::delete<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
 pub fn vantage_vista::mocks::MockShell::delete_all<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
@@ -1624,6 +1633,7 @@ impl<T: vantage_vista::forward::shell::ForwardShell + core::clone::Clone> vantag
 pub fn T::add_condition(&mut self, &vantage_vista::Condition) -> vantage_core::util::error::Result<()>
 pub fn T::add_native_condition(&mut self, vantage_vista::NativeCondition) -> vantage_core::util::error::Result<()>
 pub fn T::capabilities(&self) -> &vantage_vista::VistaCapabilities
+pub fn T::comparable_condition(&self, &vantage_vista::Condition) -> vantage_vista::Condition
 pub fn T::count<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<i64>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
 pub fn T::delete<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
 pub fn T::delete_all<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<()>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait

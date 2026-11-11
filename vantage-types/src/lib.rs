@@ -6,6 +6,7 @@ pub use vantage_types_entity::entity;
 
 #[cfg(feature = "serde")]
 pub mod cbor_json;
+pub mod coerce;
 pub mod null;
 pub mod prelude;
 pub mod record;
@@ -18,6 +19,7 @@ pub use cbor_json::{
     cbor_to_string, hex_encode, json_to_cbor, json_to_cbor_with_hint, record_to_json,
     rfc3339_to_tag12, tag12_to_rfc3339,
 };
+pub use coerce::LenientValue;
 pub use null::InvariantValue;
 pub use record::{IntoRecord, Record, TryFromRecord, TryIntoRecord};
 pub use terminal_render::{RichText, Span, Style, TerminalRender};

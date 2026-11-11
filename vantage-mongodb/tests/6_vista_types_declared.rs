@@ -143,6 +143,33 @@ async fn declared_types_coerce_on_insert() -> TestResult {
     Ok(())
 }
 
+/// BSON has no time-of-day: `time` is text. `bytes` is a byte count.
+#[tokio::test]
+async fn declared_time_is_text_and_bytes_an_integer() -> TestResult {
+    let (db, name) = setup().await;
+    let yaml = r#"
+name: event
+columns:
+  _id: { flags: [id] }
+  starts: { type: time }
+  size: { type: bytes }
+mongo:
+  collection: events
+"#;
+    let spec: MongoVistaSpec = serde_yaml_ng::from_str(yaml)?;
+    let vista = db.vista_factory().build_from_spec(spec)?;
+    let mut row = Record::new();
+    row.insert("starts".into(), text("09:30:00"));
+    row.insert("size".into(), CborValue::Integer(1536i64.into()));
+    vista.insert_value("e1", &row).await?;
+    let stored = raw(&db, "e1").await;
+    assert_eq!(stored.get("starts"), Some(&Bson::String("09:30:00".into())));
+    assert_eq!(stored.get("size"), Some(&Bson::Int64(1536)));
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
 #[tokio::test]
 async fn declared_type_rejects_bad_text() -> TestResult {
     let (db, name) = setup().await;

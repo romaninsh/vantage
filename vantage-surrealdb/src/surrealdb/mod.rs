@@ -1,6 +1,8 @@
+pub(crate) mod declared;
 pub mod impls;
 pub(crate) mod references;
 pub(crate) mod rollup;
+mod schema;
 pub(crate) mod tx;
 
 use std::sync::{Arc, Mutex};
@@ -19,7 +21,7 @@ pub struct SurrealDB {
     key: Arc<()>,
     tx: Option<Arc<SurrealTx>>,
     transactions: bool,
-    /// The `REFERENCE` links [`SurrealDB::check_references`] found, shared by
-    /// every clone.
+    /// The `REFERENCE` links and field types [`SurrealDB::check_schema`]
+    /// found, shared by every clone.
     references: Arc<Mutex<ReferenceLinks>>,
 }

@@ -1,5 +1,37 @@
 # Changelog
 
+## 2.3.0 — 2026-11-11
+
+- Typed writes. The driver implements `TableSource::coerce_column_value`, so a written value is
+  typed by its column before it reaches the database: `"2026-12-10"` on a `date` or `timestamp`
+  column becomes a SurrealDB datetime, `"client:bob"` or a bare key on a column that is a
+  has-one key or declares `references:` becomes a record link, number text becomes a number. A
+  value that does not fit is `ErrorKind::InvalidValue` and nothing is written. Hook output is
+  idempotent, so a row read and written back unchanged stays unchanged; a stored datetime on a
+  `date` column passes as it is even when it is not at midnight UTC, while date text with a time
+  of day is refused. A Rust-typed column declared `Option<T>` is typed as `T`.
+- No value on a typed column (null, `""`, or a patch that clears it) is written as `NONE`.
+  `string` columns keep `NULL`.
+- The factory accepts the full YAML type vocabulary from one list: int, float, bool, string,
+  thing/record, timestamp/datetime, date, time, duration, decimal and `bytes`. `bytes` is an
+  integer byte count, as in the UI schema; `binary` data is `Vec<u8>` in typed tables. New type
+  impls for `NaiveDate`, `NaiveTime` and `std::time::Duration` (text such as `1h30m` is parsed).
+- Conditions type their operands with the same hook (`narrow.rs`), so `due = "2026-12-10"` and
+  `client = "abc"` match what a write would store, including inside `in` lists and on `expr:`
+  columns over record links. A value that does not fit is compared as given and matches nothing.
+  The shell's `comparable_condition` returns the typed form for live admission.
+- `SurrealDB::check_schema()` reads `INFO FOR DB` and `INFO FOR TABLE` for references and field
+  types. `SurrealDB::schema_mismatches(&Table)` returns `SchemaMismatch` entries (a `string`
+  column over a `datetime` field, a typed column whose field takes `null` but not `none`) with a
+  hint, and building a stored table logs each once. `check_references` is deprecated for
+  `check_schema`.
+- Fix: a roll-up over a `keys:` relation joined on a parent column other than the id reads that
+  column: `doc<~(line FIELD doc)` over a `REFERENCE` link (a parent without the column has no
+  rows), else `WHERE doc = $parent.doc`. Its slow-form warning names the link field and the
+  table the parent's key column references.
+- Requires surreal-client 1.2.0, vantage-table 3.7.0, vantage-types 1.1.0, vantage-vista 2.10.0
+  and vantage-core 1.3.0.
+
 ## 2.2.4 — 2026-11-07
 
 - Requires vantage-vista 2.9.0, vantage-table 3.5.0 and vantage-expressions 1.3.0.

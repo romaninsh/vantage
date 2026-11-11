@@ -6,7 +6,7 @@
 mod support;
 
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -18,8 +18,8 @@ use vantage_dataset::traits::ReadableValueSet;
 use vantage_diorama::{Cache, Dio, DioEvent, Lens};
 use vantage_types::Record;
 use vantage_vista::{
-    Capability, NativeCondition, TableShell, Vista, VistaCapabilities, VistaChange,
-    VistaChangeStream, forward_table_shell, mocks::MockShell,
+    Capability, Condition, FilterOp, NativeCondition, TableShell, Vista, VistaCapabilities,
+    VistaChange, VistaChangeStream, forward_table_shell, mocks::MockShell,
 };
 
 use support::spy_cache::{SpyCache, SpyTable};
@@ -40,6 +40,8 @@ struct Streams {
     /// The first stream waits for one permit before its script.
     gate: Option<Arc<Semaphore>>,
     opened: Arc<AtomicUsize>,
+    /// While set, subscribing fails: the backend is unreachable.
+    refusing: Arc<AtomicBool>,
 }
 
 /// A watchable master pushing [`Streams`]. It takes any native condition,
@@ -53,6 +55,9 @@ struct Scripted {
 
 forward_table_shell!(Scripted, inner, {
     async fn watch(&self) -> Result<VistaChangeStream> {
+        if self.streams.refusing.load(Ordering::SeqCst) {
+            return Err(vantage_core::error!("the backend is unreachable"));
+        }
         let first = self.streams.opened.fetch_add(1, Ordering::SeqCst) == 0;
         let script = self
             .streams
@@ -100,6 +105,7 @@ fn streams(scripts: Vec<Script>) -> Streams {
         end: false,
         gate: None,
         opened: Arc::default(),
+        refusing: Arc::default(),
     }
 }
 
@@ -224,6 +230,86 @@ async fn under_a_native_condition_a_push_re_reads_the_set() -> Result<()> {
     Ok(())
 }
 
+/// A master that compares `client` as a record link, as SurrealDB does: a
+/// filter's bare key narrows to the rows holding that link.
+#[derive(Clone)]
+struct Linking {
+    inner: Box<dyn TableShell>,
+}
+
+fn link(key: &str) -> CborValue {
+    CborValue::Tag(
+        8,
+        Box::new(CborValue::Array(vec!["client".into(), key.into()])),
+    )
+}
+
+fn linked(condition: &Condition) -> Condition {
+    let mut typed = condition.clone();
+    if let (CborValue::Text(key), "client") = (&condition.value, condition.column.as_str()) {
+        typed.value = link(key);
+    }
+    typed
+}
+
+forward_table_shell!(Linking, inner, {
+    fn add_condition(&mut self, condition: &Condition) -> Result<()> {
+        self.inner.add_condition(&linked(condition))
+    }
+    fn comparable_condition(&self, condition: &Condition) -> Condition {
+        linked(condition)
+    }
+});
+
+fn loan(id: &str, client: &str, n: i64) -> Record<CborValue> {
+    [
+        ("id".to_string(), CborValue::from(id)),
+        ("client".to_string(), link(client)),
+        ("n".to_string(), CborValue::from(n)),
+    ]
+    .into_iter()
+    .collect()
+}
+
+/// A pushed row holds the typed value its backend compared the filter's
+/// text as, so the follow judges it by the typed condition and keeps it.
+#[tokio::test]
+async fn a_typed_filter_keeps_its_row_through_a_live_update() -> Result<()> {
+    let update = vec![Ok(VistaChange::Updated {
+        id: "a".into(),
+        value: loan("a", "abc", 2),
+    })];
+    let shell = MockShell::new()
+        .with_metadata(meta(&["id", "client", "n"]))
+        .with_record("a", loan("a", "abc", 1))
+        .with_record("b", loan("b", "xyz", 1));
+    let capabilities = shell.capabilities().with(Capability::Subscribe);
+    let streams = streams(vec![update]);
+    let master = Vista::new("loans", shell)
+        .map_shell(|inner| Scripted {
+            inner,
+            capabilities,
+            streams,
+        })
+        .map_shell(|inner| Linking { inner })
+        .with_condition("client", FilterOp::Eq, "abc")?;
+    let dio = memory().dio(master).live().build().await?;
+
+    let updated = tokio::time::timeout(WITHIN, async {
+        loop {
+            let a = dio.cached().get_value("a").await.ok().flatten();
+            if a.is_some_and(|row| row.get("n") == Some(&CborValue::from(2))) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    assert!(updated.is_ok(), "cached {:?}", cached_ids(&dio).await);
+    assert_eq!(cached_ids(&dio).await, ["a"]);
+    Ok(())
+}
+
 /// A live Dio over a spied cache whose master holds `a` and `b` and, once
 /// `gate` opens, pushes both together.
 async fn spied(gate: &Arc<Semaphore>) -> Result<(Dio, Arc<SpyTable>)> {
@@ -297,6 +383,62 @@ async fn a_row_the_cache_refuses_is_not_announced_and_the_re_read_is_retried() -
         "the retried re-read never landed b: {:?}",
         cached_ids(&dio).await
     );
+    Ok(())
+}
+
+/// The backend can't be subscribed to when the Dio is built. With
+/// `retry_subscribe` the build goes ahead and the follow keeps trying; once
+/// it subscribes it re-reads, so the open view shows a row written while
+/// nothing was followed.
+#[tokio::test]
+async fn scenery_recovers_after_a_failed_first_subscribe() -> Result<()> {
+    let shell = MockShell::new()
+        .with_metadata(meta(&["id", "name"]))
+        .with_capabilities(VistaCapabilities::new().with(Capability::Window))
+        .with_record("a", row("a"));
+    let streams = streams(vec![]);
+    streams.refusing.store(true, Ordering::SeqCst);
+    let (refusing, opened) = (streams.refusing.clone(), streams.opened.clone());
+    let capabilities = shell.capabilities().with(Capability::Subscribe);
+    let vista = Vista::new("items", shell.clone()).map_shell(|inner| Scripted {
+        inner,
+        capabilities,
+        streams,
+    });
+    let dio = memory_lens(page_master())
+        .dio(vista)
+        .live()
+        .retry_subscribe()
+        .build()
+        .await?;
+    let scenery = dio.table_scenery().open().await?;
+    scenery.set_viewport(0..3, 0..0);
+    let names = || -> Vec<String> {
+        (0..scenery.row_count())
+            .filter_map(|i| scenery.row(i))
+            .filter_map(|r| match r.record.get("name") {
+                Some(CborValue::Text(name)) => Some(name.clone()),
+                _ => None,
+            })
+            .collect()
+    };
+    assert!(
+        eventually(WITHIN, || names() == ["a"]).await,
+        "{:?}",
+        names()
+    );
+
+    shell.set_record("b", row("b"));
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert_eq!(names(), ["a"], "nothing re-reads while it can't subscribe");
+    refusing.store(false, Ordering::SeqCst);
+
+    assert!(
+        eventually(WITHIN, || names() == ["a", "b"]).await,
+        "{:?}",
+        names()
+    );
+    assert_eq!(opened.load(Ordering::SeqCst), 1, "subscribed once it could");
     Ok(())
 }
 

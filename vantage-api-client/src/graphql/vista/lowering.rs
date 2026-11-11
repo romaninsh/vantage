@@ -180,7 +180,9 @@ fn column_for_type(name: &str, ty: &str) -> Result<TableColumn<AnyGraphqlType>> 
 
     let col: TableColumn<AnyGraphqlType> = match ty {
         "int" | "integer" | "i32" => TableColumn::from_column(TableColumn::<i32>::new(name)),
-        "bigint" | "i64" | "long" => TableColumn::from_column(TableColumn::<i64>::new(name)),
+        "bigint" | "i64" | "long" | "bytes" => {
+            TableColumn::from_column(TableColumn::<i64>::new(name))
+        }
         "float" | "double" | "f64" | "f32" => {
             TableColumn::from_column(TableColumn::<f64>::new(name))
         }

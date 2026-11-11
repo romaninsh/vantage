@@ -140,6 +140,7 @@ impl SurrealTypeVariants {
 mod bool;
 mod datetime;
 mod decimal;
+mod duration;
 mod generic;
 mod numbers;
 mod string;

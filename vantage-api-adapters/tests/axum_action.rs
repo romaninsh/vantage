@@ -40,6 +40,7 @@ fn failing_record(table: &str, name: &str, kind: &'static str) -> Arc<dyn ModelA
                 "not_found" => e.mark_not_found(),
                 "incorrect_usage" => e.mark_incorrect_usage(),
                 "conflict" => e.mark_conflict(),
+                "invalid_value" => e.mark_invalid_value(),
                 _ => e,
             })
         },
@@ -119,6 +120,7 @@ async fn status_follows_the_error_kind_not_the_message() {
         ("not_found", StatusCode::NOT_FOUND),
         ("incorrect_usage", StatusCode::BAD_REQUEST),
         ("conflict", StatusCode::CONFLICT),
+        ("invalid_value", StatusCode::UNPROCESSABLE_ENTITY),
         ("generic", StatusCode::INTERNAL_SERVER_ERROR),
     ] {
         let app: Router = ActionRouter::new(vec![failing_record("tag", "go", kind)])

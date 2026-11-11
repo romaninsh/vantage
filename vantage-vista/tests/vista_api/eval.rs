@@ -1,6 +1,11 @@
 use std::cmp::Ordering;
+use std::fmt::Write as _;
+use std::sync::{Arc, Mutex};
 
 use ciborium::Value as CborValue;
+use tracing::field::{Field, Visit};
+use tracing_subscriber::Layer;
+use tracing_subscriber::layer::{Context, SubscriberExt};
 use vantage_vista::eval::{cbor_cmp, cell_get};
 use vantage_vista::{
     Column, ColumnFlag, Condition, FilterOp, SortDirection, VistaMetadata, VistaQuery,
@@ -100,6 +105,40 @@ fn text_compares_by_code_point_and_false_precedes_true() {
 }
 
 #[test]
+fn datetimes_order_by_instant_across_tags_and_offsets() {
+    let text = |s: &str| CborValue::Tag(0, Box::new(t(s)));
+    let epoch = |parts: &[i64]| {
+        CborValue::Tag(
+            12,
+            Box::new(CborValue::Array(parts.iter().map(|n| i(*n)).collect())),
+        )
+    };
+    // 2026-01-01T00:00:00Z is 1767225600; `+02:00` puts 01:00 two hours earlier.
+    assert_eq!(
+        cbor_cmp(
+            &text("2026-01-01T01:00:00+02:00"),
+            &epoch(&[1_767_222_000, 0])
+        ),
+        Ordering::Equal
+    );
+    assert_eq!(
+        cbor_cmp(
+            &text("2026-01-01T01:00:00+02:00"),
+            &text("2026-01-01T00:30:00Z")
+        ),
+        Ordering::Less
+    );
+    assert_eq!(
+        cbor_cmp(&epoch(&[1_767_225_600, 5]), &epoch(&[1_767_225_600])),
+        Ordering::Greater
+    );
+    assert_eq!(
+        cbor_cmp(&epoch(&[1_767_225_600]), &text("2026-01-01T00:00:00.5Z")),
+        Ordering::Less
+    );
+}
+
+#[test]
 fn a_datetime_is_taken_as_its_text() {
     let at = |s: &str| CborValue::Tag(0, Box::new(t(s)));
     assert_eq!(
@@ -163,6 +202,63 @@ fn a_dotted_column_reads_into_nested_maps() {
     assert!(cond("dims.w", FilterOp::Gt, i(6)).matches(&row, &meta));
     assert_eq!(cell_get(&row, "dims.w.deeper", &meta), None);
     assert_eq!(cell_get(&row, "nope.w", &meta), None);
+}
+
+/// Captures every warning `vantage_vista` emits on this thread.
+struct Warnings(Arc<Mutex<Vec<String>>>);
+
+struct Flat(String);
+
+impl Visit for Flat {
+    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+        let _ = write!(self.0, " {}={value:?}", field.name());
+    }
+}
+
+impl<S: tracing::Subscriber> Layer<S> for Warnings {
+    fn on_event(&self, event: &tracing::Event<'_>, _cx: Context<'_, S>) {
+        let meta = event.metadata();
+        if *meta.level() == tracing::Level::WARN && meta.target().starts_with("vantage_vista") {
+            let mut flat = Flat(String::new());
+            event.record(&mut flat);
+            self.0.lock().unwrap().push(flat.0);
+        }
+    }
+}
+
+#[test]
+fn a_condition_through_a_cell_that_is_not_a_map_warns_once() {
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let subscriber = tracing_subscriber::registry().with(Warnings(log.clone()));
+    let _guard = tracing::subscriber::set_default(subscriber);
+
+    let meta = VistaMetadata::new();
+    let text_place = rec(&[("place", t("Deadmines"))]);
+    let condition = cond("place.lfg_dungeon_id", FilterOp::Eq, i(3272));
+    assert!(!condition.matches(&text_place, &meta));
+    assert!(!condition.matches(&text_place, &meta));
+    let lines = log.lock().unwrap().clone();
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert!(
+        lines[0].contains("place.lfg_dungeon_id") && lines[0].contains("column=\"place\""),
+        "{lines:?}"
+    );
+
+    // The same column on another table warns once for that table too.
+    let other_table = VistaMetadata::new().with_column(Column::new("place", "String"));
+    assert!(!condition.matches(&text_place, &other_table));
+    assert!(!condition.matches(&text_place, &other_table));
+    let lines = log.lock().unwrap().clone();
+    assert_eq!(lines.len(), 2, "{lines:?}");
+
+    let map_place = rec(&[("spot", nested("spot", "id", i(1)))]);
+    let absent = rec(&[("other", i(1))]);
+    let null_spot = rec(&[("spot", CborValue::Null)]);
+    for row in [&map_place, &absent, &null_spot] {
+        cond("spot.id", FilterOp::Eq, i(2)).matches(row, &meta);
+    }
+    let lines = log.lock().unwrap().clone();
+    assert_eq!(lines.len(), 2, "{lines:?}");
 }
 
 #[test]

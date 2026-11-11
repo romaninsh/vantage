@@ -46,6 +46,21 @@ impl TableSource for MockTableSource {
         self.confines
     }
 
+    fn coerce_column_value<E>(
+        &self,
+        _table: &Table<Self, E>,
+        column: &str,
+        value: Value,
+    ) -> Result<Value>
+    where
+        E: Entity<Value>,
+    {
+        match &self.coercion {
+            Some(coerce) => coerce(column, value),
+            None => Ok(value),
+        }
+    }
+
     fn eq_value_condition(&self, field: &str, value: Self::Value) -> Result<Self::Condition> {
         Ok(Expression::new(
             "{} = {}",

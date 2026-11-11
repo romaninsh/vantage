@@ -16,11 +16,11 @@ use super::DioInner;
 use crate::lens::CacheTable;
 
 /// Whether `record` is in `dio`: it satisfies the Dio's residual, which the
-/// master never applied. A residual holds no native conditions (deriving a
-/// Dio refuses them); should the evaluator fail anyway, the row is left out
-/// and the failure logged.
+/// master never applied, compared as the master compares it. A residual
+/// holds no native conditions (deriving a Dio refuses them); should the
+/// evaluator fail anyway, the row is left out and the failure logged.
 pub(crate) fn admitted_by_dio(dio: &DioInner, record: &Record<CborValue>) -> bool {
-    match dio.residual.matches(record, &dio.metadata) {
+    match dio.comparable_residual.matches(record, &dio.metadata) {
         Ok(admitted) => admitted,
         Err(e) => {
             tracing::warn!(

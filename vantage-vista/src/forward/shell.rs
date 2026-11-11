@@ -78,6 +78,9 @@ pub trait ForwardShell: Send + Sync + 'static {
     fn add_condition(&mut self, condition: &Condition) -> Result<()> {
         self.inner_mut().add_condition(condition)
     }
+    fn comparable_condition(&self, condition: &Condition) -> Condition {
+        self.inner().comparable_condition(condition)
+    }
     fn add_native_condition(&mut self, condition: NativeCondition) -> Result<()> {
         self.inner_mut().add_native_condition(condition)
     }

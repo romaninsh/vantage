@@ -15,14 +15,17 @@ use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 use vantage_vista::Transaction;
 
+use crate::declared::{sql_coerce_fn, sql_declared_types};
 use crate::mysql::MysqlDB;
 use crate::mysql::statements::MysqlSelect;
-use crate::mysql::types::AnyMysqlType;
+use crate::mysql::types::{AnyMysqlType, MysqlType};
 use crate::primitives::identifier::ident;
 use crate::table_writes::{
     guard_insert, guard_new_row, guard_patch, guard_replace, settle_failed_insert,
 };
 use vantage_expressions::expr_any;
+
+sql_declared_types!(sql_coerce_fn!(MysqlDB, MysqlType, AnyMysqlType));
 
 /// Render a select for a read that returns rows: `FOR UPDATE` after the limit
 /// when the table is locked.
@@ -169,6 +172,18 @@ impl TableSource for MysqlDB {
 
     fn can_confine_writes(&self) -> bool {
         true
+    }
+
+    fn coerce_column_value<E>(
+        &self,
+        table: &Table<Self, E>,
+        column: &str,
+        value: AnyMysqlType,
+    ) -> Result<AnyMysqlType>
+    where
+        E: Entity<AnyMysqlType>,
+    {
+        coerce_column(table, column, value)
     }
 
     fn transaction(&self) -> Option<Transaction> {

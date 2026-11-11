@@ -1,24 +1,57 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 
 use ciborium::Value as CborValue;
 use serde_json::{Value, json};
+use tokio::sync::{Mutex, MutexGuard};
+use tracing::{info, warn};
 
 use crate::live::LiveStream;
 use crate::{
     Engine, RecordId, RecordRange, Result, SessionState, SurrealConnection, SurrealError, Table,
 };
 
+/// The first wait after a failed reconnect; it doubles per failure up to
+/// [`RECONNECT_BACKOFF_CAP`].
+const RECONNECT_BACKOFF: Duration = Duration::from_millis(500);
+const RECONNECT_BACKOFF_CAP: Duration = Duration::from_secs(4);
+/// How long one reconnect may take. The caller holds the engine lock
+/// meanwhile, and may be a UI thread.
+const RECONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+
 /// SurrealDB client. JSON methods transcode through CBOR on the wire; use
 /// [`query_cbor`](Self::query_cbor) when type fidelity matters.
+///
+/// When the server closes the socket, or a request gets no reply within
+/// [`request_timeout`](SurrealConnection::request_timeout), every request
+/// waiting for a reply fails and every [`LiveStream`] ends. The next call on any clone opens a
+/// new socket the way the first one was opened (sign-in, `use`, then the
+/// [`let_var`](Self::let_var) parameters), at most once per back-off step
+/// (0.5 s doubling to 4 s after each failed attempt); calls in between fail
+/// at once. A request is never sent twice: one in flight at the close fails,
+/// because it may have been applied. Transaction calls never reconnect, since
+/// the transaction died with its socket.
 pub struct SurrealClient {
-    engine: Arc<tokio::sync::Mutex<Box<dyn Engine>>>,
-    session: SessionState,
-    incremental_id: Arc<std::sync::atomic::AtomicU64>,
+    engine: Arc<Mutex<Box<dyn Engine>>>,
+    session: Arc<std::sync::Mutex<SessionState>>,
+    incremental_id: Arc<AtomicU64>,
     debug: bool,
     /// How this client connected, for [`reconnect`](Self::reconnect). `None`
     /// over a bare engine.
     pub(crate) connection: Option<SurrealConnection>,
     pub(crate) interactive_transactions: bool,
+    /// Bumped each time the engine is replaced, so a [`LiveStream`] can tell
+    /// its query died with an older socket.
+    generation: Arc<AtomicU64>,
+    backoff: Arc<std::sync::Mutex<Backoff>>,
+}
+
+/// Failed reconnects in a row, and when the next may be tried.
+#[derive(Default)]
+struct Backoff {
+    failures: u32,
+    retry_at: Option<Instant>,
 }
 
 impl Clone for SurrealClient {
@@ -31,6 +64,8 @@ impl Clone for SurrealClient {
             debug: self.debug,
             connection: self.connection.clone(),
             interactive_transactions: self.interactive_transactions,
+            generation: self.generation.clone(),
+            backoff: self.backoff.clone(),
         }
     }
 }
@@ -46,13 +81,92 @@ impl SurrealClient {
         session.set_target(namespace, database);
 
         Self {
-            engine: Arc::new(tokio::sync::Mutex::new(engine)),
-            session,
-            incremental_id: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            engine: Arc::new(Mutex::new(engine)),
+            session: Arc::new(std::sync::Mutex::new(session)),
+            incremental_id: Arc::new(AtomicU64::new(0)),
             debug: false,
             connection: None,
             interactive_transactions: false,
+            generation: Arc::default(),
+            backoff: Arc::default(),
         }
+    }
+
+    /// The engine, reopened first when its socket has closed.
+    async fn engine(&self) -> Result<MutexGuard<'_, Box<dyn Engine>>> {
+        let mut engine = self.engine.lock().await;
+        if engine.is_closed() {
+            self.reopen(&mut engine).await?;
+        }
+        Ok(engine)
+    }
+
+    /// Replace the closed engine with a new socket, unless the last attempt
+    /// failed too recently.
+    async fn reopen(&self, engine: &mut Box<dyn Engine>) -> Result<()> {
+        let Some(connection) = &self.connection else {
+            return Err(SurrealError::Connection(
+                "the connection is closed and this client can't reopen it".to_string(),
+            ));
+        };
+        if let Some(at) = self.backoff_state().retry_at
+            && let Some(wait) = at.checked_duration_since(Instant::now())
+        {
+            return Err(SurrealError::Connection(format!(
+                "the connection is closed; the next reconnect is in {} ms",
+                wait.as_millis()
+            )));
+        }
+        let fresh =
+            match tokio::time::timeout(RECONNECT_TIMEOUT, self.open_engine(connection)).await {
+                Ok(fresh) => fresh,
+                Err(_) => Err(SurrealError::Timeout(format!(
+                    "reconnecting took longer than {} s",
+                    RECONNECT_TIMEOUT.as_secs()
+                ))),
+            };
+        let mut backoff = self.backoff_state();
+        match fresh {
+            Ok(fresh) => {
+                *engine = fresh;
+                self.generation.fetch_add(1, Ordering::SeqCst);
+                *backoff = Backoff::default();
+                info!("SurrealDB connection reopened");
+                Ok(())
+            }
+            Err(e) => {
+                backoff.failures += 1;
+                let wait = RECONNECT_BACKOFF
+                    .saturating_mul(1 << (backoff.failures - 1).min(16))
+                    .min(RECONNECT_BACKOFF_CAP);
+                backoff.retry_at = Some(Instant::now() + wait);
+                warn!(error = %e, retry_in = ?wait, "SurrealDB reconnect failed");
+                Err(e)
+            }
+        }
+    }
+
+    /// A new signed-in socket with this session's parameters set again.
+    async fn open_engine(&self, connection: &SurrealConnection) -> Result<Box<dyn Engine>> {
+        let mut engine = connection.engine().await?;
+        let params: Vec<(String, Value)> = self
+            .session_state()
+            .params()
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        for (key, value) in params {
+            engine.send_message("let", json!([key, value])).await?;
+        }
+        Ok(engine)
+    }
+
+    fn backoff_state(&self) -> std::sync::MutexGuard<'_, Backoff> {
+        self.backoff.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn session_state(&self) -> std::sync::MutexGuard<'_, SessionState> {
+        self.session.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// Whether this client can run interactive transactions
@@ -132,32 +246,32 @@ impl SurrealClient {
 
     /// Set a parameter for the session
     pub async fn let_var(&mut self, key: &str, value: Value) -> Result<()> {
-        let mut engine = self.engine.lock().await;
+        let mut engine = self.engine().await?;
 
         let params = json!([key, value]);
 
         engine.send_message("let", params).await?;
 
-        self.session.set_param(key.to_string(), value);
+        self.session_state().set_param(key.to_string(), value);
 
         Ok(())
     }
 
     /// Unset a parameter from the session
     pub async fn unset(&mut self, key: &str) -> Result<()> {
-        let mut engine = self.engine.lock().await;
+        let mut engine = self.engine().await?;
 
         let params = json!([key]);
 
         engine.send_message("unset", params).await?;
 
-        self.session.unset_param(key);
+        self.session_state().unset_param(key);
         Ok(())
     }
 
     /// Create a record in the database
     pub async fn create(&self, resource: &str, data: Option<Value>) -> Result<Value> {
-        let mut engine = self.engine.lock().await;
+        let mut engine = self.engine().await?;
 
         let params = if let Some(data) = data {
             json!([resource, data])
@@ -170,7 +284,7 @@ impl SurrealClient {
 
     /// Select records from the database
     pub async fn select(&self, resource: &str) -> Result<Value> {
-        let mut engine = self.engine.lock().await;
+        let mut engine = self.engine().await?;
 
         let params = json!([resource]);
 
@@ -194,7 +308,7 @@ impl SurrealClient {
 
     /// Update records in the database
     pub async fn update(&self, resource: &str, data: Option<Value>) -> Result<Value> {
-        let mut engine = self.engine.lock().await;
+        let mut engine = self.engine().await?;
 
         let params = if let Some(data) = data {
             json!([resource, data])
@@ -217,7 +331,7 @@ impl SurrealClient {
 
     /// Upsert (insert or update) records in the database
     pub async fn upsert(&self, resource: &str, data: Option<Value>) -> Result<Value> {
-        let mut engine = self.engine.lock().await;
+        let mut engine = self.engine().await?;
 
         let params = if let Some(data) = data {
             json!([resource, data])
@@ -235,7 +349,7 @@ impl SurrealClient {
 
     /// Merge data into records in the database
     pub async fn merge(&self, resource: &str, data: Value) -> Result<Value> {
-        let mut engine = self.engine.lock().await;
+        let mut engine = self.engine().await?;
 
         let params = json!([resource, data]);
 
@@ -254,7 +368,7 @@ impl SurrealClient {
 
     /// Apply JSON patches to records
     pub async fn patch(&self, resource: &str, patches: Vec<Value>) -> Result<Value> {
-        let mut engine = self.engine.lock().await;
+        let mut engine = self.engine().await?;
 
         let params = json!([resource, patches]);
 
@@ -263,7 +377,7 @@ impl SurrealClient {
 
     /// Delete records from the database
     pub async fn delete(&self, resource: &str) -> Result<Value> {
-        let mut engine = self.engine.lock().await;
+        let mut engine = self.engine().await?;
 
         let params = json!([resource]);
 
@@ -282,7 +396,7 @@ impl SurrealClient {
 
     /// Insert one record, or an array of records, into a table
     pub async fn insert(&self, table: &str, data: Value) -> Result<Value> {
-        let mut engine = self.engine.lock().await;
+        let mut engine = self.engine().await?;
 
         let params = json!([table, data]);
 
@@ -302,7 +416,7 @@ impl SurrealClient {
         to: &str,
         data: Option<Value>,
     ) -> Result<Value> {
-        let mut engine = self.engine.lock().await;
+        let mut engine = self.engine().await?;
 
         let params = if let Some(data) = data {
             json!([from, relation, to, data])
@@ -332,7 +446,7 @@ impl SurrealClient {
 
     /// Run a stored function
     pub async fn run(&self, func: &str, args: Option<Value>) -> Result<Value> {
-        let mut engine = self.engine.lock().await;
+        let mut engine = self.engine().await?;
 
         let params = if let Some(args) = args {
             json!([func, args])
@@ -357,7 +471,7 @@ impl SurrealClient {
             }
         }
 
-        let mut engine = self.engine.lock().await;
+        let mut engine = self.engine().await?;
 
         let params = if let Some(vars) = variables {
             json!([sql, vars])
@@ -396,7 +510,7 @@ impl SurrealClient {
 
     /// Get information about the current session
     pub async fn info(&self) -> Result<Value> {
-        let mut engine = self.engine.lock().await;
+        let mut engine = self.engine().await?;
 
         let params = json!([]);
 
@@ -405,7 +519,7 @@ impl SurrealClient {
 
     /// Get the version of the SurrealDB instance
     pub async fn version(&self) -> Result<String> {
-        let mut engine = self.engine.lock().await;
+        let mut engine = self.engine().await?;
 
         let params = json!([]);
 
@@ -475,7 +589,7 @@ impl SurrealClient {
     /// The stream stays open until the connection closes. Dropping it (or
     /// calling [`LiveStream::close`]) kills the server-side query.
     pub async fn live(&self, resource: &str) -> Result<LiveStream> {
-        let mut engine = self.engine.lock().await;
+        let mut engine = self.engine().await?;
 
         let params = CborValue::Array(vec![CborValue::Text(resource.to_string())]);
         let response = engine.send_message_cbor("live", params).await?;
@@ -492,24 +606,37 @@ impl SurrealClient {
             query_id,
             rx,
             client: Some(self.clone()),
+            generation: self.generation.load(Ordering::SeqCst),
         })
     }
 
     /// Stop a live query by its id (the [`LiveStream::query_id`]).
     ///
     /// Sends the `kill` RPC and drops the local subscriber so no further
-    /// notifications are delivered for that id.
+    /// notifications are delivered for that id. Over a closed connection
+    /// there is nothing to kill: the query ended with the socket.
     pub async fn kill(&self, query_id: &str) -> Result<()> {
+        self.kill_on(query_id, None).await
+    }
+
+    /// [`kill`](Self::kill), for a stream opened on socket `generation`: a
+    /// no-op once that socket has been replaced, since the query ended with
+    /// it. The generation is read under the engine lock, which a reopen
+    /// holds while it bumps it.
+    pub(crate) async fn kill_on(&self, query_id: &str, generation: Option<u64>) -> Result<()> {
         let mut engine = self.engine.lock().await;
-        let params = CborValue::Array(vec![CborValue::Text(query_id.to_string())]);
-        engine.send_message_cbor("kill", params).await?;
         engine.unregister_live(query_id).await;
-        Ok(())
+        let replaced = generation.is_some_and(|g| g != self.generation.load(Ordering::SeqCst));
+        if replaced || engine.is_closed() {
+            return Ok(());
+        }
+        let params = CborValue::Array(vec![CborValue::Text(query_id.to_string())]);
+        engine.send_message_cbor("kill", params).await.map(drop)
     }
 
     /// Execute a custom SurrealQL query with CBOR parameters
     pub async fn query_cbor(&self, sql: &str, variables: CborValue) -> Result<CborValue> {
-        let mut engine = self.engine.lock().await;
+        let mut engine = self.engine().await?;
 
         if self.debug {
             println!("SQL: {}", sql);

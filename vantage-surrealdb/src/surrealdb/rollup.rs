@@ -2,9 +2,11 @@
 //!
 //! Over a `REFERENCE` link the child rows come from a record-reference lookup,
 //! `<~(line FIELD invoice)[WHERE …]`, read off the parent record. Over any
-//! other link, or before [`SurrealDB::check_references`] ran, they come from a
+//! other link, or before [`SurrealDB::check_schema`] ran, they come from a
 //! correlated subquery, `(SELECT VALUE … FROM line WHERE invoice = $parent.id)`.
-//! Both feed the same aggregate, so they give the same numbers.
+//! Both feed the same aggregate, so they give the same numbers. A `keys:`
+//! join on another parent column reads it instead: `doc<~(line FIELD doc)`,
+//! `WHERE doc = $parent.doc`.
 
 use vantage_core::{Result, error};
 use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
@@ -63,6 +65,13 @@ impl SurrealDB {
         }
 
         let link = parent.ref_foreign_key(relation)?;
+        // The parent column the link holds: its id, or a `keys:` join's own
+        // column, whose value the child's link field references.
+        let from = parent
+            .ref_keys(relation)?
+            .first()
+            .map(|key| key.from.clone())
+            .filter(|from| *from != parent.id_field_name());
         let has_many = parent.ref_cardinality(relation)? == ReferenceKind::HasMany;
         let checked = self.is_reference_link(child.table_name(), &link);
         // `<~` reads the stored table; a query-sourced child keeps its query
@@ -70,13 +79,19 @@ impl SurrealDB {
         let stored = matches!(child.source(), SelectSource::Name(_));
 
         let rows = if has_many && stored && checked == Some(true) {
-            referenced_rows(&child, &link, filters, value)
+            referenced_rows(&child, from.as_deref(), &link, filters, value)
         } else {
             if has_many && stored {
+                // The table the link points at: the parent, or the one a
+                // has_one on the key column names (else any record).
+                let linked = match from.as_deref() {
+                    None => Some(parent.table_name().to_string()),
+                    Some(from) => parent.has_one_target(from),
+                };
                 self.warn_slow_rollup(
                     child.table_name(),
                     &link,
-                    parent.table_name(),
+                    linked.as_deref(),
                     checked.is_some(),
                 );
             }
@@ -95,9 +110,12 @@ impl SurrealDB {
 }
 
 /// `<~(child FIELD link)[WHERE …].value`: the child's own conditions and
-/// `filters` apply to the referencing records.
+/// `filters` apply to the referencing records. With `from`, the records
+/// referencing the parent's `from` column instead, `(from<~(…)… ?? [])`: a
+/// parent without one has no rows.
 fn referenced_rows(
     child: &Table<SurrealDB, EmptyEntity>,
+    from: Option<&str>,
     link: &str,
     filters: Vec<Expr>,
     value: Option<&str>,
@@ -108,6 +126,9 @@ fn referenced_rows(
         (Identifier::new(child.table_name())),
         (Identifier::new(link))
     );
+    if let Some(from) = from {
+        rows = surreal_expr!("{}{}", (Identifier::new(from)), (rows));
+    }
     if !conditions.is_empty() {
         rows = surreal_expr!(
             "{}[WHERE {}]",
@@ -117,6 +138,9 @@ fn referenced_rows(
     }
     if let Some(name) = value {
         rows = surreal_expr!("{}.{}", (rows), (Identifier::new(name)));
+    }
+    if from.is_some() {
+        rows = surreal_expr!("({} ?? [])", (rows));
     }
     rows
 }

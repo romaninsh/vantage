@@ -44,12 +44,33 @@ impl Dio {
         {
             return Ok(None);
         }
-        Ok(Some(Follower {
-            stream: master.watch().await?,
+        Ok(Some(self.follower(master.watch().await?)))
+    }
+
+    /// [`subscribe`](Self::subscribe), except that a failed subscription
+    /// still returns a follower: one over an ended stream, which starts in
+    /// its resubscribe loop.
+    pub(crate) async fn subscribe_or_retry(&self) -> Option<Follower> {
+        match self.subscribe().await {
+            Ok(follower) => follower,
+            Err(e) => {
+                tracing::warn!(
+                    table = %self.master().name(),
+                    error = %e,
+                    "watch: subscribe failed; retrying in the background",
+                );
+                Some(self.follower(Box::pin(futures::stream::empty())))
+            }
+        }
+    }
+
+    fn follower(&self, stream: VistaChangeStream) -> Follower {
+        Follower {
+            stream,
             admit: Admit::for_dio(&self.inner),
             dio: Arc::downgrade(&self.inner),
             cancel: self.inner.watch_cancel.subscribe(),
-        }))
+        }
     }
 }
 

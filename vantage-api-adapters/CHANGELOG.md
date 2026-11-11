@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.3 — 2026-11-11
+
+- `axum_action::error_response` maps `ErrorKind::InvalidValue` to 422 Unprocessable Entity,
+  so a value that does not fit its column is a client error. Requires vantage-core 1.3.0.
+
 ## 0.7.2 — 2026-10-15
 
 - Depends on `vantage-diorama` 1.0.0, the proper version of the 0.15.0 rework. No change here.

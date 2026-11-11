@@ -18,9 +18,11 @@ use vantage_expressions::traits::selectable::Selectable;
 use vantage_surrealdb::SurrealSelect;
 use vantage_surrealdb::surreal_expr;
 use vantage_surrealdb::surrealdb::SurrealDB;
+use vantage_surrealdb::vista::spec::SurrealVistaSpec;
 use vantage_table::pagination::Pagination;
 use vantage_table::table::{RollupOp, Table};
 use vantage_types::EmptyEntity;
+use vantage_vista::SpecResolver;
 
 fn surreal_dsn(database: &str) -> String {
     let base = std::env::var("SURREALDB_URL")
@@ -54,7 +56,7 @@ async fn seeded(reference: bool) -> SurrealDB {
     for statement in schema.split("; ") {
         db.execute(&surreal_expr!(statement)).await.unwrap();
     }
-    db.check_references().await.unwrap();
+    db.check_schema().await.unwrap();
     db
 }
 
@@ -231,6 +233,125 @@ async fn rollup_over_a_paginated_child_is_refused() {
         .with_many("lines", "invoice", first_line)
         .with_rollup("lines", "lines", RollupOp::Count, None, None);
     assert!(built.is_err());
+}
+
+/// Invoices and lines both keyed by a `doc`, not linked by the invoice id:
+/// invoice:one (doc:a) has lines a (vat 5) and b (vat 7), invoice:two (doc:b)
+/// line c (vat 3), invoice:three has no doc.
+async fn seeded_by_doc(reference: bool) -> SurrealDB {
+    let database = format!("rollup_{}", Uuid::new_v4().simple());
+    let client = SurrealConnection::dsn(surreal_dsn(&database))
+        .expect("Invalid SURREALDB_URL DSN")
+        .connect()
+        .await
+        .expect("Failed to connect to SurrealDB");
+    let db = SurrealDB::new(client);
+    let reference = if reference { " REFERENCE" } else { "" };
+    let schema = format!(
+        "DEFINE TABLE doc SCHEMALESS; DEFINE TABLE invoice SCHEMALESS; \
+         DEFINE TABLE line SCHEMALESS; \
+         DEFINE FIELD doc ON line TYPE option<record<doc>>{reference}; \
+         CREATE doc:a, doc:b; \
+         CREATE invoice:one SET doc = doc:a; CREATE invoice:two SET doc = doc:b; \
+         CREATE invoice:three; \
+         CREATE line:a SET doc = doc:a, vat = 5; CREATE line:b SET doc = doc:a, vat = 7; \
+         CREATE line:c SET doc = doc:b, vat = 3;"
+    );
+    for statement in schema.split("; ") {
+        db.execute(&surreal_expr!(statement)).await.unwrap();
+    }
+    db.check_schema().await.unwrap();
+    db
+}
+
+/// `invoice` built from a spec whose `lines` relation is joined by `keys`.
+fn keyed_invoices(db: &SurrealDB, keys: &str) -> Table<SurrealDB, EmptyEntity> {
+    let spec = |yaml: &str| -> SurrealVistaSpec { serde_yaml_ng::from_str(yaml).unwrap() };
+    let line = spec(
+        "name: line\n\
+         columns:\n  id: { type: thing, flags: [id] }\n  doc: { type: string }\n  \
+         vat: { type: int }\n",
+    );
+    let invoice = spec(&format!(
+        "name: invoice\n\
+         columns:\n  id: {{ type: thing, flags: [id] }}\n  doc: {{ type: string, references: doc }}\n\
+         references:\n  lines: {{ table: line, kind: has_many, keys: {keys} }}\n"
+    ));
+    let resolver: Arc<dyn SpecResolver<SurrealVistaSpec>> =
+        Arc::new(move |name: &str| (name == "line").then(|| line.clone()));
+    db.vista_factory()
+        .with_resolver(resolver)
+        .table_from_spec(&invoice)
+        .unwrap()
+}
+
+/// A `keys:` relation joins the child's key column to the parent's own key
+/// column, not the relation name to the parent's id.
+#[tokio::test]
+async fn rollup_over_a_keyed_relation_joins_on_its_keys() {
+    let keys = "[{ from: doc, to: doc }]";
+    for reference in [true, false] {
+        let db = seeded_by_doc(reference).await;
+        let (table, warnings) = warnings_during(|| {
+            keyed_invoices(&db, keys)
+                .with_rollup("vat", "lines", RollupOp::Sum, Some("vat"), None)
+                .unwrap()
+        });
+        let rows = table.list_values().await.unwrap();
+        let mut sums: Vec<(String, JsonValue)> = rows
+            .into_iter()
+            .map(|(id, row)| {
+                let vat = row
+                    .get("vat")
+                    .cloned()
+                    .map_or(JsonValue::Null, JsonValue::from);
+                (id.to_string(), vat)
+            })
+            .collect();
+        sums.sort_by(|a, b| a.0.cmp(&b.0));
+        assert_eq!(
+            sums,
+            [
+                ("invoice:one".to_string(), json!(12)),
+                ("invoice:three".to_string(), json!(0)),
+                ("invoice:two".to_string(), json!(3)),
+            ],
+            "reference={reference}"
+        );
+        let select = table.select().preview();
+        if reference {
+            assert_eq!(warnings, "");
+            assert!(
+                select.contains(
+                    "(doc<~(line FIELD doc)[WHERE vat != NONE AND vat != NULL].vat ?? [])"
+                ),
+                "{select}"
+            );
+        } else {
+            assert!(
+                select.contains("FROM line WHERE doc = $parent.doc AND vat != NONE"),
+                "{select}"
+            );
+            assert!(
+                warnings.contains("roll-up over `line.doc`")
+                    && warnings.contains("`DEFINE FIELD doc ON line TYPE record<doc> REFERENCE;`"),
+                "{warnings}"
+            );
+        }
+    }
+}
+
+/// A roll-up over a relation joined by more than one key is refused: one
+/// correlated key would aggregate rows the other keys rule out.
+#[tokio::test]
+async fn rollup_over_a_multi_key_relation_is_refused() {
+    let db = seeded_by_doc(true).await;
+    let built = keyed_invoices(&db, "[{ from: doc, to: doc }, { from: id, to: invoice }]")
+        .with_rollup("vat", "lines", RollupOp::Sum, Some("vat"), None);
+    let error = built
+        .expect_err("a multi-key roll-up is refused")
+        .to_string();
+    assert!(error.contains("more than one key"), "{error}");
 }
 
 #[tokio::test]

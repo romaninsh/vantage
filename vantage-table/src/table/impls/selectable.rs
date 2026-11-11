@@ -450,6 +450,16 @@ where
         }
         let fk = self.ref_foreign_key(head)?;
         let target: Table<T, EmptyEntity> = self.get_ref_target_erased(head)?;
+        // The path follows the link the key holds, which only a single key
+        // on the target's id is.
+        let keys = self.ref_keys(head)?;
+        let target_id = target.id_field_name();
+        if keys.len() > 1 || keys[0].to.as_ref().is_some_and(|to| *to != target_id) {
+            return Err(error!(
+                "implicit reference hop must join the target's id by one key",
+                relation = *head
+            ));
+        }
         if tail.is_empty() {
             Ok((target, vec![fk]))
         } else {

@@ -1,3 +1,4 @@
+use chrono::NaiveDate;
 use serde_json::{Value, json};
 use vantage_rhai::rhai::{Array, Dynamic, Map};
 use vantage_rhai::{from_json, to_json};
@@ -102,6 +103,19 @@ fn an_opaque_leaf_costs_only_itself_not_the_container_around_it() {
     };
     assert_eq!(a[0], json!(1));
     assert!(matches!(a[1], Value::String(_)));
+}
+
+#[test]
+fn a_datetime_becomes_rfc3339_text() {
+    let at = NaiveDate::from_ymd_opt(2026, 1, 31)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap()
+        .and_utc();
+    assert_eq!(
+        to_json(&Dynamic::from(at)),
+        json!("2026-01-31T00:00:00+00:00")
+    );
 }
 
 #[test]

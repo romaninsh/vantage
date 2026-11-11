@@ -58,6 +58,14 @@ where
                 table = self.table_name()
             ));
         }
+        // The aggregate correlates one key; the others would be dropped.
+        if self.ref_keys(relation)?.len() > 1 {
+            return Err(error!(
+                "a roll-up's relation can't be joined by more than one key",
+                relation = relation,
+                table = self.table_name()
+            ));
+        }
         // A window would aggregate one page of children, or, past the first
         // page, skip the aggregate's only row.
         if self.get_ref_target_erased(relation)?.pagination().is_some() {

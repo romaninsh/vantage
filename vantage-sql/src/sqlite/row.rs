@@ -19,58 +19,58 @@ pub(crate) fn bind_sqlite_value<'q>(
     value: &'q AnySqliteType,
 ) -> vantage_core::Result<SqliteQuery<'q>> {
     let cbor = value.value();
-    Ok(match value.type_variant() {
-        Some(SqliteTypeVariants::Null) => query.bind(None::<String>),
-        None => return bind_by_cbor(query, cbor),
-        Some(SqliteTypeVariants::Bool) => match cbor {
+    let Some(variant) = value.type_variant() else {
+        return bind_by_cbor(query, cbor);
+    };
+    let refused = || {
+        vantage_core::error!(
+            format!("cannot bind {value} as a SQLite {variant:?} parameter"),
+            variant = format!("{variant:?}")
+        )
+        .mark_invalid_value()
+    };
+    Ok(match variant {
+        SqliteTypeVariants::Null => query.bind(None::<String>),
+        SqliteTypeVariants::Bool => match cbor {
             CborValue::Null => query.bind(None::<bool>),
-            CborValue::Integer(i) => match i64::try_from(*i) {
-                Ok(n) => query.bind(n != 0),
-                Err(_) => query.bind(None::<bool>),
-            },
+            CborValue::Integer(i) => query.bind(i128::from(*i) != 0),
             CborValue::Bool(b) => query.bind(*b),
-            _ => query.bind(None::<bool>),
+            _ => return Err(refused()),
         },
-        Some(SqliteTypeVariants::Integer) => match cbor {
+        SqliteTypeVariants::Integer => match cbor {
             CborValue::Null => query.bind(None::<i64>),
-            CborValue::Integer(i) => query.bind(i64::try_from(*i).ok()),
-            _ => query.bind(None::<i64>),
+            CborValue::Integer(i) => query.bind(i64::try_from(*i).map_err(|_| refused())?),
+            _ => return Err(refused()),
         },
-        Some(SqliteTypeVariants::Real) => match cbor {
+        SqliteTypeVariants::Real => match cbor {
             CborValue::Null => query.bind(None::<f64>),
             CborValue::Float(f) => query.bind(*f),
-            CborValue::Integer(i) => query.bind(i64::try_from(*i).ok().map(|n| n as f64)),
-            _ => query.bind(None::<f64>),
+            CborValue::Integer(i) => query.bind(i128::from(*i) as f64),
+            _ => return Err(refused()),
         },
-        Some(SqliteTypeVariants::Text) => match cbor {
+        SqliteTypeVariants::Text => match cbor {
             CborValue::Null => query.bind(None::<String>),
             CborValue::Text(s) => query.bind(s.as_str()),
-            CborValue::Tag(_, inner) => {
-                if let CborValue::Text(s) = inner.as_ref() {
-                    query.bind(s.as_str())
-                } else {
-                    query.bind(None::<String>)
-                }
-            }
-            _ => query.bind(None::<String>),
+            CborValue::Tag(_, inner) => match inner.as_ref() {
+                CborValue::Text(s) => query.bind(s.as_str()),
+                _ => return Err(refused()),
+            },
+            _ => return Err(refused()),
         },
-        Some(SqliteTypeVariants::Numeric) => match cbor {
+        SqliteTypeVariants::Numeric => match cbor {
             CborValue::Null => query.bind(None::<String>),
-            CborValue::Tag(10, inner) => {
-                if let CborValue::Text(s) = inner.as_ref() {
-                    query.bind(s.as_str())
-                } else {
-                    query.bind(None::<String>)
-                }
-            }
+            CborValue::Tag(10, inner) => match inner.as_ref() {
+                CborValue::Text(s) => query.bind(s.as_str()),
+                _ => return Err(refused()),
+            },
             CborValue::Text(s) => query.bind(s.as_str()),
-            _ => query.bind(None::<String>),
+            _ => return Err(refused()),
         },
-        Some(SqliteTypeVariants::Blob) => match cbor {
+        SqliteTypeVariants::Blob => match cbor {
             CborValue::Null => query.bind(None::<Vec<u8>>),
             CborValue::Bytes(b) => query.bind(b.as_slice()),
             CborValue::Text(s) => query.bind(s.as_bytes()),
-            _ => query.bind(None::<Vec<u8>>),
+            _ => return Err(refused()),
         },
     })
 }
@@ -93,30 +93,24 @@ fn bind_by_cbor<'q>(
         CborValue::Float(f) => query.bind(*f),
         CborValue::Text(s) => query.bind(s.as_str()),
         CborValue::Bytes(b) => query.bind(b.as_slice()),
-        CborValue::Tag(10, inner) => {
-            if let CborValue::Text(s) = inner.as_ref() {
-                query.bind(s.as_str())
-            } else {
-                query.bind(None::<String>)
-            }
-        }
-        CborValue::Tag(0 | 100 | 101, inner) => {
-            if let CborValue::Text(s) = inner.as_ref() {
-                query.bind(s.as_str())
-            } else {
-                query.bind(None::<String>)
-            }
-        }
+        // Decimal, datetime, date, time: their text.
+        CborValue::Tag(0 | 10 | 100 | 101, inner) => match inner.as_ref() {
+            CborValue::Text(s) => query.bind(s.as_str()),
+            _ => return Err(unbindable(cbor)),
+        },
         // Record reference — Tag(8, ["table", id]) or Tag(8, "table:id").
         // SQLite has no reference type, so the reference lowers to its id.
         CborValue::Tag(8, inner) => return bind_reference_id(query, inner),
-        other => {
-            return Err(vantage_core::error!(
-                "cannot bind CBOR value to a SQLite parameter",
-                value = describe_cbor(other)
-            ));
-        }
+        other => return Err(unbindable(other)),
     })
+}
+
+fn unbindable(value: &CborValue) -> vantage_core::VantageError {
+    vantage_core::error!(
+        "cannot bind CBOR value to a SQLite parameter",
+        value = describe_cbor(value)
+    )
+    .mark_invalid_value()
 }
 
 /// Lower a `Tag(8)` record reference to its id and bind that. A numeric

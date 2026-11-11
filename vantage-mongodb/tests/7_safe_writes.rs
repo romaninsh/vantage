@@ -160,6 +160,61 @@ async fn after_update_sees_the_former_row_on_patch() {
     assert_after_update_sees_the_former_row(true).await;
 }
 
+/// A `hero` collection whose validator caps `min_level` at 60 and requires
+/// `name`.
+async fn validated_hero(db: &MongoDB) -> Table<MongoDB, EmptyEntity> {
+    let validator = doc! { "$jsonSchema": {
+        "bsonType": "object",
+        "required": ["name"],
+        "properties": {
+            "name": { "bsonType": "string" },
+            "min_level": { "bsonType": ["int", "long"], "maximum": 60 },
+        },
+    } };
+    db.database()
+        .create_collection("hero")
+        .validator(validator)
+        .await
+        .unwrap();
+    Table::new("hero", db.clone())
+        .with_id_column("_id")
+        .with_column_of::<String>("name")
+        .with_column_of::<i64>("min_level")
+}
+
+#[tokio::test]
+async fn validation_failure_names_the_rules_on_insert() {
+    let db = setup().await;
+    let hero = validated_hero(&db).await;
+    let err = hero
+        .insert_value(
+            MongoId::from("h1"),
+            &rec(&[("min_level", AnyMongoType::untyped(Bson::Int64(70)))]),
+        )
+        .await
+        .unwrap_err();
+    assert!(err.is_invalid_value(), "{err:?}");
+    assert_eq!(err.message(), "min_level: maximum 60; name: required");
+    teardown(&db).await;
+}
+
+#[tokio::test]
+async fn validation_failure_names_the_rule_on_patch() {
+    let db = setup().await;
+    let hero = validated_hero(&db).await;
+    let id = MongoId::from("h1");
+    hero.insert_value(id.clone(), &rec(&[("name", text("Thrall"))]))
+        .await
+        .unwrap();
+    let err = hero
+        .patch_value(id, &rec(&[("min_level", text("high"))]))
+        .await
+        .unwrap_err();
+    assert!(err.is_invalid_value(), "{err:?}");
+    assert_eq!(err.message(), "min_level: bsonType int, long");
+    teardown(&db).await;
+}
+
 #[tokio::test]
 async fn operator_condition_keeps_rows_in_set() {
     let db = setup().await;

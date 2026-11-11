@@ -7,12 +7,10 @@ use vantage_core::{Result, error};
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_expressions::Expressive;
 use vantage_table::sorting::{OrderBy, SortDirection as TableSortDirection};
-use vantage_table::traits::column_like::ColumnLike;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 use vantage_vista::{
-    Capability, Condition, FilterOp, NativeCondition, ReferenceKind, SortDirection, operand_text,
-    unsupported,
+    Capability, Condition, FilterOp, NativeCondition, SortDirection, operand_text, unsupported,
 };
 
 use super::SurrealTableShell;
@@ -55,45 +53,45 @@ where
         }))
     }
 
-    /// `value` as `field` compares it. SurrealDB compares record ids by type,
-    /// so a record id held as text (one that round-tripped through JSON or a
-    /// script, or a key held by another backend's row) would match nothing:
-    /// - on the id column, a `table:key` or bare key becomes this table's
-    ///   record id (see `parse_id`);
-    /// - on a record-link column (see `is_record_link`), a `table:key` text
-    ///   becomes a record id; other text is left as it is.
+    /// `value` as `field` compares it: typed by the column exactly as a write
+    /// would type it (`coerce_column_value`), so date text compares as a
+    /// datetime and a key on a has-one key column as a record id; SurrealDB
+    /// compares values by type, and text matches neither. On the id column a
+    /// `table:key` or bare key becomes this table's record id (see
+    /// `parse_id`).
     ///
-    /// An `IN` list converts each element.
+    /// An `IN` list converts each element. No value (null, `""`) is compared
+    /// as given, and so is a value that doesn't fit the column: it matches
+    /// nothing, as it did before typing.
     fn operand(&self, field: &str, value: &CborValue) -> CborValue {
         match value {
             CborValue::Text(id) if self.metadata.id_column.as_deref().unwrap_or("id") == field => {
                 self.parse_id(id).to_cbor()
             }
-            CborValue::Text(_) if self.is_record_link(field) => self
-                .table
-                .data_source()
-                .coerce_reference_value(AnySurrealType::from(value.clone()))
-                .into_value(),
             CborValue::Array(items) => {
                 CborValue::Array(items.iter().map(|v| self.operand(field, v)).collect())
             }
-            _ => value.clone(),
+            CborValue::Null | CborValue::Tag(6, _) => value.clone(),
+            CborValue::Text(text) if text.is_empty() => value.clone(),
+            _ => self
+                .table
+                .data_source()
+                .coerce_column_value(&self.table, field, AnySurrealType::from(value.clone()))
+                .map(AnySurrealType::into_value)
+                .unwrap_or_else(|_| value.clone()),
         }
     }
 
-    /// A `Thing`-typed column, or the column one of this table's has-one
-    /// references reads (YAML declares links as `type: string, references:`).
-    fn is_record_link(&self, field: &str) -> bool {
-        let typed = self
-            .table
-            .columns()
-            .get(field)
-            .is_some_and(|column| column.get_type() == std::any::type_name::<Thing>());
+    /// `condition` with the operand [`apply_condition`](Self::apply_condition)
+    /// sends, so rows held in memory are judged as the database judged them.
+    /// `Like` matches the value's own text, so it stays as given.
+    pub(super) fn typed_condition(&self, condition: &Condition) -> Condition {
+        if condition.op == FilterOp::Like {
+            return condition.clone();
+        }
+        let mut typed = condition.clone();
+        typed.value = self.operand(&condition.column, &condition.value);
         typed
-            || self.metadata.references.values().any(|reference| {
-                reference.kind == ReferenceKind::HasOne
-                    && reference.keys.iter().any(|key| key.from == field)
-            })
     }
 
     pub(super) fn apply_condition(&mut self, condition: &Condition) -> Result<()> {

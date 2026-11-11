@@ -3,7 +3,8 @@
 
 use std::sync::Arc;
 
-use vantage_rhai::rhai::{Dynamic, Engine};
+use vantage_rhai::ModuleDir;
+use vantage_rhai::rhai::{Dynamic, Engine, NativeCallContext};
 
 use super::convert::dynamic_to_cbor;
 use super::handle::{Handle, Step};
@@ -16,9 +17,18 @@ pub(crate) fn register_narrowing(engine: &mut Engine, resolver: Option<Arc<dyn V
     engine.register_type_with_name::<Handle>("Table");
 
     if let Some(resolver) = resolver {
-        engine.register_fn("table", move |name: &str| {
-            Handle::named(name).with_resolver(resolver.clone())
-        });
+        engine.register_fn(
+            "table",
+            move |ctx: NativeCallContext, name: &str| -> RhaiResult<Handle> {
+                if ModuleDir::is_helper_call(&ctx) {
+                    return Err(format!(
+                        "table() isn't available in lib/ helpers; pass table(\"{name}\") in as an argument"
+                    )
+                    .into());
+                }
+                Ok(Handle::named(name).with_resolver(resolver.clone()))
+            },
+        );
     }
 
     engine.register_fn(
