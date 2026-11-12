@@ -142,7 +142,13 @@ async fn a_warm_reopen_over_a_capped_source_drops_nothing_that_exists() {
         );
     }
     drop(first);
-    assert_eq!(cached_ids(&dio).await, ids);
+    let cached = tokio::time::timeout(WITHIN, async {
+        while cached_ids(&dio).await != ids {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    assert!(cached.is_ok(), "cache {:?}", cached_ids(&dio).await);
 
     let reopened = dio
         .table_scenery()

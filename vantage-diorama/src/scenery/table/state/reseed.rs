@@ -44,7 +44,7 @@ impl SharedRows {
         }
         let all = self.reader(&dio_inner).list_values().await?;
 
-        let query = self.view_query();
+        let query = dio_inner.master.comparable(&self.view_query());
         let mut filtered: Vec<(String, Record<CborValue>)> = all
             .into_iter()
             .filter(|(_, rec)| admitted_by_view(&dio_inner, &query, rec))

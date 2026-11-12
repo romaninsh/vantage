@@ -187,6 +187,7 @@ fn every_documented_column_type_name_builds() {
         "time",
         "uuid",
         "json",
+        "bytes",
     ];
     for ty in types {
         let yaml = format!("{ID_ONLY}  other:\n    type: {ty}\n");

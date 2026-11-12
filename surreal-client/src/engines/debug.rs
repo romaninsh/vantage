@@ -83,4 +83,8 @@ impl Engine for DebugEngine {
     async fn unregister_live(&mut self, query_id: &str) {
         self.inner.unregister_live(query_id).await
     }
+
+    fn is_closed(&self) -> bool {
+        self.inner.is_closed()
+    }
 }

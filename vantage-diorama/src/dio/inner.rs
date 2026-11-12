@@ -9,8 +9,8 @@ use tokio::task::JoinHandle;
 use vantage_vista::{Capability, Vista, VistaMetadata, VistaQuery};
 
 use super::{
-    AbortOnDrop, DetailState, DioEvent, WriteCapabilities, augment_scheduler, pending, query_index,
-    worker,
+    AbortOnDrop, DetailStates, DioEvent, WriteCapabilities, augment_scheduler, pending,
+    query_index, worker,
 };
 use crate::augment::Augmentation;
 use crate::lens::hub::TableHub;
@@ -33,6 +33,10 @@ pub(crate) struct DioInner {
     /// The clauses the master refused, or never saw because they name an
     /// augmented column. Evaluated by diorama over the rows it holds.
     pub(crate) residual: VistaQuery,
+    /// `residual` with each condition's value as the master compares it
+    /// ([`Vista::comparable`]): what cached rows, which hold the master's
+    /// typed values, are judged by.
+    pub(crate) comparable_residual: VistaQuery,
     /// The master's applied query with the residual laid over it: everything
     /// this Dio is narrowed by. Its key is the cache identity.
     pub(crate) query: VistaQuery,
@@ -82,7 +86,7 @@ pub(crate) struct DioInner {
     pub(crate) augment_worker_handles: std::sync::Mutex<Vec<JoinHandle<()>>>,
     /// The detail pass's last answer per row, one per id. See
     /// [`detail_state`](super::detail_state).
-    pub(crate) detail_state: std::sync::Mutex<HashMap<String, DetailState>>,
+    pub(crate) detail_state: std::sync::Mutex<DetailStates>,
 
     /// False only while a detached eager start is still copying the set into
     /// the cache. True once it finishes — success or failure alike, since a

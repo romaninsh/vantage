@@ -536,7 +536,7 @@ async fn vista_nested_path_reads_writes_and_filters() -> TestResult {
         .insert_many(vec![
             bson::doc! {
                 "fullName": "Marty McFly",
-                "address": { "city": "Hill Valley", "zip": "1985" },
+                "address": { "city": "Hill Valley", "zip": "1985", "street": "Lyon Drive" },
             },
             bson::doc! {
                 "fullName": "Doc Brown",
@@ -591,9 +591,50 @@ mongo:
     assert_eq!(vista.count().await?, 1);
     let only = vista.list_values().await?;
     assert_eq!(only.len(), 1);
+    let marty_id = only.keys().next().expect("marty").clone();
 
     // Write: a new vista without the filter, insert via spec names.
     let vista = db.vista_factory().from_yaml(yaml)?;
+
+    // Patch: one nested_path column sets its dotted path; the declared and
+    // undeclared siblings in the sub-document stay.
+    let patch: Record<CborValue> = vec![("zip".to_string(), CborValue::Text("1986".into()))]
+        .into_iter()
+        .collect();
+    vista.patch_value(marty_id.clone(), &patch).await?;
+    let raw = db
+        .collection::<bson::Document>("clients")
+        .find_one(bson::doc! { "_id": ObjectId::parse_str(&marty_id)? })
+        .await?
+        .expect("patched doc present");
+    assert_eq!(
+        raw.get_document("address")?,
+        &bson::doc! { "city": "Hill Valley", "zip": "1986", "street": "Lyon Drive" }
+    );
+
+    // A null parent can't take a dotted `$set`: the patch writes the
+    // sub-document whole, built from the leaves it sets.
+    let lorraine = ObjectId::new();
+    db.collection::<bson::Document>("clients")
+        .insert_one(bson::doc! { "_id": lorraine, "fullName": "Lorraine", "address": null })
+        .await?;
+    let patch: Record<CborValue> = vec![
+        ("city".to_string(), CborValue::Text("Hill Valley".into())),
+        ("zip".to_string(), CborValue::Text("1955".into())),
+    ]
+    .into_iter()
+    .collect();
+    vista.patch_value(lorraine.to_hex(), &patch).await?;
+    let raw = db
+        .collection::<bson::Document>("clients")
+        .find_one(bson::doc! { "_id": lorraine })
+        .await?
+        .expect("patched doc present");
+    assert_eq!(
+        raw.get_document("address")?,
+        &bson::doc! { "city": "Hill Valley", "zip": "1955" }
+    );
+
     let new_id = ObjectId::new().to_hex();
     let record: Record<CborValue> = vec![
         (

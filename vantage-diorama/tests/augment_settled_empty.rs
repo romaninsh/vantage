@@ -24,6 +24,7 @@ use std::time::Duration;
 use support::chunk::col_at;
 use support::{augmented_dio, meta, record};
 use tempfile::TempDir;
+use tokio::sync::Semaphore;
 use vantage_diorama::{
     Augmentation, Cache, Detail, Dio, Fetch, Lens, MergeRule, Refresher, RowStatus, Source,
     TableScenery, Tuning,
@@ -43,27 +44,26 @@ fn master_vista() -> Vista {
 /// Detail source with a record for `r0` ONLY. `r1` is the row that settles
 /// empty — the shape a cross-source augment hits constantly (an evidence row
 /// with no matching bucket folder).
-fn partial_detail_vista() -> Vista {
-    let shell = MockShell::new()
+fn partial_detail_shell() -> MockShell {
+    MockShell::new()
         .with_record("r0", record(&[("id", "r0"), ("detail", "full-r0")]))
-        .with_metadata(meta(&["id", "detail"]));
-    Vista::new("runs-detail", shell)
+        .with_metadata(meta(&["id", "detail"]))
 }
 
 /// A catalog whose loader counts how many times the detail vista is built —
 /// `Augmentation::base_vista` builds one per fetch, so this is an exact count
 /// of detail fetches attempted.
-fn counting_catalog(hits: Arc<AtomicUsize>) -> Arc<dyn VistaResolver> {
+fn counting_catalog(hits: Arc<AtomicUsize>, detail: MockShell) -> Arc<dyn VistaResolver> {
     Arc::new(Catalog::new().with("runs-detail", move |_: &str| {
         hits.fetch_add(1, Ordering::SeqCst);
-        Ok(partial_detail_vista())
+        Ok(Vista::new("runs-detail", detail.clone()))
     }))
 }
 
-fn aug(hits: Arc<AtomicUsize>) -> Augmentation {
+fn aug(hits: Arc<AtomicUsize>, detail: MockShell) -> Augmentation {
     Augmentation::new(
         Detail::Resolved {
-            resolver: counting_catalog(hits),
+            resolver: counting_catalog(hits, detail),
             name: "runs-detail".into(),
         },
         Source::Id,
@@ -76,6 +76,15 @@ fn aug(hits: Arc<AtomicUsize>) -> Augmentation {
 /// with that interval. Each tick runs the augmenting Dio's reconciling pass,
 /// which is the path under test.
 async fn open_with_ticker(tmp: &TempDir, hits: Arc<AtomicUsize>, tick: Option<Duration>) -> Dio {
+    open_with_detail(tmp, hits, partial_detail_shell(), tick).await
+}
+
+async fn open_with_detail(
+    tmp: &TempDir,
+    hits: Arc<AtomicUsize>,
+    detail: MockShell,
+    tick: Option<Duration>,
+) -> Dio {
     let mut lens = Lens::builder()
         .cache(Cache::redb(tmp.path().join("cache.redb")))
         .tuning(Tuning::default().with_viewport_debounce(Duration::from_millis(1)));
@@ -83,7 +92,7 @@ async fn open_with_ticker(tmp: &TempDir, hits: Arc<AtomicUsize>, tick: Option<Du
         lens = lens.refresher(Refresher::new(|_cx| async { Ok(()) }).every(tick));
     }
     let lens = lens.build().expect("lens builds");
-    augmented_dio(&lens, master_vista(), vec![aug(hits)]).await
+    augmented_dio(&lens, master_vista(), vec![aug(hits, detail)]).await
 }
 
 fn status_of(s: &Arc<dyn TableScenery>, i: usize) -> Option<RowStatus> {
@@ -200,4 +209,30 @@ async fn an_explicit_refresh_re_probes_a_settled_empty_row() {
         hits.load(Ordering::SeqCst) > after_hydration
     })
     .await;
+}
+
+/// An explicit refresh that lands while a row's detail fetch is still in
+/// flight: that fetch began before the request, so its "no record" doesn't
+/// settle the row, and the row is probed again.
+#[tokio::test]
+async fn a_refresh_during_a_detail_fetch_still_re_probes_the_row() {
+    let tmp = TempDir::new().unwrap();
+    let hits = Arc::new(AtomicUsize::new(0));
+    let gate = Arc::new(Semaphore::new(0));
+    let detail = partial_detail_shell().gated(gate.clone());
+    let dio = open_with_detail(&tmp, hits, detail.clone(), None).await;
+    let scenery = dio.table_scenery().page_size(2).open().await.unwrap();
+    scenery.set_viewport(0..2, 0..0);
+    let gets_of_r1 = || detail.get_log().iter().filter(|id| *id == "r1").count();
+    eventually("a detail fetch in flight", || !detail.get_log().is_empty()).await;
+    if detail.get_log()[0] == "r0" {
+        gate.add_permits(1);
+    }
+    eventually("r1's detail fetch in flight", || gets_of_r1() == 1).await;
+
+    dio.refresh().await.expect("refresh");
+    gate.add_permits(16);
+    scenery.set_viewport(0..2, 0..0);
+
+    eventually("r1 probed again after the refresh", || gets_of_r1() >= 2).await;
 }

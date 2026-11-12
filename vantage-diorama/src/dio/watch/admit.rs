@@ -34,16 +34,21 @@ impl Admit {
     /// augmentations. A pushed row doesn't carry its augmented values yet, so
     /// the residual clauses that could depend on them are left to the read
     /// path, which evaluates the residual over the hydrated rows.
+    ///
+    /// The master's conditions and the residual's are taken with their
+    /// values as the backend compares them (`Vista::comparable_query`): a
+    /// pushed row holds the typed value (a record link, a datetime), not the
+    /// text a filter gave.
     pub(crate) fn for_dio(inner: &DioInner) -> Self {
-        let accepted = inner.master.query();
+        let accepted = inner.master.comparable_query();
         if !accepted.is_locally_evaluable() {
             return Admit::Reread;
         }
         let mut queries = Vec::new();
         if inner.master.is_narrowed() {
-            queries.push(accepted.clone());
+            queries.push(accepted);
         }
-        let mut residual = inner.without_augmented(&inner.residual);
+        let mut residual = inner.without_augmented(&inner.comparable_residual);
         residual.order = None;
         if !residual.conditions.is_empty() || residual.search.is_some() {
             queries.push(residual);

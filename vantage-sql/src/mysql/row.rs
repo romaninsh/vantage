@@ -6,125 +6,111 @@
 use ciborium::Value as CborValue;
 use sqlx::mysql::MySqlRow;
 use sqlx::{Column, Row, TypeInfo};
+use vantage_core::{Result, VantageError, error};
 use vantage_types::Record;
 
 use super::types::{AnyMysqlType, MysqlTypeVariants};
 
+pub(crate) type MysqlQuery<'q> = sqlx::query::Query<'q, sqlx::MySql, sqlx::mysql::MySqlArguments>;
+
+/// A value the binder can't express as its variant's parameter comes from
+/// user data, so it surfaces as an error: never a silent NULL, never a
+/// panic. Decimals, dates and times bind as their text, which MySQL parses.
 pub(crate) fn bind_mysql_value<'q>(
-    query: sqlx::query::Query<'q, sqlx::MySql, sqlx::mysql::MySqlArguments>,
+    query: MysqlQuery<'q>,
     value: &'q AnyMysqlType,
-) -> sqlx::query::Query<'q, sqlx::MySql, sqlx::mysql::MySqlArguments> {
+) -> Result<MysqlQuery<'q>> {
     let cbor = value.value();
-    match value.type_variant() {
-        Some(MysqlTypeVariants::Null) => query.bind(None::<String>),
-        None => bind_by_cbor(query, cbor),
-        Some(MysqlTypeVariants::Bool) => match cbor {
+    let Some(variant) = value.type_variant() else {
+        return bind_by_cbor(query, cbor);
+    };
+    let refused = || refused(variant, cbor);
+    Ok(match variant {
+        MysqlTypeVariants::Null => query.bind(None::<String>),
+        MysqlTypeVariants::Bool => match cbor {
             CborValue::Null => query.bind(None::<bool>),
             CborValue::Bool(b) => query.bind(*b),
-            CborValue::Integer(i) => match i64::try_from(*i) {
-                Ok(n) => query.bind(n != 0),
-                Err(_) => query.bind(None::<bool>),
-            },
-            _ => query.bind(None::<bool>),
+            CborValue::Integer(i) => query.bind(i128::from(*i) != 0),
+            _ => return Err(refused()),
         },
-        Some(MysqlTypeVariants::Int2) => match cbor {
+        MysqlTypeVariants::Int2 => match cbor {
             CborValue::Null => query.bind(None::<i16>),
-            CborValue::Integer(i) => {
-                query.bind(i64::try_from(*i).ok().and_then(|n| i16::try_from(n).ok()))
-            }
-            _ => query.bind(None::<i16>),
+            CborValue::Integer(i) => query.bind(i16::try_from(*i).map_err(|_| refused())?),
+            _ => return Err(refused()),
         },
-        Some(MysqlTypeVariants::Int4) => match cbor {
+        MysqlTypeVariants::Int4 => match cbor {
             CborValue::Null => query.bind(None::<i32>),
-            CborValue::Integer(i) => {
-                query.bind(i64::try_from(*i).ok().and_then(|n| i32::try_from(n).ok()))
-            }
-            _ => query.bind(None::<i32>),
+            CborValue::Integer(i) => query.bind(i32::try_from(*i).map_err(|_| refused())?),
+            _ => return Err(refused()),
         },
-        Some(MysqlTypeVariants::Int8) => match cbor {
+        MysqlTypeVariants::Int8 => match cbor {
             CborValue::Null => query.bind(None::<i64>),
-            CborValue::Integer(i) => query.bind(i64::try_from(*i).ok()),
-            _ => query.bind(None::<i64>),
+            CborValue::Integer(i) => query.bind(i64::try_from(*i).map_err(|_| refused())?),
+            _ => return Err(refused()),
         },
-        Some(MysqlTypeVariants::Float4) => match cbor {
+        MysqlTypeVariants::Float4 => match cbor {
             CborValue::Null => query.bind(None::<f32>),
             CborValue::Float(f) => query.bind(*f as f32),
-            CborValue::Integer(i) => query.bind(i64::try_from(*i).ok().map(|n| n as f32)),
-            _ => query.bind(None::<f32>),
+            CborValue::Integer(i) => query.bind(i128::from(*i) as f32),
+            _ => return Err(refused()),
         },
-        Some(MysqlTypeVariants::Float8) => match cbor {
+        MysqlTypeVariants::Float8 => match cbor {
             CborValue::Null => query.bind(None::<f64>),
             CborValue::Float(f) => query.bind(*f),
-            CborValue::Integer(i) => query.bind(i64::try_from(*i).ok().map(|n| n as f64)),
-            _ => query.bind(None::<f64>),
+            CborValue::Integer(i) => query.bind(i128::from(*i) as f64),
+            _ => return Err(refused()),
         },
-        Some(MysqlTypeVariants::Text) => match cbor {
+        MysqlTypeVariants::Text => match cbor {
             CborValue::Null => query.bind(None::<String>),
             CborValue::Text(s) => query.bind(s.as_str()),
-            _ => query.bind(None::<String>),
+            CborValue::Tag(_, inner) => match inner.as_ref() {
+                CborValue::Text(s) => query.bind(s.as_str()),
+                _ => return Err(refused()),
+            },
+            _ => return Err(refused()),
         },
-        Some(MysqlTypeVariants::Decimal) => match cbor {
-            CborValue::Null => query.bind(None::<String>),
-            CborValue::Tag(10, inner) => {
-                if let CborValue::Text(s) = inner.as_ref() {
-                    query.bind(s.as_str())
-                } else {
-                    query.bind(None::<String>)
-                }
-            }
-            CborValue::Text(s) => query.bind(s.as_str()),
-            _ => query.bind(None::<String>),
-        },
-        Some(MysqlTypeVariants::DateTime) => match cbor {
-            CborValue::Null => query.bind(None::<String>),
-            CborValue::Tag(0, inner) => {
-                if let CborValue::Text(s) = inner.as_ref() {
-                    query.bind(s.as_str())
-                } else {
-                    query.bind(None::<String>)
-                }
-            }
-            CborValue::Text(s) => query.bind(s.as_str()),
-            _ => query.bind(None::<String>),
-        },
-        Some(MysqlTypeVariants::Date) => match cbor {
-            CborValue::Null => query.bind(None::<String>),
-            CborValue::Tag(100, inner) => {
-                if let CborValue::Text(s) = inner.as_ref() {
-                    query.bind(s.as_str())
-                } else {
-                    query.bind(None::<String>)
-                }
-            }
-            CborValue::Text(s) => query.bind(s.as_str()),
-            _ => query.bind(None::<String>),
-        },
-        Some(MysqlTypeVariants::Time) => match cbor {
-            CborValue::Null => query.bind(None::<String>),
-            CborValue::Tag(101, inner) => {
-                if let CborValue::Text(s) = inner.as_ref() {
-                    query.bind(s.as_str())
-                } else {
-                    query.bind(None::<String>)
-                }
-            }
-            CborValue::Text(s) => query.bind(s.as_str()),
-            _ => query.bind(None::<String>),
-        },
-        Some(MysqlTypeVariants::Blob) => match cbor {
+        MysqlTypeVariants::Decimal => text_of(query, cbor, 10).ok_or_else(refused)?,
+        MysqlTypeVariants::DateTime => text_of(query, cbor, 0).ok_or_else(refused)?,
+        MysqlTypeVariants::Date => text_of(query, cbor, 100).ok_or_else(refused)?,
+        MysqlTypeVariants::Time => text_of(query, cbor, 101).ok_or_else(refused)?,
+        MysqlTypeVariants::Blob => match cbor {
             CborValue::Null => query.bind(None::<Vec<u8>>),
             CborValue::Bytes(b) => query.bind(b.as_slice()),
             CborValue::Text(s) => query.bind(s.as_bytes()),
-            _ => query.bind(None::<Vec<u8>>),
+            _ => return Err(refused()),
         },
+    })
+}
+
+/// NULL, or the text of `value`, plain or inside `tag`, bound as text;
+/// `None` for any other shape.
+fn text_of<'q>(query: MysqlQuery<'q>, value: &'q CborValue, tag: u64) -> Option<MysqlQuery<'q>> {
+    match value {
+        CborValue::Null => Some(query.bind(None::<String>)),
+        CborValue::Text(s) => Some(query.bind(s.as_str())),
+        CborValue::Tag(t, inner) if *t == tag => match inner.as_ref() {
+            CborValue::Text(s) => Some(query.bind(s.as_str())),
+            _ => None,
+        },
+        _ => None,
     }
 }
 
-fn bind_by_cbor<'q>(
-    query: sqlx::query::Query<'q, sqlx::MySql, sqlx::mysql::MySqlArguments>,
-    cbor: &'q CborValue,
-) -> sqlx::query::Query<'q, sqlx::MySql, sqlx::mysql::MySqlArguments> {
-    match cbor {
+fn refused(variant: MysqlTypeVariants, value: &CborValue) -> VantageError {
+    error!(
+        format!(
+            "cannot bind {} as a MySQL {variant:?} parameter",
+            AnyMysqlType::untyped(value.clone())
+        ),
+        variant = format!("{variant:?}")
+    )
+    .mark_invalid_value()
+}
+
+/// Bind a CBOR value without type variant — infers from the value itself.
+/// JSON-shaped values (maps, arrays) bind as their JSON text.
+fn bind_by_cbor<'q>(query: MysqlQuery<'q>, cbor: &'q CborValue) -> Result<MysqlQuery<'q>> {
+    Ok(match cbor {
         CborValue::Null => query.bind(None::<String>),
         CborValue::Bool(b) => query.bind(*b),
         CborValue::Integer(i) => {
@@ -137,24 +123,24 @@ fn bind_by_cbor<'q>(
         CborValue::Float(f) => query.bind(*f),
         CborValue::Text(s) => query.bind(s.as_str()),
         CborValue::Bytes(b) => query.bind(b.as_slice()),
-        CborValue::Tag(10, inner) => {
-            // Decimal — bind as string, MySQL will coerce
-            if let CborValue::Text(s) = inner.as_ref() {
-                query.bind(s.as_str())
-            } else {
-                query.bind(None::<String>)
-            }
+        // Decimal, datetime, date, time: their text, which MySQL parses.
+        CborValue::Tag(0 | 10 | 100 | 101, inner) => match inner.as_ref() {
+            CborValue::Text(s) => query.bind(s.as_str()),
+            _ => return Err(unbindable(cbor)),
+        },
+        CborValue::Map(_) | CborValue::Array(_) => {
+            query.bind(crate::types::cbor_to_json(cbor.clone()).to_string())
         }
-        CborValue::Tag(0 | 100 | 101, inner) => {
-            // DateTime / Date / Time — bind as string
-            if let CborValue::Text(s) = inner.as_ref() {
-                query.bind(s.as_str())
-            } else {
-                query.bind(None::<String>)
-            }
-        }
-        _ => query.bind(None::<String>),
-    }
+        _ => return Err(unbindable(cbor)),
+    })
+}
+
+fn unbindable(value: &CborValue) -> VantageError {
+    error!(format!(
+        "cannot bind {} as a MySQL parameter",
+        AnyMysqlType::untyped(value.clone())
+    ))
+    .mark_invalid_value()
 }
 
 pub(crate) fn row_to_record(row: &MySqlRow) -> Record<AnyMysqlType> {

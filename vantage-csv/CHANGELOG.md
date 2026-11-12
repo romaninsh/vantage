@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.6 — 2026-11-11
+
+- The vista factory accepts the YAML types `date`, `time`, `timestamp` and `bytes`. A CSV cell is
+  text, so they read and write as text.
+
 ## 0.7.5 — 2026-10-31
 
 Requires vantage-vista 2.6.0.

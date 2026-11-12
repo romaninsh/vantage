@@ -13,14 +13,17 @@ use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 use vantage_vista::Transaction;
 
+use crate::declared::{sql_coerce_fn, sql_declared_types};
 use crate::postgres::PostgresDB;
 use crate::postgres::statements::PostgresSelect;
-use crate::postgres::types::AnyPostgresType;
+use crate::postgres::types::{AnyPostgresType, PostgresType};
 use crate::primitives::identifier::ident;
 use crate::table_writes::{
     guard_insert, guard_new_row, guard_patch, guard_replace, settle_failed_insert,
 };
 use vantage_expressions::expr_any;
+
+sql_declared_types!(sql_coerce_fn!(PostgresDB, PostgresType, AnyPostgresType));
 
 /// Create an AnyPostgresType for an id value. If the id parses as an integer,
 /// use Int8 variant so PostgreSQL doesn't complain about `integer = text`.
@@ -182,6 +185,18 @@ impl TableSource for PostgresDB {
 
     fn can_confine_writes(&self) -> bool {
         true
+    }
+
+    fn coerce_column_value<E>(
+        &self,
+        table: &Table<Self, E>,
+        column: &str,
+        value: AnyPostgresType,
+    ) -> Result<AnyPostgresType>
+    where
+        E: Entity<AnyPostgresType>,
+    {
+        coerce_column(table, column, value)
     }
 
     fn transaction(&self) -> Option<Transaction> {

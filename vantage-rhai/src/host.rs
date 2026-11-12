@@ -7,6 +7,7 @@ use rhai::{AST, Engine};
 
 use crate::error::{Result, RhaiError};
 use crate::limits::Limits;
+use crate::modules::ModuleDir;
 
 /// A domain vocabulary: something that registers functions/types on an engine.
 pub trait Vocab {
@@ -30,6 +31,12 @@ impl HostBuilder {
 
     pub fn vocab_fn(mut self, f: impl FnOnce(&mut Engine)) -> Self {
         f(&mut self.engine);
+        self
+    }
+
+    /// `import "name"` loads `name.rhai` from `dir`.
+    pub fn modules(mut self, dir: &ModuleDir) -> Self {
+        dir.install(&mut self.engine);
         self
     }
 
@@ -106,6 +113,7 @@ impl Host {
         let mut engine = Engine::new();
         limits.apply(&mut engine);
         crate::resolver::install(&mut engine);
+        crate::modules::install_none(&mut engine);
         HostBuilder { limits, engine }
     }
 

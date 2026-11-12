@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.12.0 — 2026-11-11
+
+- Typed writes on SQLite, PostgreSQL and MySQL. `coerce_column_value` types a written value by
+  the column's declared type and the binder receives that typed value: `"2026-12-10"` binds as a
+  date, `"42"` as an integer, an empty string on a typed column as a typed NULL. A value that
+  does not fit is `ErrorKind::InvalidValue` ("`due`: 'next week' doesn't fit type `date`") and
+  nothing is written.
+- Binders never bind NULL for a non-null value. PostgreSQL no longer binds NULL for a datetime
+  it cannot place: text with an offset binds `DateTime<Utc>`, naive text `NaiveDateTime`, anything
+  else is an error. PostgreSQL `text[]` and `int4[]` values bind as arrays, and untyped maps and
+  arrays as `jsonb` (MySQL: JSON text). Unknown tags on undeclared columns are errors on all
+  three drivers; PostgreSQL and MySQL used to bind NULL. The PostgreSQL and MySQL `bind`
+  functions return `Result`.
+- Fixed: on PostgreSQL, unparseable datetime text sent `parse_naive_datetime` and
+  `parse_datetime_utc` into endless mutual recursion, in `try_get` reads as well as writes.
+- One type vocabulary list for the vista factory and the hook: int, float, bool, string, decimal,
+  date, time, datetime/timestamp and `bytes`. `bytes` is an integer byte count (i64); `binary`
+  is `Vec<u8>`, available to typed tables. `duration` is refused at load as unsupported by the
+  SQL drivers. New `Vec<u8>` type impls for the three dialects decode only CBOR bytes, not text.
+- `SetWrites::absent` takes `(table, column)` and gets its typed NULL from the hook; the
+  PostgreSQL `CAST(NULL AS ...)` override is gone.
+- Requires vantage-table 3.7.0, vantage-types 1.1.0 and vantage-core 1.3.0.
+
 ## 0.11.0 — 2026-11-10
 
 - Moves to sqlx 0.9. `SqliteDB::new`, `PostgresDB::new`, `MysqlDB::new` and `pool()` take and

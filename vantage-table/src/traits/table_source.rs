@@ -21,6 +21,40 @@ use crate::{
     traits::column_like::ColumnLike,
 };
 
+/// A declared column whose type disagrees with the type the database
+/// itself declares for the stored field. A diagnostic for whoever edits the
+/// table's config: writes never depend on it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct SchemaMismatch {
+    pub table: String,
+    pub column: String,
+    /// The column's type as declared (`timestamp`, `references: client`).
+    pub declared: String,
+    /// The stored field's type as the database prints it.
+    pub stored: String,
+    /// What to change to make them agree.
+    pub hint: String,
+}
+
+impl SchemaMismatch {
+    pub fn new(
+        table: impl Into<String>,
+        column: impl Into<String>,
+        declared: impl Into<String>,
+        stored: impl Into<String>,
+        hint: impl Into<String>,
+    ) -> Self {
+        Self {
+            table: table.into(),
+            column: column.into(),
+            declared: declared.into(),
+            stored: stored.into(),
+            hint: hint.into(),
+        }
+    }
+}
+
 /// A data source that holds tables: it names their column, value, id,
 /// source and condition types, and runs `Table`'s reads and writes.
 #[async_trait]
@@ -143,6 +177,35 @@ pub trait TableSource: DataSource + Clone + 'static {
     /// link), not a quoted string that matches nothing.
     fn coerce_reference_value(&self, value: Self::Value) -> Self::Value {
         value
+    }
+
+    /// `value` as this backend stores `column` of `table`: typed by the
+    /// column's declared type through the backend's type system, a has-one
+    /// key column as the backend's link, null as the type's "no value".
+    ///
+    /// `Table` calls it on every insert, replace and patch, for each key that
+    /// is a declared column other than the id: after the Normalize and
+    /// Populate hooks and the computed-column stripping, before the Validate
+    /// hooks and the set's invariants. So values a hook sets are typed too,
+    /// and invariants compare typed values. A missing key is never passed.
+    ///
+    /// A value that doesn't fit fails with
+    /// [`ErrorKind::InvalidValue`](vantage_core::ErrorKind::InvalidValue)
+    /// naming the column and the value. Must be idempotent: a value read
+    /// from the store and written back comes out unchanged. Default:
+    /// identity.
+    fn coerce_column_value<E>(
+        &self,
+        table: &Table<Self, E>,
+        column: &str,
+        value: Self::Value,
+    ) -> Result<Self::Value>
+    where
+        E: Entity<Self::Value>,
+        Self: Sized,
+    {
+        let _ = (table, column);
+        Ok(value)
     }
 
     /// The transaction this datasource runs its statements on, when it is

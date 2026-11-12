@@ -1,5 +1,34 @@
 # Changelog
 
+## 3.7.0 — 2026-11-11
+
+- `TableSource::coerce_column_value(table, column, value) -> Result<Value>`, next to
+  `coerce_reference_value`. A driver types a written value by the column's declared type; the
+  default is identity, so external drivers compile unchanged. It runs for declared, non-id
+  columns on insert (`prepare_insert`), `replace_over` and `patch_value`, after the Normalize and
+  Populate hooks and the computed-column strip and before the Validate hooks and invariants, so
+  Validate hooks see typed values. It must be idempotent. A value that does not fit is
+  `ErrorKind::InvalidValue` and nothing is written.
+- Invariants are typed too: an invariant on a declared column goes through
+  `coerce_column_value` before it is compared or stamped, so `age = "5"` on an integer column no
+  longer conflicts with `5`, and `conform` stamps the typed value into an absent column.
+- Behaviour change: Validate hooks now run after imported and expression columns are stripped
+  from the record, so a Validate hook that read a computed column no longer sees it. Read it in a
+  Normalize or Populate hook instead.
+- `Table::has_one_target(column)` and a defaulted `Reference::has_one_target`: the real table a
+  has-one column links to, which a driver uses to write a record link. `HasOne` builds its target
+  once and caches the name.
+- `SchemaMismatch { table, column, declared, stored, hint }`: a struct for a driver to report a
+  column whose declared type disagrees with the stored schema. It is `#[non_exhaustive]`; build
+  one with `SchemaMismatch::new`.
+- `MockTableSource::with_column_coercion` stands in for a typing driver in tests.
+- Fix: a spec reference declared with `keys:` registers that join (`with_spec_references` used
+  to drop it and join the relation's name to the parent id, so a roll-up over it read 0). New
+  `try_with_many_keyed` / `try_with_one_keyed`, `HasMany::with_keys` / `HasOne::with_keys` and
+  `Table::ref_keys`. A roll-up, a correlated or `IN` subquery, or an implicit-reference hop over a
+  relation joined by more than one key is refused; row traversal applies every key.
+- Requires vantage-core 1.3.0.
+
 ## 3.6.0 — 2026-11-10
 
 - `WriteContext::with_request` carries a `RequestContext` to the write hooks: the `Transport`

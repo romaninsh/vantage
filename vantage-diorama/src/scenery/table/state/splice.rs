@@ -43,7 +43,7 @@ impl SharedRows {
         };
         let began = self.serving();
         let fetched = self.reader(&dio_inner).get_value(id).await?;
-        let query = self.view_query();
+        let query = dio_inner.master.comparable(&self.view_query());
         let admitted = fetched.filter(|rec| admitted_by_view(&dio_inner, &query, rec));
         if !self.still_serving(&began) {
             return Ok(true);

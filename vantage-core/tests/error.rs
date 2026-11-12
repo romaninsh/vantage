@@ -105,6 +105,7 @@ fn kind_defaults_to_generic() {
     assert!(!err.is_not_found());
     assert!(!err.is_conflict());
     assert!(!err.is_forbidden());
+    assert!(!err.is_invalid_value());
 }
 
 #[test]
@@ -139,6 +140,11 @@ fn each_mark_sets_exactly_its_kind() {
     assert_eq!(e.kind(), ErrorKind::Forbidden);
     assert!(e.is_forbidden());
     assert!(!e.is_unsupported());
+
+    let e = error!("not a date", column = "due_date", value = "next week").mark_invalid_value();
+    assert_eq!(e.kind(), ErrorKind::InvalidValue);
+    assert!(e.is_invalid_value());
+    assert!(!e.is_conflict() && !e.is_incorrect_usage());
 }
 
 #[test]

@@ -102,8 +102,11 @@ fn to_native_record(record: &Record<CborValue>) -> Record<AnySurrealType> {
 }
 
 /// SurrealDB refuses `Tag(0, rfc3339)` (Rhai's `now()`, the audit logger's
-/// `at`) and takes only `Tag(12, [seconds, nanos])`; text that isn't RFC 3339
-/// is left for the server to reject.
+/// `at`) and takes only `Tag(12, [seconds, nanos])`. `Table` types declared
+/// datetime columns itself (`coerce_column_value`); this covers the rest: a
+/// column without a datetime type (a host that still declares timestamps as
+/// `string`), and datetimes nested in objects and arrays. Text that isn't RFC
+/// 3339 is left for the server to reject.
 fn datetimes_as_tag12(value: CborValue) -> CborValue {
     match value {
         CborValue::Tag(0, inner) => match *inner {
@@ -200,6 +203,10 @@ where
 
     fn add_condition(&mut self, condition: &Condition) -> Result<()> {
         self.apply_condition(condition)
+    }
+
+    fn comparable_condition(&self, condition: &Condition) -> Condition {
+        self.typed_condition(condition)
     }
 
     fn add_native_condition(&mut self, condition: NativeCondition) -> Result<()> {

@@ -334,6 +334,35 @@ with an empty map. A throw fails the current row and restarts the script from th
 operation limit applies per row, not over the thread's lifetime. Dropping the handle makes
 `next_row()` return `()`.
 
+## Module folders
+
+Bodies share helper code through `import`, from one folder of `.rhai` files
+(a project's `lib/`):
+
+```rhai
+// lib/plans.rhai
+fn can_edit(plan, session) { plan.owner == session.owner || session.role == "admin" }
+```
+
+```rhai
+import "plans" as plans;
+if !plans::can_edit(row, session) { throw "This plan is locked"; }
+```
+
+`Host::builder(limits).modules(&dir)` with `dir = ModuleDir::new("lib")`
+enables it; a host without one refuses every `import` (rhai's own default
+would read files relative to the working directory). A name is
+root-relative — `"plans"`, `"checks/kind"` — with no `..`, no absolute path
+and no extension. Helpers are plain functions: a module evaluates in a fresh
+scope, so neither its top level nor its functions see the body's variables or
+resolver, and `ModuleDir::is_helper_call(&ctx)` lets a verb that reaches
+beyond its arguments refuse (vantage-vista's `table()` does).
+
+Modules load once and stay cached. A file watcher reports an edit with
+`dir.changed(path)`, which drops that module and every cached module importing
+it, then calls the `dir.on_reload(|names| …)` hooks with those names. A body
+whose `compiled.imports()` meets the set re-runs.
+
 ## Trust model
 
 Scripts here are written by the same people who write the project's YAML, and
@@ -384,6 +413,7 @@ Each loads its slots from a YAML file beside it, the way a project does.
 | `slot.rs` | `Expr`, `Template`, `Block` and their schema impls |
 | `host.rs` | `Host`, `HostBuilder`, `Vocab`, the AST cache, shared hosts |
 | `namespace.rs` | `Namespace`: a backend's free functions and constants as a static module |
+| `modules.rs` | `ModuleDir`: `import` from a folder, reload on change |
 | `limits.rs` | the two profiles and what they cap |
 | `compiled.rs` | `Compiled<S>`, `Env`, the `Slot` trait, discovery |
 | `resolver.rs` | `Resolver`, `Lookup`, namespace descent, read recording |

@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.6.0 — 2026-11-11
+
+- `DioBuilder::retry_subscribe()` (use with `live()`): a Dio whose first subscribe fails no
+  longer fails the build. The error is logged and the Dio enters the existing resubscribe loop
+  (0.2 s doubling to 30 s, re-reading the set on success). A table feed still claims the feed, so
+  narrowed followers recover with it. Not part of `DioKey` and not inherited by derived Dios.
+- The live follower compares pushed rows against `master.comparable_query()`, so a filter on a
+  typed column (a record link, a date) keeps its row through a live update instead of dropping it
+  because the operand was still text.
+- The clauses diorama evaluates itself are compared the same way: a Dio's residual, a facade's
+  clauses its master refused, and a table view's filters over the cache. A Dio's facade forwards
+  `comparable_condition` to its master, so a Dio over another Dio's facade compares as the
+  backend does too. Before, `due = "2026-12-10"` there matched no row holding a datetime.
+- A write wrapper keeps `ErrorKind::InvalidValue` instead of flattening it.
+- An explicit `refresh()` that lands while a row's detail fetch is still running re-probes that
+  row. Before, the in-flight fetch recorded its "no detail record" after the refresh had cleared
+  the answers, and the row stayed unprobed until the next explicit refresh.
+- Requires vantage-vista 2.10.0 and vantage-core 1.3.0.
+
 ## 1.5.2 — 2026-11-10
 
 - The SQL test backend moves to sqlx 0.9 and vantage-sql 0.11. No API or behaviour change.

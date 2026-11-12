@@ -1126,6 +1126,7 @@ pub async fn vantage_diorama::DioBuilder::build(self) -> vantage_core::util::err
 pub fn vantage_diorama::DioBuilder::hub(self, impl core::convert::Into<alloc::string::String>) -> Self
 pub fn vantage_diorama::DioBuilder::live(self) -> Self
 pub fn vantage_diorama::DioBuilder::recheck_facts(self) -> Self
+pub fn vantage_diorama::DioBuilder::retry_subscribe(self) -> Self
 impl core::marker::Freeze for vantage_diorama::DioBuilder
 impl core::marker::Send for vantage_diorama::DioBuilder
 impl core::marker::Sync for vantage_diorama::DioBuilder

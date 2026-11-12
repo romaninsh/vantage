@@ -1,5 +1,21 @@
 # Changelog
 
+## 3.2.0 — 2026-11-11
+
+- A write the server refuses with `DocumentValidationFailure` (code 121) now reads as the broken
+  rules, for example `min_level: maximum 60; name: required`, instead of "MongoDB insert_one
+  failed". The error is `ErrorKind::InvalidValue` (422); the server's full details stay in the
+  context. It walks `$jsonSchema` and query-operator validators, including nested properties
+  (`a.b`) and array items. Covers insert, replace and patch; `import` is unchanged.
+- A patch on a `nested_path` column writes that leaf alone (`$set: {"address.city": …}`), so the
+  other fields of the sub-document, declared or not, stay as stored. Before, a patch wrote the
+  whole sub-document and dropped its siblings. When a parent on the path is absent, `null` or not
+  a document, which a dotted `$set` can't pass through, the patch sets that parent to a new
+  sub-document built from the leaves it writes.
+- The vista factory accepts the full YAML type vocabulary: `time` is text, `bytes` an integer
+  byte count; `date` and `timestamp` were already `DateTime`.
+- Requires vantage-core 1.3.0.
+
 ## 3.1.1 — 2026-11-07
 
 Requires vantage-table 3.5.0.

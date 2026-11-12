@@ -43,6 +43,11 @@ pub enum ErrorKind {
     /// policy forbids it here. Context names the `rule`. Distinct from
     /// `Unsupported` (the backend can't do it). Transports map this to 403.
     Forbidden,
+    /// A written value doesn't fit its column: `"next week"` for a date.
+    /// Context names the `column` and the `value`. Distinct from `Conflict`
+    /// (the row is fine, the set disagrees) and from `IncorrectUsage` (a
+    /// bug, where this is bad input). Transports map this to 422.
+    InvalidValue,
 }
 
 /// VantageError with location tracking and context information
@@ -289,6 +294,12 @@ impl VantageError {
         self
     }
 
+    /// Classify this error as [`ErrorKind::InvalidValue`] (builder).
+    pub fn mark_invalid_value(mut self) -> Self {
+        self.kind = ErrorKind::InvalidValue;
+        self
+    }
+
     /// Emit a `tracing::error!` event with this error's kind, location,
     /// message and context, then return `self` so it can be chained:
     /// `error!(...).mark_unsupported().traced()`. Classification and logging
@@ -341,6 +352,11 @@ impl VantageError {
     /// `true` if this error is classified as [`ErrorKind::Forbidden`].
     pub fn is_forbidden(&self) -> bool {
         self.kind == ErrorKind::Forbidden
+    }
+
+    /// `true` if this error is classified as [`ErrorKind::InvalidValue`].
+    pub fn is_invalid_value(&self) -> bool {
+        self.kind == ErrorKind::InvalidValue
     }
 
     fn emit_trace(&self) {

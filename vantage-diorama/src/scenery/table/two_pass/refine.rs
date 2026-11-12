@@ -105,6 +105,7 @@ pub(crate) async fn reseed_filtered(state: &Arc<SharedRows>) {
     // fails it (see `Serving::decide`), and its search runs over the titles
     // it lists.
     let judges_augmented = !state.titles_only && dio_inner.names_augmented(&query);
+    let comparable = dio_inner.master.comparable(&query);
 
     let mut gathered = Vec::with_capacity(ids.len());
     let mut statuses: HashMap<String, CacheStatus> = HashMap::with_capacity(ids.len());
@@ -122,7 +123,7 @@ pub(crate) async fn reseed_filtered(state: &Arc<SharedRows>) {
             awaiting.push(id.clone());
             continue;
         }
-        if admitted_by_view(&dio_inner, &query, &rec) {
+        if admitted_by_view(&dio_inner, &comparable, &rec) {
             statuses.insert(id.clone(), status);
             gathered.push((id.clone(), rec));
         }

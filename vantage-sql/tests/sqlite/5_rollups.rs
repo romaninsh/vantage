@@ -15,6 +15,7 @@ use vantage_sql::sqlite_expr;
 use vantage_table::pagination::Pagination;
 use vantage_table::table::{RollupOp, Table};
 use vantage_types::entity;
+use vantage_vista::JoinKey;
 
 const DB_PATH: &str = "sqlite:../target/bakery.sqlite?mode=ro";
 
@@ -155,6 +156,30 @@ async fn rollup_renders_a_correlated_subquery() {
         "SELECT \"id\", \"client_id\", (COALESCE((SELECT SUM(price) FROM \"order_line\" \
          WHERE \"order_line\".\"order_id\" = \"client_order\".\"id\"), 0)) AS \"total\" \
          FROM \"client_order\""
+    );
+}
+
+/// A relation joined by `keys:` correlates the child's key column with the
+/// parent's own key column, not the parent's id.
+#[tokio::test]
+async fn rollup_over_a_keyed_relation_correlates_its_keys() {
+    let clients = Table::<SqliteDB, Client>::new("client", get_db().await)
+        .with_id_column("id")
+        .with_column_of::<String>("name")
+        .try_with_many_keyed(
+            "orders",
+            &[JoinKey::new("name", "client_id")],
+            "client_order",
+            |db| Ok(order_table(db)),
+        )
+        .unwrap()
+        .with_rollup("orders", "orders", RollupOp::Count, None, None)
+        .unwrap();
+    assert_eq!(
+        clients.select().preview(),
+        "SELECT \"id\", \"name\", ((SELECT COUNT(*) FROM \"client_order\" \
+         WHERE \"client_order\".\"client_id\" = \"client\".\"name\")) AS \"orders\" \
+         FROM \"client\""
     );
 }
 

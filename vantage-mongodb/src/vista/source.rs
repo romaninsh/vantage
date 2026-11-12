@@ -229,7 +229,7 @@ impl TableShell for MongoTableShell {
     async fn patch(&self, id: &str, partial: &Record<CborValue>) -> Result<Record<CborValue>> {
         let mongo_id = self.parse_id(id);
         let stored = self.stored_row(&mongo_id).await?;
-        let mongo_partial = self.flatten_for_write(partial, stored.as_ref())?;
+        let mongo_partial = self.flatten_for_patch(partial, stored.as_ref())?;
         let patched = self.table.patch_value(mongo_id, &mongo_partial).await?;
         Ok(self.unflatten_to_cbor(patched))
     }

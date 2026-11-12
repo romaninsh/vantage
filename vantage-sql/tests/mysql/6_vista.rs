@@ -72,6 +72,32 @@ async fn product(suffix: &str) -> (MysqlDB, Table<MysqlDB, EmptyEntity>) {
     (db.clone(), product_table(db, &name))
 }
 
+async fn typed_events(suffix: &str) -> (MysqlDB, String) {
+    let db = MysqlDB::connect(MYSQL_URL).await.unwrap();
+    let name = format!("vista_events_{suffix}");
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP TABLE IF EXISTS `{name}`"
+    )))
+    .execute(db.pool())
+    .await
+    .unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "CREATE TABLE `{name}` (
+            id VARCHAR(64) PRIMARY KEY,
+            due DATE NULL,
+            at DATETIME(6) NULL,
+            amount DECIMAL(10, 2) NULL,
+            qty BIGINT NULL,
+            starts TIME NULL,
+            size BIGINT NULL
+        )"
+    )))
+    .execute(db.pool())
+    .await
+    .unwrap();
+    (db, name)
+}
+
 vista_tests!(MysqlVistaSpec, "mysql");
 
 #[tokio::test]

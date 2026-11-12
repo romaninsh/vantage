@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.0 — 2026-11-11
+
+- `contract::check_round_trip(set, id)` (feature `contract`): reads a stored row and writes it
+  back unchanged, by replace and then by patch, and asserts every column still equals and the
+  column count is the same. A driver that types values on write calls it on its own tables.
+
 ## 1.1.3 — 2026-10-14
 
 - The in-crate unit tests move to the blackbox suite under `tests/`; module docs added. No API or

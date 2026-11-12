@@ -54,4 +54,10 @@ pub trait Engine: Send + Sync {
     /// Drop local delivery for a live-query id. Does not send `KILL` — that is
     /// a separate RPC. Default is a no-op.
     async fn unregister_live(&mut self, _query_id: &str) {}
+
+    /// Whether the connection is gone for good, so a client should open a
+    /// new one rather than send on this. Default `false`.
+    fn is_closed(&self) -> bool {
+        false
+    }
 }

@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.10.0 — 2026-11-11
+
+- `TableShell::comparable_condition(&Condition) -> Condition` (default: identity) and
+  `Vista::comparable_query()`: the query with each condition's operand typed the way the source
+  stores it (a record link, a datetime). `query()` is unchanged, so chips and cache keys still see
+  what the user typed. `ForwardShell`, the blanket impl and transaction shells forward it. A live
+  follower compares pushed rows against `comparable_query()`, so a typed filter keeps its row.
+  `Vista::comparable_condition` and `Vista::comparable(&VistaQuery)` type one condition, or a
+  query the Vista never applied, the same way.
+- `cbor_cmp` orders datetimes by instant: SurrealDB epoch pairs (`Tag(12)`) and RFC 3339 text
+  (`Tag(0)`), in any mix and any offset. Before, they compared by debug or lexical text, so
+  `+02:00` times sorted wrongly. A datetime against plain text still compares as text.
+- A condition that cannot be evaluated over rows held in memory (it reads through a cell that is
+  not a map, e.g. `place.id` where `place` is text) logs one warning per table and condition
+  column. It matches no rows, as before.
+- With the `rhai` feature, `table(name)` refuses inside a `lib/` helper module ("pass
+  table("t") in as an argument"), through `ModuleDir::is_helper_call`. Requires vantage-rhai 1.5.0
+  and vantage-core 1.3.0.
+
 ## 2.9.0 — 2026-11-07
 
 - `preview_script` shows the script's `limit`/`offset`. They were dropped, so

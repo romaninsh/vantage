@@ -1,5 +1,6 @@
 use ciborium::Value as CborValue;
 use vantage_rhai::rhai::{Array, Dynamic, Map as RhaiMap};
+use vantage_rhai::{Dates, Host, Limits};
 use vantage_vista::rhai::{
     cbor_to_dynamic, dynamic_to_cbor, map_to_record, record_to_dynamic, record_to_map,
 };
@@ -102,6 +103,19 @@ fn an_instant_travels_as_a_cbor_datetime() {
     assert_eq!(
         dynamic_to_cbor(Dynamic::from(at)).unwrap(),
         CborValue::Tag(0, Box::new(text(&at.to_rfc3339())))
+    );
+}
+
+#[test]
+fn a_script_date_travels_as_a_midnight_cbor_datetime() {
+    let host = Host::builder(Limits::background()).vocab(Dates).build();
+    let due: Dynamic = host
+        .engine()
+        .eval(r#"date("2026-01-31").add_months(1)"#)
+        .unwrap();
+    assert_eq!(
+        dynamic_to_cbor(due).unwrap(),
+        CborValue::Tag(0, Box::new(text("2026-02-28T00:00:00+00:00")))
     );
 }
 

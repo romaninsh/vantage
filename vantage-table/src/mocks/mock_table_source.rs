@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
+use vantage_core::Result;
 use vantage_dataset::{
     WritableValueSet,
     im::{ImDataSource, ImTable},
@@ -31,7 +32,10 @@ pub struct MockTableSource {
     select_source: Option<MockSelectableDataSource>,
     query_source: Option<Arc<Mutex<vantage_expressions::mocks::mock_builder::MockBuilder>>>,
     confines: bool,
+    coercion: Option<ColumnCoercion>,
 }
+
+type ColumnCoercion = Arc<dyn Fn(&str, Value) -> Result<Value> + Send + Sync>;
 
 impl MockTableSource {
     pub fn new() -> Self {
@@ -40,7 +44,19 @@ impl MockTableSource {
             select_source: None,
             query_source: None,
             confines: true,
+            coercion: None,
         }
+    }
+
+    /// Answer [`TableSource::coerce_column_value`](crate::traits::table_source::TableSource::coerce_column_value)
+    /// with `coerce(column, value)`, standing in for a backend that types
+    /// written values by column.
+    pub fn with_column_coercion(
+        mut self,
+        coerce: impl Fn(&str, Value) -> Result<Value> + Send + Sync + 'static,
+    ) -> Self {
+        self.coercion = Some(Arc::new(coerce));
+        self
     }
 
     /// Report [`TableSource::can_confine_writes`](crate::traits::table_source::TableSource::can_confine_writes)

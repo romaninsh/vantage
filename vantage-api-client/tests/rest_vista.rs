@@ -298,8 +298,25 @@ async fn a_model_resolver_builds_reference_targets_in_place_of_the_registry() {
 fn every_documented_column_type_name_builds() {
     let api = RestApi::new("http://x");
     let types = [
-        "int", "integer", "i64", "i32", "float", "double", "f64", "f32", "bool", "boolean",
-        "string", "text", "str", "json", "any",
+        "int",
+        "integer",
+        "i64",
+        "i32",
+        "float",
+        "double",
+        "f64",
+        "f32",
+        "bool",
+        "boolean",
+        "string",
+        "text",
+        "str",
+        "json",
+        "any",
+        "date",
+        "time",
+        "timestamp",
+        "bytes",
     ];
     for ty in types {
         let yaml = format!(

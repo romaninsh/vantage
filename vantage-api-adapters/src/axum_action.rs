@@ -41,8 +41,10 @@ use crate::axum_dio::ApiError;
 /// [`ErrorKind::IncorrectUsage`](vantage_core::ErrorKind::IncorrectUsage)
 /// — a malformed input, a record action invoked without an id — is 400.
 /// [`ErrorKind::Conflict`](vantage_core::ErrorKind::Conflict) — a write
-/// that disagrees with the set it goes through — is 409.
-/// Those are the only three answered 4xx. Everything else is a 500 and is
+/// that disagrees with the set it goes through — is 409, and
+/// [`ErrorKind::InvalidValue`](vantage_core::ErrorKind::InvalidValue) — a
+/// value that doesn't fit its column — is 422.
+/// Those are the only four answered 4xx. Everything else is a 500 and is
 /// logged: answering 4xx for an outage tells every client and alerting rule
 /// that nothing is broken. This function never reads the message text.
 fn error_response(e: VantageError) -> ApiError {
@@ -52,6 +54,8 @@ fn error_response(e: VantageError) -> ApiError {
         StatusCode::BAD_REQUEST
     } else if e.is_conflict() {
         StatusCode::CONFLICT
+    } else if e.is_invalid_value() {
+        StatusCode::UNPROCESSABLE_ENTITY
     } else {
         tracing::error!(error = ?e, "model action failed");
         StatusCode::INTERNAL_SERVER_ERROR

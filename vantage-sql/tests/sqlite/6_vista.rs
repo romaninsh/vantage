@@ -75,6 +75,25 @@ async fn clients_orders(_suffix: &str) -> (SqliteDB, String, String) {
     (db, "client".to_string(), "orders".to_string())
 }
 
+async fn typed_events(_suffix: &str) -> (SqliteDB, String) {
+    let db = SqliteDB::connect("sqlite::memory:").await.unwrap();
+    sqlx::query(
+        "CREATE TABLE events (
+            id TEXT PRIMARY KEY,
+            due DATE,
+            at TIMESTAMP,
+            amount NUMERIC,
+            qty INTEGER,
+            starts TIME,
+            size INTEGER
+        )",
+    )
+    .execute(db.pool())
+    .await
+    .unwrap();
+    (db, "events".to_string())
+}
+
 vista_tests!(SqliteVistaSpec, "sqlite");
 
 pub(super) async fn setup_clients_orders() -> SqliteDB {

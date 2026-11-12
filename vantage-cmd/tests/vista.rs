@@ -145,6 +145,34 @@ cmd:
         .unwrap()
 }
 
+/// cmd has no date or byte-count column: the display types read as text.
+#[tokio::test]
+async fn cmd_display_types_read_as_text() {
+    use vantage_vista::VistaFactory;
+
+    let yaml = r#"
+name: files
+columns:
+  id: { type: string, flags: [id] }
+  due: { type: date }
+  starts: { type: time }
+  at: { type: timestamp }
+  size: { type: bytes }
+cmd:
+  rhai: |
+    [#{ "id": "a", "due": "2026-12-10", "starts": "09:30:00", "at": "2026-12-10T09:30:00Z", "size": "1536" }]
+"#;
+    let vista = Cmd::new(fixture("echo_json.sh"))
+        .vista_factory()
+        .from_yaml(yaml)
+        .unwrap();
+    let a = vista.get_value("a").await.unwrap().unwrap();
+    assert_eq!(a.get("due"), Some(&CborValue::from("2026-12-10")));
+    assert_eq!(a.get("starts"), Some(&CborValue::from("09:30:00")));
+    assert_eq!(a.get("at"), Some(&CborValue::from("2026-12-10T09:30:00Z")));
+    assert_eq!(a.get("size"), Some(&CborValue::from("1536")));
+}
+
 #[tokio::test]
 async fn cmd_row_missing_a_visible_filtered_column_is_excluded() {
     let vista = rides()

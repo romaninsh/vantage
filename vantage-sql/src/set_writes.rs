@@ -8,7 +8,6 @@ use vantage_core::Result;
 use vantage_expressions::traits::datasource::ExprDataSource;
 use vantage_expressions::{Expression, expr_any};
 use vantage_table::table::Table;
-use vantage_table::traits::column_like::ColumnLike;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 
@@ -26,12 +25,19 @@ pub(crate) trait SetWrites:
     /// The cell a column the record leaves out reads as in the probe.
     fn null() -> Self::Value;
 
-    /// The probe cell for a column the record leaves out. `column_type` is
-    /// the column's declared Rust type name, when the table knows it. The
-    /// default is a plain [`SetWrites::null`]; a dialect whose NULL would
-    /// otherwise take the wrong type overrides this to type it.
-    fn absent(_column_type: Option<&str>) -> Expression<Self::Value> {
-        let null = Self::null();
+    /// The probe cell for a column the record leaves out: NULL typed as a
+    /// write would type it ([`TableSource::coerce_column_value`]), so the
+    /// probe's derived column takes the column's type and an operator
+    /// condition on it (`price > 10`) evaluates to NULL ("not in the set")
+    /// instead of a type error.
+    fn absent<E: Entity<Self::Value>>(
+        table: &Table<Self, E>,
+        column: &str,
+    ) -> Expression<Self::Value> {
+        let null = table
+            .data_source()
+            .coerce_column_value(table, column, Self::null())
+            .unwrap_or_else(|_| Self::null());
         expr_any!("{}", null)
     }
 
@@ -131,7 +137,7 @@ where
                             let value = value.clone();
                             expr_any!("{}", value)
                         }
-                        None => T::absent(table.columns().get(name).map(|c| c.get_type())),
+                        None => T::absent(table, name),
                     };
                     expr_any!("{} AS {}", (cell), (T::quoted(name)))
                 })

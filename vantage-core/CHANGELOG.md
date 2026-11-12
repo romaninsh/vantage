@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.0 — 2026-11-11
+
+- `ErrorKind::InvalidValue`, `mark_invalid_value()`, `is_invalid_value()`: a value does not fit
+  the column it is written to. The context names `column` and `value`. Transports map it to 422,
+  unlike `Conflict` (a value that disagrees with the set it is written into).
+
 ## 1.2.0 — 2026-11-01
 
 - `ErrorKind::Forbidden`, `mark_forbidden()`, `is_forbidden()`: a rule refused the write. Unlike

@@ -133,7 +133,10 @@ pub(crate) fn column_for_type(name: &str, ty: &str) -> Result<TableColumn<AnyCsv
             TableColumn::from_column(TableColumn::<f64>::new(name))
         }
         "bool" | "boolean" => TableColumn::from_column(TableColumn::<bool>::new(name)),
-        "string" | "text" | "str" => TableColumn::from_column(TableColumn::<String>::new(name)),
+        // CSV has no date or byte-count cell: the display types read as text.
+        "string" | "text" | "str" | "date" | "time" | "timestamp" | "bytes" => {
+            TableColumn::from_column(TableColumn::<String>::new(name))
+        }
         "json" => TableColumn::from_column(TableColumn::<serde_json::Value>::new(name)),
         other => {
             return Err(error!(

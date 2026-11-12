@@ -30,7 +30,7 @@ impl SqlDialect for PostgresDB {
         query: SqlxQuery<'q, sqlx::Postgres>,
         value: &'q AnyPostgresType,
     ) -> vantage_core::Result<SqlxQuery<'q, sqlx::Postgres>> {
-        Ok(bind_postgres_value(query, value))
+        bind_postgres_value(query, value)
     }
 
     fn rows_affected(result: &PgQueryResult) -> u64 {

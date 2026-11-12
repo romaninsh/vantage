@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.2.0 — 2026-11-11
+
+- A closed socket no longer hangs callers. When the reader loop stops (close frame, receive error,
+  end of stream) the engine logs the reason once at WARN, fails every pending request with a
+  `Connection` error ("connection lost (...) before the reply arrived; the request may or may not
+  have been applied") and ends every live stream. A request in flight at the close is failed, never
+  retried.
+- A request deadline, `SurrealConnection::request_timeout(Duration)` (default 30 s,
+  `connection::DEFAULT_REQUEST_TIMEOUT`). A socket that stops answering without closing (a
+  half-open TCP connection after a laptop sleeps, a NAT timeout) used to hang the call while it
+  held the engine lock, blocking every clone. Now a request with no reply by the deadline fails
+  with the same "may or may not have been applied" `Connection` error, the socket is shut down as
+  a close would, and the next call reconnects. A query that legitimately runs longer than 30 s
+  needs a longer deadline.
+- The next call after a close reconnects in place: a new engine signs in, selects the namespace
+  and database, replays the session's `let` parameters and replaces the old one inside the shared
+  mutex, so every clone and every `LiveStream` recovers together. Attempts back off 0.5 s, 1 s,
+  2 s, then 4 s, shared by all clones; calls between attempts fail at once with the time left.
+  One attempt is bounded at 5 s, so an unroutable host cannot hold the engine lock for the OS
+  connect timeout. Transactions keep their own reconnect and fail fast on a dead socket.
+- Behaviour changes. `LiveStream` now ends (`recv` returns `None`) when the connection closes;
+  consumers resubscribe and re-read, as live queries are not re-established by the client.
+  `kill()` returns `Ok` on a closed connection, since the query ended with the socket. Session
+  parameters (`let`) are shared across clones of a client, as the `Clone` doc already said.
+- `Engine::is_closed()`, a defaulted trait method (`false`), so existing engines compile
+  unchanged. `WsCborEngine` and `DebugEngine` implement it.
+
 ## 1.1.0 — 2026-10-31
 
 - Interactive transactions over the WebSocket CBOR engine: `begin`, `commit`, `cancel` and

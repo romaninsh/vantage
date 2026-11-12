@@ -251,6 +251,24 @@ impl<S: Slot> Compiled<S> {
         }
     }
 
+    /// Module names this slot `import`s by string constant; what a
+    /// [`ModuleDir::on_reload`](crate::ModuleDir::on_reload) set is matched
+    /// against.
+    pub fn imports(&self) -> BTreeSet<String> {
+        let mut out = BTreeSet::new();
+        match &self.pieces {
+            Pieces::One(ast) => crate::modules::imports_of(ast, &mut out),
+            Pieces::Parts(parts) => {
+                for part in parts {
+                    if let TPart::Hole { ast, .. } = part {
+                        crate::modules::imports_of(ast, &mut out);
+                    }
+                }
+            }
+        }
+        out
+    }
+
     /// Dotted paths read through the resolver during discovery. Empty until
     /// `discover` has run.
     pub fn read_set(&self) -> &BTreeSet<String> {

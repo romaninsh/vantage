@@ -300,6 +300,42 @@ where
     ));
 }
 
+/// The stored row `id`, written back as read by replace and then by patch,
+/// reads back the same: whatever a backend types on write, it accepts the
+/// values it returns on read. Seed the row first; it must hold only stored
+/// columns (a patch refuses computed ones).
+pub async fn check_round_trip<S>(set: &S, id: S::Id)
+where
+    S: ReadableValueSet + WritableValueSet + Sync,
+    S::Value: InvariantValue,
+{
+    let read = row(set, id.clone())
+        .await
+        .expect("check_round_trip needs a seeded row");
+    set.replace_value(id.clone(), &read)
+        .await
+        .expect("replace with the row as read must succeed");
+    same_row(&read, &row(set, id.clone()).await.unwrap(), "replace");
+    set.patch_value(id.clone(), &read)
+        .await
+        .expect("patch with the row as read must succeed");
+    same_row(&read, &row(set, id).await.unwrap(), "patch");
+}
+
+fn same_row<V: InvariantValue>(read: &Record<V>, written: &Record<V>, how: &str) {
+    for (column, value) in read.iter() {
+        assert!(
+            has(written, column, value),
+            "{how} with the row as read changed `{column}`"
+        );
+    }
+    assert_eq!(
+        read.len(),
+        written.len(),
+        "{how} with the row as read changed its columns"
+    );
+}
+
 pub async fn check_delete_all<S>(f: &Fixture<'_, S>)
 where
     S: ReadableValueSet + WritableValueSet + Sync,

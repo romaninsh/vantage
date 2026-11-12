@@ -7,6 +7,8 @@
 //! - this file: the connection, the product table and its seed;
 //! - `reads`: listing, lookup by id, YAML specs and capabilities;
 //! - `writes`: insert, delete and upsert round trips;
+//! - `typed_writes`: values typed by their declared column, and the schema
+//!   mismatch report;
 //! - `narrow`: conditions, order and search;
 //! - `windows`: positional windows, and the refused cursor;
 //! - `query_sourced`: `rhai:` sources, `modify:` scripts and `base:` vistas.
@@ -17,6 +19,7 @@ mod narrow;
 #[cfg(feature = "rhai")]
 mod query_sourced;
 mod reads;
+mod typed_writes;
 mod windows;
 mod writes;
 

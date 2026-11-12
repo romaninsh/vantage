@@ -43,6 +43,23 @@ macro_rules! vantage_type_system {
 
                 fn [<to_ $method_name>](&self) -> $value_type;
                 fn [<from_ $method_name>](value: $value_type) -> Option<Self>;
+
+                /// `value` as written by a loosely typed caller, for writes: text
+                /// for a number, bool, date or time, an integer for a float, a
+                /// date for a midnight-UTC instant. Tries the strict decode
+                /// first, then each of `LenientValue::lenient_forms`.
+                /// `from_x` and `try_get` stay strict, so reads don't change.
+                fn [<coerce_ $method_name>](value: $value_type) -> Option<Self> {
+                    #[allow(unused_imports)]
+                    use $crate::coerce::{ViaLenient as _, ViaStrict as _};
+                    if let Some(decoded) = Self::[<from_ $method_name>](value.clone()) {
+                        return Some(decoded);
+                    }
+                    (&$crate::coerce::Probe(&value))
+                        .forms()
+                        .into_iter()
+                        .find_map(Self::[<from_ $method_name>])
+                }
             }
 
             #[derive(Clone, Debug)]

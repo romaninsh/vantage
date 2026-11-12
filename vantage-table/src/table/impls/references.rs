@@ -5,6 +5,7 @@ use std::sync::Arc;
 use indexmap::IndexMap;
 use vantage_core::{Result, error};
 use vantage_types::Entity;
+use vantage_vista::JoinKey;
 
 use crate::{
     references::{HasMany, HasOne, Reference},
@@ -90,6 +91,43 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
         let reference = HasMany::<T, E, E2>::try_new(foreign_key, target, build_target);
         self.add_ref(relation, Box::new(reference));
         self
+    }
+
+    /// [`try_with_one`](Self::try_with_one) joined by `keys`: a row's `from`
+    /// column narrows the target's `to` column (its id when `None`), for
+    /// every key.
+    pub fn try_with_one_keyed<E2: Entity<T::Value> + 'static>(
+        mut self,
+        relation: &str,
+        keys: &[JoinKey],
+        target: &str,
+        build_target: impl Fn(T) -> Result<Table<T, E2>> + Send + Sync + 'static,
+    ) -> Result<Self>
+    where
+        T::Value: Into<ciborium::Value> + From<ciborium::Value>,
+        T::Id: std::fmt::Display + From<String>,
+    {
+        let reference = HasOne::<T, E, E2>::try_new("", target, build_target).with_keys(keys)?;
+        self.add_ref(relation, Box::new(reference));
+        Ok(self)
+    }
+
+    /// [`try_with_many`](Self::try_with_many) joined by `keys`: a row's
+    /// `from` column narrows the target's `to` column, for every key.
+    pub fn try_with_many_keyed<E2: Entity<T::Value> + 'static>(
+        mut self,
+        relation: &str,
+        keys: &[JoinKey],
+        target: &str,
+        build_target: impl Fn(T) -> Result<Table<T, E2>> + Send + Sync + 'static,
+    ) -> Result<Self>
+    where
+        T::Value: Into<ciborium::Value> + From<ciborium::Value>,
+        T::Id: std::fmt::Display + From<String>,
+    {
+        let reference = HasMany::<T, E, E2>::try_new("", target, build_target).with_keys(keys)?;
+        self.add_ref(relation, Box::new(reference));
+        Ok(self)
     }
 
     pub(crate) fn add_ref(&mut self, relation: &str, reference: Box<dyn Reference>) {
@@ -178,6 +216,13 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
             vantage_vista::ReferenceKind::HasMany => key.to.clone().unwrap_or_default(),
             _ => key.from.clone(),
         })
+    }
+
+    /// The join keys of a registered relation: each reads a parent column
+    /// (`from`) and constrains a target column (`to`, the target's id when
+    /// `None`).
+    pub fn ref_keys(&self, relation: &str) -> Result<Vec<JoinKey>> {
+        Ok(self.ref_shape(relation)?.keys)
     }
 
     /// List all registered relations with their cardinality.

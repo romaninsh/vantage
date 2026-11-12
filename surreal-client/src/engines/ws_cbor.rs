@@ -11,7 +11,8 @@ use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering::SeqCst};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::SeqCst};
+use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio_tungstenite::MaybeTlsStream;
@@ -30,6 +31,9 @@ use crate::{
 
 /// Live-query subscribers, keyed by the server's live-query id.
 type LiveSubscribers = Arc<Mutex<HashMap<String, mpsc::UnboundedSender<Notification>>>>;
+
+/// Requests awaiting their reply, keyed by request id.
+type PendingRequests = Arc<Mutex<HashMap<String, oneshot::Sender<Result<CborValue>>>>>;
 
 /// Normalise a CBOR id to a stable string key.
 ///
@@ -107,9 +111,14 @@ pub struct WsCborEngine {
     sink: Arc<Mutex<SplitSink<WsStream, Message>>>,
     stream: Arc<Mutex<SplitStream<WsStream>>>,
     msg_id: AtomicU64,
-    pending_requests: Arc<Mutex<HashMap<String, oneshot::Sender<CborValue>>>>,
+    pending_requests: PendingRequests,
     live_subscribers: LiveSubscribers,
+    /// Set when the read loop stops; the socket can't be used again.
+    closed: Arc<AtomicBool>,
     task_handle: Option<tokio::task::JoinHandle<()>>,
+    /// How long a request waits for its reply before the socket is taken
+    /// for dead.
+    request_timeout: Duration,
 }
 
 impl WsCborEngine {
@@ -162,7 +171,9 @@ impl WsCborEngine {
             msg_id: AtomicU64::new(0),
             pending_requests: Arc::new(Mutex::new(HashMap::new())),
             live_subscribers: Arc::new(Mutex::new(HashMap::new())),
+            closed: Arc::new(AtomicBool::new(false)),
             task_handle: None,
+            request_timeout: connect.request_deadline(),
         };
 
         let task_handle = engine.handle_messages();
@@ -177,21 +188,19 @@ impl WsCborEngine {
         let stream = Arc::clone(&self.stream);
         let pending_requests = Arc::clone(&self.pending_requests);
         let live_subscribers = Arc::clone(&self.live_subscribers);
+        let closed = Arc::clone(&self.closed);
 
         tokio::spawn(
             async move {
-                loop {
+                let reason = loop {
                     let msg = {
                         let mut stream_guard = stream.lock().await;
                         stream_guard.next().await
                     };
 
                     let msg = match msg {
-                        None => break,
-                        Some(Err(e)) => {
-                            warn!(error = %e, "CBOR ws receive error");
-                            break;
-                        }
+                        None => break "the stream ended".to_string(),
+                        Some(Err(e)) => break format!("receive error: {e}"),
                         Some(Ok(msg)) => msg,
                     };
 
@@ -244,16 +253,12 @@ impl WsCborEngine {
                                         };
 
                                         if let Some(tx) = tx {
-                                            if let Some(err) = error {
-                                                let _ = tx.send(CborValue::Map(vec![(
-                                                    CborValue::Text("error".to_string()),
-                                                    err,
-                                                )]));
-                                            } else if let Some(res) = result {
-                                                let _ = tx.send(res);
-                                            } else {
-                                                let _ = tx.send(CborValue::Null);
-                                            }
+                                            let reply = match (error, result) {
+                                                (Some(err), _) => Err(server_error(&err)),
+                                                (None, Some(res)) => Ok(res),
+                                                (None, None) => Ok(CborValue::Null),
+                                            };
+                                            let _ = tx.send(reply);
                                         }
                                     }
                                 }
@@ -265,14 +270,46 @@ impl WsCborEngine {
                         }
                         Message::Ping(_) => {}
                         Message::Pong(_) => {}
-                        Message::Close(_) => break,
+                        Message::Close(frame) => {
+                            break match frame {
+                                Some(frame) => format!(
+                                    "closed by the server: {} {}",
+                                    u16::from(frame.code),
+                                    frame.reason
+                                ),
+                                None => "closed by the server".to_string(),
+                            };
+                        }
                         _ => {}
                     }
-                }
+                };
+                shut_down(&closed, &pending_requests, &live_subscribers, &reason).await;
             }
             .in_current_span(),
         )
     }
+}
+
+/// The socket is gone: say why once, fail every request still waiting for a
+/// reply, and end every live stream. Marked closed before the waiting
+/// requests are drained, so a request registered after the drain sees the
+/// mark and fails on its own.
+async fn shut_down(
+    closed: &AtomicBool,
+    pending_requests: &PendingRequests,
+    live_subscribers: &LiveSubscribers,
+    reason: &str,
+) {
+    closed.store(true, SeqCst);
+    warn!(reason, "SurrealDB connection lost");
+    let waiting: Vec<_> = pending_requests.lock().await.drain().collect();
+    for (_, tx) in waiting {
+        let _ = tx.send(Err(SurrealError::Connection(format!(
+            "connection lost ({reason}) before the reply arrived; \
+             the request may or may not have been applied"
+        ))));
+    }
+    live_subscribers.lock().await.clear();
 }
 
 #[async_trait]
@@ -297,12 +334,21 @@ impl Engine for WsCborEngine {
         let (tx, rx) = mpsc::unbounded_channel();
         let mut subs = self.live_subscribers.lock().await;
         subs.insert(query_id.to_string(), tx);
+        // A close that already cleared the subscribers won't clear this one,
+        // so drop it here: the stream ends at once.
+        if self.is_closed() {
+            subs.remove(query_id);
+        }
         Ok(rx)
     }
 
     async fn unregister_live(&mut self, query_id: &str) {
         let mut subs = self.live_subscribers.lock().await;
         subs.remove(query_id);
+    }
+
+    fn is_closed(&self) -> bool {
+        self.closed.load(SeqCst)
     }
 }
 
@@ -318,9 +364,14 @@ impl WsCborEngine {
         let (tx, rx) = oneshot::channel();
         let id = self.msg_id.fetch_add(1, SeqCst).to_string();
 
-        {
-            let mut pending = self.pending_requests.lock().await;
-            pending.insert(id.clone(), tx);
+        self.pending_requests.lock().await.insert(id.clone(), tx);
+        // Checked after registering: a close that lands later drains the
+        // entry and answers it.
+        if self.is_closed() {
+            self.pending_requests.lock().await.remove(&id);
+            return Err(SurrealError::Connection(
+                "the connection is closed".to_string(),
+            ));
         }
 
         let request = RouterRequest {
@@ -350,29 +401,54 @@ impl WsCborEngine {
         let rpc_message = CborValue::Map(request_map);
 
         let mut payload = Vec::new();
-        ciborium::into_writer(&rpc_message, &mut payload)
-            .map_err(|e| SurrealError::Protocol(format!("CBOR encoding failed: {}", e)))?;
-
-        {
-            let mut sink = self.sink.lock().await;
-            sink.send(Message::Binary(payload.into()))
-                .await
-                .map_err(|e| SurrealError::Connection(format!("WS send failed: {}", e)))?;
+        if let Err(e) = ciborium::into_writer(&rpc_message, &mut payload) {
+            self.pending_requests.lock().await.remove(&id);
+            return Err(SurrealError::Protocol(format!("CBOR encoding failed: {e}")));
         }
 
-        let response = rx
+        let sent = self
+            .sink
+            .lock()
             .await
-            .map_err(|_| SurrealError::Protocol("Response channel closed".to_string()))?;
-
-        if let CborValue::Map(map) = &response
-            && let Some((_, value)) = map
-                .iter()
-                .find(|(key, _)| matches!(key, CborValue::Text(k) if k == "error"))
-        {
-            return Err(server_error(value));
+            .send(Message::Binary(payload.into()))
+            .await;
+        if let Err(e) = sent {
+            // A socket that can't take a frame is done; the next call
+            // reconnects instead of hitting it again.
+            self.closed.store(true, SeqCst);
+            self.pending_requests.lock().await.remove(&id);
+            return Err(SurrealError::Connection(format!("WS send failed: {e}")));
         }
 
-        Ok(response)
+        match tokio::time::timeout(self.request_timeout, rx).await {
+            Ok(reply) => reply.map_err(|_| {
+                SurrealError::Connection(
+                    "the connection dropped before the reply arrived; \
+                     the request may or may not have been applied"
+                        .to_string(),
+                )
+            })?,
+            Err(_) => {
+                // A socket that stopped answering without closing is dead
+                // all the same: it is shut down as a close would, and the
+                // next call reconnects.
+                let reason = format!("no reply within {} ms", self.request_timeout.as_millis());
+                if let Some(handle) = self.task_handle.take() {
+                    handle.abort();
+                }
+                shut_down(
+                    &self.closed,
+                    &self.pending_requests,
+                    &self.live_subscribers,
+                    &reason,
+                )
+                .await;
+                Err(SurrealError::Connection(format!(
+                    "connection lost ({reason}) before the reply arrived; \
+                     the request may or may not have been applied"
+                )))
+            }
+        }
     }
 }
 

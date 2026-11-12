@@ -165,21 +165,23 @@ fn parse_naive_datetime(s: &str) -> Option<NaiveDateTime> {
         .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f"))
         .ok()
         // Fallback: TIMESTAMPTZ format like "2025-01-10 12:00:00+00" — strip tz
-        .or_else(|| parse_datetime_utc(s).map(|dt| dt.naive_utc()))
+        .or_else(|| parse_offset_datetime(s).map(|dt| dt.naive_utc()))
 }
 
 /// Parse `DateTime<Utc>` from Postgres-native format first (`+00` without colon),
 /// then RFC 3339, then naive (assumed UTC).
 fn parse_datetime_utc(s: &str) -> Option<DateTime<Utc>> {
-    // Postgres: "2025-01-10 12:00:00+00" — %#z accepts +00, +00:00, +0000
+    parse_offset_datetime(s).or_else(|| parse_naive_datetime(s).map(|ndt| ndt.and_utc()))
+}
+
+/// Text that carries an offset: Postgres-native (`+00` without colon,
+/// which `%#z` accepts alongside `+00:00` and `+0000`), then RFC 3339.
+fn parse_offset_datetime(s: &str) -> Option<DateTime<Utc>> {
     DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%#z")
         .or_else(|_| DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f%#z"))
         .ok()
         .map(|dt| dt.with_timezone(&Utc))
-        // RFC 3339: "2025-01-10T12:00:00Z"
         .or_else(|| s.parse::<DateTime<Utc>>().ok())
-        // Naive: assume UTC
-        .or_else(|| parse_naive_datetime(s).map(|ndt| ndt.and_utc()))
 }
 
 fn parse_datetime_fixed(s: &str) -> Option<DateTime<FixedOffset>> {

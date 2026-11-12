@@ -6,171 +6,191 @@
 use ciborium::Value as CborValue;
 use sqlx::postgres::PgRow;
 use sqlx::{Column, Row, TypeInfo};
+use vantage_core::{Result, VantageError, error};
 use vantage_types::Record;
 
 use super::types::{AnyPostgresType, PostgresTypeVariants};
 
+pub(crate) type PgQuery<'q> = sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments>;
+
+/// A value the binder can't express as its variant's parameter comes from
+/// user data, so it surfaces as an error: never a silent NULL, never a
+/// panic. NULL binds as a NULL of the variant's type.
 pub(crate) fn bind_postgres_value<'q>(
-    query: sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments>,
+    query: PgQuery<'q>,
     value: &'q AnyPostgresType,
-) -> sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments> {
+) -> Result<PgQuery<'q>> {
     let cbor = value.value();
-    match value.type_variant() {
-        Some(PostgresTypeVariants::Null) => query.bind(None::<String>),
-        None => bind_by_cbor(query, cbor),
-        Some(PostgresTypeVariants::Bool) => match cbor {
+    let Some(variant) = value.type_variant() else {
+        return bind_by_cbor(query, cbor);
+    };
+    let refused = || refused(variant, cbor);
+    Ok(match variant {
+        PostgresTypeVariants::Null => query.bind(None::<String>),
+        PostgresTypeVariants::Bool => match cbor {
             CborValue::Null => query.bind(None::<bool>),
             CborValue::Bool(b) => query.bind(*b),
-            CborValue::Integer(i) => match i64::try_from(*i) {
-                Ok(n) => query.bind(n != 0),
-                Err(_) => query.bind(None::<bool>),
-            },
-            _ => query.bind(None::<bool>),
+            CborValue::Integer(i) => query.bind(i128::from(*i) != 0),
+            _ => return Err(refused()),
         },
-        Some(PostgresTypeVariants::Int2) => match cbor {
+        PostgresTypeVariants::Int2 => match cbor {
             CborValue::Null => query.bind(None::<i16>),
-            CborValue::Integer(i) => {
-                query.bind(i64::try_from(*i).ok().and_then(|n| i16::try_from(n).ok()))
-            }
-            _ => query.bind(None::<i16>),
+            CborValue::Integer(i) => query.bind(i16::try_from(*i).map_err(|_| refused())?),
+            _ => return Err(refused()),
         },
-        Some(PostgresTypeVariants::Int4) => match cbor {
+        PostgresTypeVariants::Int4 => match cbor {
             CborValue::Null => query.bind(None::<i32>),
-            CborValue::Integer(i) => {
-                query.bind(i64::try_from(*i).ok().and_then(|n| i32::try_from(n).ok()))
-            }
-            _ => query.bind(None::<i32>),
+            CborValue::Integer(i) => query.bind(i32::try_from(*i).map_err(|_| refused())?),
+            CborValue::Array(items) => query.bind(int4_array(items).ok_or_else(refused)?),
+            _ => return Err(refused()),
         },
-        Some(PostgresTypeVariants::Int8) => match cbor {
+        PostgresTypeVariants::Int8 => match cbor {
             CborValue::Null => query.bind(None::<i64>),
-            CborValue::Integer(i) => query.bind(i64::try_from(*i).ok()),
-            _ => query.bind(None::<i64>),
+            CborValue::Integer(i) => query.bind(i64::try_from(*i).map_err(|_| refused())?),
+            _ => return Err(refused()),
         },
-        Some(PostgresTypeVariants::Float4) => match cbor {
+        PostgresTypeVariants::Float4 => match cbor {
             CborValue::Null => query.bind(None::<f32>),
             CborValue::Float(f) => query.bind(*f as f32),
-            CborValue::Integer(i) => query.bind(i64::try_from(*i).ok().map(|n| n as f32)),
-            _ => query.bind(None::<f32>),
+            CborValue::Integer(i) => query.bind(i128::from(*i) as f32),
+            _ => return Err(refused()),
         },
-        Some(PostgresTypeVariants::Float8) => match cbor {
+        PostgresTypeVariants::Float8 => match cbor {
             CborValue::Null => query.bind(None::<f64>),
             CborValue::Float(f) => query.bind(*f),
-            CborValue::Integer(i) => query.bind(i64::try_from(*i).ok().map(|n| n as f64)),
-            _ => query.bind(None::<f64>),
+            CborValue::Integer(i) => query.bind(i128::from(*i) as f64),
+            _ => return Err(refused()),
         },
-        Some(PostgresTypeVariants::Text) => match cbor {
+        PostgresTypeVariants::Text => match cbor {
             CborValue::Null => query.bind(None::<String>),
             CborValue::Text(s) => query.bind(s.as_str()),
-            CborValue::Tag(_, inner) => {
-                if let CborValue::Text(s) = inner.as_ref() {
-                    query.bind(s.as_str())
+            CborValue::Tag(_, inner) => match inner.as_ref() {
+                CborValue::Text(s) => query.bind(s.as_str()),
+                _ => return Err(refused()),
+            },
+            CborValue::Array(items) => query.bind(text_array(items).ok_or_else(refused)?),
+            _ => return Err(refused()),
+        },
+        PostgresTypeVariants::Decimal => match cbor {
+            CborValue::Null => query.bind(None::<rust_decimal::Decimal>),
+            _ => query.bind(
+                tagged_text(cbor, 10)
+                    .and_then(|s| s.parse::<rust_decimal::Decimal>().ok())
+                    .ok_or_else(refused)?,
+            ),
+        },
+        PostgresTypeVariants::DateTime => match cbor {
+            CborValue::Null => query.bind(None::<chrono::NaiveDateTime>),
+            _ => {
+                let s = tagged_text(cbor, 0).ok_or_else(refused)?;
+                // An offset makes it an instant (TIMESTAMPTZ); without one
+                // it's a wall-clock time (TIMESTAMP).
+                if let Some(dt) = parse_instant(s) {
+                    query.bind(dt)
                 } else {
-                    query.bind(None::<String>)
+                    query.bind(parse_naive_datetime(s).ok_or_else(refused)?)
                 }
             }
-            _ => query.bind(None::<String>),
         },
-        Some(PostgresTypeVariants::Decimal) => {
-            let s = match cbor {
-                CborValue::Null => return query.bind(None::<rust_decimal::Decimal>),
-                CborValue::Tag(10, inner) => match inner.as_ref() {
-                    CborValue::Text(s) => s.as_str(),
-                    _ => return query.bind(None::<rust_decimal::Decimal>),
-                },
-                CborValue::Text(s) => s.as_str(),
-                _ => return query.bind(None::<rust_decimal::Decimal>),
-            };
-            match s.parse::<rust_decimal::Decimal>() {
-                Ok(d) => query.bind(d),
-                Err(_) => query.bind(None::<rust_decimal::Decimal>),
-            }
-        }
-        Some(PostgresTypeVariants::DateTime) => {
-            let s = match cbor {
-                CborValue::Null => return query.bind(None::<chrono::NaiveDateTime>),
-                CborValue::Tag(0, inner) => match inner.as_ref() {
-                    CborValue::Text(s) => s.clone(),
-                    _ => return query.bind(None::<chrono::NaiveDateTime>),
-                },
-                CborValue::Text(s) => s.clone(),
-                _ => return query.bind(None::<chrono::NaiveDateTime>),
-            };
-            // Try as DateTime<Utc> first (TIMESTAMPTZ), then NaiveDateTime (TIMESTAMP)
-            if let Ok(dt) = chrono::DateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S%#z") {
-                query.bind(dt.with_timezone(&chrono::Utc))
-            } else if let Ok(dt) = chrono::DateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S%.f%#z") {
-                query.bind(dt.with_timezone(&chrono::Utc))
-            } else if let Ok(dt) = s.parse::<chrono::DateTime<chrono::Utc>>() {
-                query.bind(dt)
-            } else if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S")
-                .or_else(|_| chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S%.f"))
-                .or_else(|_| chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%dT%H:%M:%S"))
-                .or_else(|_| chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%dT%H:%M:%S%.f"))
-            {
-                query.bind(ndt)
-            } else {
-                query.bind(None::<chrono::NaiveDateTime>)
-            }
-        }
-        Some(PostgresTypeVariants::Date) => {
-            let s = match cbor {
-                CborValue::Null => return query.bind(None::<chrono::NaiveDate>),
-                CborValue::Tag(100, inner) => match inner.as_ref() {
-                    CborValue::Text(s) => s.clone(),
-                    _ => return query.bind(None::<chrono::NaiveDate>),
-                },
-                CborValue::Text(s) => s.clone(),
-                _ => return query.bind(None::<chrono::NaiveDate>),
-            };
-            match chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d") {
-                Ok(d) => query.bind(d),
-                Err(_) => query.bind(None::<chrono::NaiveDate>),
-            }
-        }
-        Some(PostgresTypeVariants::Time) => {
-            let s = match cbor {
-                CborValue::Null => return query.bind(None::<chrono::NaiveTime>),
-                CborValue::Tag(101, inner) => match inner.as_ref() {
-                    CborValue::Text(s) => s.clone(),
-                    _ => return query.bind(None::<chrono::NaiveTime>),
-                },
-                CborValue::Text(s) => s.clone(),
-                _ => return query.bind(None::<chrono::NaiveTime>),
-            };
-            match chrono::NaiveTime::parse_from_str(&s, "%H:%M:%S")
-                .or_else(|_| chrono::NaiveTime::parse_from_str(&s, "%H:%M:%S%.f"))
-            {
-                Ok(t) => query.bind(t),
-                Err(_) => query.bind(None::<chrono::NaiveTime>),
-            }
-        }
-        Some(PostgresTypeVariants::Uuid) => match cbor {
+        PostgresTypeVariants::Date => match cbor {
+            CborValue::Null => query.bind(None::<chrono::NaiveDate>),
+            _ => query.bind(
+                tagged_text(cbor, 100)
+                    .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
+                    .ok_or_else(refused)?,
+            ),
+        },
+        PostgresTypeVariants::Time => match cbor {
+            CborValue::Null => query.bind(None::<chrono::NaiveTime>),
+            _ => query.bind(
+                tagged_text(cbor, 101)
+                    .and_then(|s| {
+                        chrono::NaiveTime::parse_from_str(s, "%H:%M:%S")
+                            .or_else(|_| chrono::NaiveTime::parse_from_str(s, "%H:%M:%S%.f"))
+                            .ok()
+                    })
+                    .ok_or_else(refused)?,
+            ),
+        },
+        PostgresTypeVariants::Uuid => match cbor {
             CborValue::Null => query.bind(None::<String>),
-            CborValue::Tag(9, inner) => {
-                if let CborValue::Text(s) = inner.as_ref() {
-                    query.bind(s.as_str())
-                } else {
-                    query.bind(None::<String>)
-                }
-            }
-            CborValue::Text(s) => query.bind(s.as_str()),
-            _ => query.bind(None::<String>),
+            _ => query.bind(tagged_text(cbor, 9).ok_or_else(refused)?),
         },
-        Some(PostgresTypeVariants::Blob) => match cbor {
+        PostgresTypeVariants::Blob => match cbor {
             CborValue::Null => query.bind(None::<Vec<u8>>),
             CborValue::Bytes(b) => query.bind(b.as_slice()),
             CborValue::Text(s) => query.bind(s.as_bytes()),
-            _ => query.bind(None::<Vec<u8>>),
+            _ => return Err(refused()),
         },
+    })
+}
+
+/// The text of `value`, plain or inside `tag`.
+fn tagged_text(value: &CborValue, tag: u64) -> Option<&str> {
+    match value {
+        CborValue::Text(s) => Some(s),
+        CborValue::Tag(t, inner) if *t == tag => match inner.as_ref() {
+            CborValue::Text(s) => Some(s),
+            _ => None,
+        },
+        _ => None,
     }
 }
 
+fn parse_instant(s: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    chrono::DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%#z")
+        .or_else(|_| chrono::DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f%#z"))
+        .map(|dt| dt.with_timezone(&chrono::Utc))
+        .ok()
+        .or_else(|| s.parse::<chrono::DateTime<chrono::Utc>>().ok())
+}
+
+fn parse_naive_datetime(s: &str) -> Option<chrono::NaiveDateTime> {
+    [
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M:%S%.f",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S%.f",
+    ]
+    .iter()
+    .find_map(|fmt| chrono::NaiveDateTime::parse_from_str(s, fmt).ok())
+}
+
+fn text_array(items: &[CborValue]) -> Option<Vec<String>> {
+    items
+        .iter()
+        .map(|item| match item {
+            CborValue::Text(s) => Some(s.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn int4_array(items: &[CborValue]) -> Option<Vec<i32>> {
+    items
+        .iter()
+        .map(|item| match item {
+            CborValue::Integer(i) => i32::try_from(*i).ok(),
+            _ => None,
+        })
+        .collect()
+}
+
+fn refused(variant: PostgresTypeVariants, value: &CborValue) -> VantageError {
+    error!(
+        format!(
+            "cannot bind {} as a PostgreSQL {variant:?} parameter",
+            AnyPostgresType::untyped(value.clone())
+        ),
+        variant = format!("{variant:?}")
+    )
+    .mark_invalid_value()
+}
+
 /// Bind a CBOR value without type variant — infers from the value itself.
-fn bind_by_cbor<'q>(
-    query: sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments>,
-    cbor: &'q CborValue,
-) -> sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments> {
-    match cbor {
+/// JSON-shaped values (maps, arrays) bind as `jsonb`.
+fn bind_by_cbor<'q>(query: PgQuery<'q>, cbor: &'q CborValue) -> Result<PgQuery<'q>> {
+    Ok(match cbor {
         CborValue::Null => query.bind(None::<String>),
         CborValue::Bool(b) => query.bind(*b),
         CborValue::Integer(i) => {
@@ -183,31 +203,25 @@ fn bind_by_cbor<'q>(
         CborValue::Float(f) => query.bind(*f),
         CborValue::Text(s) => query.bind(s.as_str()),
         CborValue::Bytes(b) => query.bind(b.as_slice()),
-        CborValue::Tag(10, inner) => {
-            // Decimal — bind as string, PostgreSQL will coerce
-            if let CborValue::Text(s) = inner.as_ref() {
-                query.bind(s.as_str())
-            } else {
-                query.bind(None::<String>)
-            }
+        // Decimal, uuid, datetime, date, time: their text, which
+        // PostgreSQL coerces.
+        CborValue::Tag(0 | 9 | 10 | 100 | 101, inner) => match inner.as_ref() {
+            CborValue::Text(s) => query.bind(s.as_str()),
+            _ => return Err(unbindable(cbor)),
+        },
+        CborValue::Map(_) | CborValue::Array(_) => {
+            query.bind(crate::types::cbor_to_json(cbor.clone()))
         }
-        CborValue::Tag(0 | 100 | 101, inner) => {
-            // DateTime / Date / Time — bind as string
-            if let CborValue::Text(s) = inner.as_ref() {
-                query.bind(s.as_str())
-            } else {
-                query.bind(None::<String>)
-            }
-        }
-        CborValue::Tag(9, inner) => {
-            if let CborValue::Text(s) = inner.as_ref() {
-                query.bind(s.as_str())
-            } else {
-                query.bind(None::<String>)
-            }
-        }
-        _ => query.bind(None::<String>),
-    }
+        _ => return Err(unbindable(cbor)),
+    })
+}
+
+fn unbindable(value: &CborValue) -> VantageError {
+    error!(format!(
+        "cannot bind {} as a PostgreSQL parameter",
+        AnyPostgresType::untyped(value.clone())
+    ))
+    .mark_invalid_value()
 }
 
 /// Convert a `PgRow` to `Record<AnyPostgresType>`.

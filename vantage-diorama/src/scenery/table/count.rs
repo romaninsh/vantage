@@ -126,8 +126,9 @@ async fn count_in_cache(
             rows = reader.list_values().await?;
         }
     }
+    let query = dio.master.comparable(query);
     Ok(rows
         .values()
-        .filter(|row| admitted_by_view(dio, query, row))
+        .filter(|row| admitted_by_view(dio, &query, row))
         .count())
 }

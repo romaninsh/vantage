@@ -2,6 +2,8 @@
 
 use crate::{DebugEngine, Engine, Result, SurrealClient, SurrealError, WsCborEngine};
 
+use std::time::Duration;
+
 use serde_json::Value;
 use tracing::warn;
 use url::Url;
@@ -26,7 +28,15 @@ pub struct SurrealConnection {
 
     /// Whether to enable debug mode for query logging
     debug: bool,
+
+    /// How long a request waits for its reply; `None` for
+    /// [`DEFAULT_REQUEST_TIMEOUT`].
+    request_timeout: Option<Duration>,
 }
+
+/// How long a request waits for its reply unless
+/// [`SurrealConnection::request_timeout`] says otherwise.
+pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Authentication parameters
 #[derive(Debug, Clone)]
@@ -218,6 +228,20 @@ impl SurrealConnection {
         self
     }
 
+    /// How long a request waits for its reply (default 30 s). A socket that
+    /// stops answering without closing (a half-open TCP connection after a
+    /// laptop sleeps, a NAT timeout) then fails the call instead of hanging
+    /// it: the reply is taken as lost, the request as possibly applied, and
+    /// the socket as dead, so the next call reconnects.
+    pub fn request_timeout(mut self, timeout: Duration) -> Self {
+        self.request_timeout = Some(timeout);
+        self
+    }
+
+    pub(crate) fn request_deadline(&self) -> Duration {
+        self.request_timeout.unwrap_or(DEFAULT_REQUEST_TIMEOUT)
+    }
+
     pub(crate) async fn init_engine(&self, engine: &mut crate::WsCborEngine) -> Result<()> {
         use ciborium::Value as CborValue;
 
@@ -328,6 +352,15 @@ impl SurrealConnection {
 
     /// [`connect`](Self::connect) without the version probe.
     pub(crate) async fn open(self) -> Result<SurrealClient> {
+        let engine = self.engine().await?;
+        let debug = self.debug;
+        let mut client = SurrealClient::new(engine, self.namespace.clone(), self.database.clone());
+        client.connection = Some(self);
+        Ok(client.with_debug(debug))
+    }
+
+    /// A new socket, signed in and on the namespace and database.
+    pub(crate) async fn engine(&self) -> Result<Box<dyn Engine>> {
         let url_str = self
             .url
             .as_ref()
@@ -335,8 +368,8 @@ impl SurrealConnection {
         let url = Url::parse(url_str)
             .map_err(|e| SurrealError::Connection(format!("Invalid URL: {}", e)))?;
 
-        let mut engine: Box<dyn Engine> = match url.scheme() {
-            "ws" | "wss" | "cbor" => Box::new(WsCborEngine::from_connection(&self).await?),
+        let engine: Box<dyn Engine> = match url.scheme() {
+            "ws" | "wss" | "cbor" => Box::new(WsCborEngine::from_connection(self).await?),
             _ => {
                 return Err(SurrealError::Protocol(
                     "Unsupported protocol. Use ws://, wss://, or cbor://".to_string(),
@@ -344,14 +377,11 @@ impl SurrealConnection {
             }
         };
 
-        if self.debug {
-            engine = DebugEngine::wrap(engine);
-        }
-
-        let debug = self.debug;
-        let mut client = SurrealClient::new(engine, self.namespace.clone(), self.database.clone());
-        client.connection = Some(self);
-        Ok(client.with_debug(debug))
+        Ok(if self.debug {
+            DebugEngine::wrap(engine)
+        } else {
+            engine
+        })
     }
 }
 

@@ -2,9 +2,16 @@
 //! over an eager view's complete cache, a loud failure over a paged view with
 //! no eager start, and handed back by `Dio::fetch`.
 
+use ciborium::Value as CborValue;
 use vantage_core::Result;
+use vantage_dataset::traits::ReadableValueSet;
 use vantage_diorama::{Clause, Dio, FilterOrigin};
-use vantage_vista::{Capability, Condition, FilterOp, Vista, VistaQuery};
+use vantage_types::Record;
+use vantage_vista::mocks::MockShell;
+use vantage_vista::{
+    Capability, Column, Condition, FilterOp, TableShell, Vista, VistaMetadata, VistaQuery,
+    forward_table_shell,
+};
 
 use super::fixtures::{NoBytes, assert_fails, items, open, wait_for_ids};
 use crate::support::{eager_dio, paged_dio, paged_or_eager_dio};
@@ -141,6 +148,109 @@ async fn view_stats_list_the_dio_residual_first() -> Result<()> {
             (FilterOp::Ne, 0.into(), FilterOrigin::View),
         ]
     );
+    Ok(())
+}
+
+/// The epoch pair SurrealDB stores a datetime as (`Tag(12)`), for the dates
+/// [`Dates`] knows.
+fn epoch(date: &str) -> Option<CborValue> {
+    let secs: i64 = match date {
+        "2026-11-20" => 1_795_132_800,
+        "2026-12-01" => 1_796_083_200,
+        "2026-12-10" => 1_796_860_800,
+        _ => return None,
+    };
+    Some(CborValue::Tag(
+        12,
+        Box::new(CborValue::Array(vec![secs.into(), 0.into()])),
+    ))
+}
+
+/// A master that stores `due` as a typed datetime and can't filter on it: a
+/// condition on `due` is refused, and compared as the datetime its text
+/// names.
+#[derive(Clone)]
+struct Dates {
+    inner: Box<dyn TableShell>,
+}
+
+forward_table_shell!(Dates, inner, {
+    fn add_condition(&mut self, condition: &Condition) -> Result<()> {
+        if condition.column == "due" {
+            return vantage_vista::unsupported(Capability::FilterOps);
+        }
+        self.inner.add_condition(condition)
+    }
+    fn comparable_condition(&self, condition: &Condition) -> Condition {
+        let mut typed = condition.clone();
+        if let (CborValue::Text(date), "due") = (&condition.value, condition.column.as_str())
+            && let Some(value) = epoch(date)
+        {
+            typed.value = value;
+        }
+        typed
+    }
+});
+
+/// `a`, `b` and `c` due on 2026-11-20, 2026-12-01 and 2026-12-10, held typed.
+fn dated() -> Vista {
+    let metadata = VistaMetadata::new()
+        .with_column(Column::new("id", "String").with_flag("id"))
+        .with_column(Column::new("due", "DateTime"))
+        .with_id_column("id");
+    let shell = [
+        ("a", "2026-11-20"),
+        ("b", "2026-12-01"),
+        ("c", "2026-12-10"),
+    ]
+    .into_iter()
+    .fold(
+        MockShell::new().with_metadata(metadata),
+        |shell, (id, due)| {
+            let mut row = Record::new();
+            row.insert("id".into(), CborValue::Text(id.into()));
+            row.insert("due".into(), epoch(due).expect("a known date"));
+            shell.with_record(id, row)
+        },
+    );
+    Vista::new("dated", shell).map_shell(|inner| Dates { inner })
+}
+
+async fn listed(vista: &Vista) -> Result<Vec<String>> {
+    let mut ids: Vec<String> = vista.list_values().await?.into_keys().collect();
+    ids.sort();
+    Ok(ids)
+}
+
+/// A date condition the master refuses is judged in memory against the
+/// datetime the master would compare, not the text the filter gave: through
+/// a derived Dio's residual, a view's filter over the cache, and a facade
+/// over another Dio.
+#[tokio::test]
+async fn a_refused_date_condition_compares_the_masters_typed_operand() -> Result<()> {
+    let parent = eager_dio(dated()).await;
+    for (op, want) in [(FilterOp::Eq, &["b"][..]), (FilterOp::Gte, &["b", "c"])] {
+        let condition = Condition::new("due", op, "2026-12-01");
+        let derived = parent
+            .derive()
+            .with_condition(condition.clone())
+            .build()
+            .await?;
+        assert_eq!(derived.residual().conditions, vec![condition.clone()]);
+        assert_eq!(listed(&derived.cached()).await?, want, "{op:?} residual");
+        wait_for_ids(&open(&derived, |b| b).await, want).await;
+
+        let view = open(&parent, |b| b.filter(condition.clone())).await;
+        wait_for_ids(&view, want).await;
+
+        let facade = parent.cached().with_condition("due", op, "2026-12-01")?;
+        assert_eq!(
+            facade.comparable_query().conditions[0].value,
+            epoch("2026-12-01").unwrap(),
+            "the facade compares as its master does"
+        );
+        assert_eq!(listed(&facade).await?, want, "{op:?} facade");
+    }
     Ok(())
 }
 

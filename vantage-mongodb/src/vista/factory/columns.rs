@@ -29,15 +29,18 @@ pub(crate) fn build_column(
 /// `object_id`, `datetime` and `decimal` columns parse written text back
 /// into their BSON type (see `source::coerce`). `date` and `timestamp` are
 /// aliases of `datetime`: a BSON DateTime with millisecond precision, not
-/// the BSON Timestamp type.
+/// the BSON Timestamp type. BSON has no time of day, so `time` is text;
+/// `bytes` is a byte count.
 fn column_for_type(name: &str, ty: &str) -> Result<TableColumn<AnyMongoType>> {
     let col: TableColumn<AnyMongoType> = match ty {
-        "int" | "integer" | "i64" | "i32" => {
+        "int" | "integer" | "i64" | "i32" | "bytes" => {
             TableColumn::from_column(TableColumn::<i64>::new(name))
         }
         "float" | "double" | "f64" => TableColumn::from_column(TableColumn::<f64>::new(name)),
         "bool" | "boolean" => TableColumn::from_column(TableColumn::<bool>::new(name)),
-        "string" | "text" | "str" => TableColumn::from_column(TableColumn::<String>::new(name)),
+        "string" | "text" | "str" | "time" => {
+            TableColumn::from_column(TableColumn::<String>::new(name))
+        }
         "object_id" | "objectid" | "oid" => {
             TableColumn::from_column(TableColumn::<ObjectId>::new(name))
         }

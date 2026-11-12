@@ -19,6 +19,8 @@
 //!   matches every row.
 
 use std::cmp::Ordering;
+use std::collections::HashSet;
+use std::sync::{LazyLock, Mutex, PoisonError};
 
 use ciborium::Value as CborValue;
 use vantage_core::{Result, error};
@@ -36,6 +38,7 @@ mod path;
 mod search;
 
 use compare::datetime_as_text;
+use path::blocked_at;
 use search::matches_search;
 
 pub use compare::cbor_cmp;
@@ -52,6 +55,11 @@ impl Condition {
     /// `NotInSet`.
     pub fn matches(&self, row: &Rec, metadata: &VistaMetadata) -> bool {
         let cell = cell_get(row, &self.column, metadata);
+        if cell.is_none()
+            && let Some(at) = blocked_at(row, &self.column, metadata)
+        {
+            self.warn_unreadable(at, metadata);
+        }
         let operand = &self.value;
         match self.op {
             FilterOp::Eq => cell.is_some_and(|c| same(c, operand)),
@@ -64,6 +72,33 @@ impl Condition {
                     .contains(&operand_text(operand).to_lowercase())
             }),
             op => cell.is_some_and(|c| op.matches_ordering(cbor_cmp(c, operand))),
+        }
+    }
+
+    /// A rows-held-in-memory evaluation reads nothing through a cell that
+    /// isn't a map (a Mongo embedded document declared as a `string`
+    /// column), so the condition silently matches no rows where the backend
+    /// would match some. Warned once per table and column per process; the
+    /// metadata names no table, so its declared columns stand for it.
+    fn warn_unreadable(&self, column: &str, metadata: &VistaMetadata) {
+        static WARNED: LazyLock<Mutex<HashSet<(String, String)>>> = LazyLock::new(Default::default);
+        let table = metadata
+            .columns
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .join(",");
+        let first = WARNED
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert((table, self.column.clone()));
+        if first {
+            tracing::warn!(
+                condition = format!("{} {:?} {:?}", self.column, self.op, self.value),
+                column,
+                "condition can't be evaluated over rows held in memory: the cell it reads \
+                 through isn't a map, so no row matches"
+            );
         }
     }
 }

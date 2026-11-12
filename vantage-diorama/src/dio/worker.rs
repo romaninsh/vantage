@@ -174,7 +174,8 @@ async fn default_write(dio: &Dio, flash: ChangeFlash) -> Result<FlashOutcome> {
     // error stays reachable underneath. The wrapper keeps the driver's
     // `Conflict` or `NotFound`: a master that confines writes itself refuses
     // a record outside its set there, and callers branch on the kind. So do
-    // a `Forbidden` or `Unsupported` refusal from the master.
+    // a `Forbidden` or `Unsupported` refusal from the master, and an
+    // `InvalidValue` for a value that doesn't fit its column.
     let kind = written.as_ref().err().map(VantageError::kind);
     let wrapped = written.context(error!("write failed"));
     match kind {
@@ -182,6 +183,7 @@ async fn default_write(dio: &Dio, flash: ChangeFlash) -> Result<FlashOutcome> {
         Some(ErrorKind::NotFound) => wrapped.map_err(VantageError::mark_not_found),
         Some(ErrorKind::Forbidden) => wrapped.map_err(VantageError::mark_forbidden),
         Some(ErrorKind::Unsupported) => wrapped.map_err(VantageError::mark_unsupported),
+        Some(ErrorKind::InvalidValue) => wrapped.map_err(VantageError::mark_invalid_value),
         _ => wrapped,
     }
 }

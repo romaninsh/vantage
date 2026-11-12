@@ -7,6 +7,7 @@
 //! ends with [`BuildEnv::inject`]; `Table::with_spec_references` hands each
 //! reference target a fresh environment of kind [`BuildKind::Reference`].
 
+use std::cell::Cell;
 use std::fmt;
 use std::sync::Arc;
 
@@ -82,6 +83,28 @@ impl BuildTrail {
     }
 }
 
+thread_local! {
+    /// Set while a table is built only for its stored name (see [`bare`]).
+    static BARE: Cell<bool> = const { Cell::new(false) };
+}
+
+struct Bare(bool);
+
+impl Drop for Bare {
+    fn drop(&mut self) {
+        BARE.with(|b| b.set(self.0));
+    }
+}
+
+/// Run `build` with every spec build inside it left uninjected. A table
+/// built only to read its stored name needs no roll-ups, rules or hooks, and
+/// an injected build builds further tables in turn: a has-one typing a link
+/// would build its target, the target's roll-up tables, their links, ….
+pub(crate) fn bare<R>(build: impl FnOnce() -> R) -> R {
+    let _restore = Bare(BARE.with(|b| b.replace(true)));
+    build()
+}
+
 /// Builds a table from spec `S` over data source `T`, carrying the build
 /// environment into nested builds.
 pub type SpecTableBuilder<S, T> = fn(&S, T, &BuildEnv<S, T>) -> Result<Table<T, EmptyEntity>>;
@@ -155,7 +178,7 @@ impl<S: 'static, T: TableSource> BuildEnv<S, T> {
         table: &mut Table<T, EmptyEntity>,
         build: SpecTableBuilder<S, T>,
     ) -> Result<()> {
-        let Some(injector) = &self.injector else {
+        let Some(injector) = self.injector.as_ref().filter(|_| !BARE.with(Cell::get)) else {
             return Ok(());
         };
         let db = table.data_source().clone();

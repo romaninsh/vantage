@@ -93,6 +93,7 @@ fn reissue(err: &VantageError) -> VantageError {
         ErrorKind::NotFound => fresh.mark_not_found(),
         ErrorKind::Conflict => fresh.mark_conflict(),
         ErrorKind::Forbidden => fresh.mark_forbidden(),
+        ErrorKind::InvalidValue => fresh.mark_invalid_value(),
         _ => fresh,
     }
 }
@@ -146,6 +147,9 @@ impl TableShell for TxShell {
 
     fn add_condition(&mut self, condition: &Condition) -> Result<()> {
         self.ready_mut()?.add_condition(condition)
+    }
+    fn comparable_condition(&self, condition: &Condition) -> Condition {
+        self.inner.comparable_condition(condition)
     }
     fn add_native_condition(&mut self, condition: NativeCondition) -> Result<()> {
         self.ready_mut()?.add_native_condition(condition)

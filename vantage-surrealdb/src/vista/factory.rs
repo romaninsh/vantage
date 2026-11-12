@@ -128,6 +128,9 @@ impl VistaFactory for SurrealVistaFactory {
             .as_ref()
             .is_some_and(|m| m.rhai.is_some() || m.base.is_some());
         let table = self.table_from_spec(&spec)?;
+        if !read_only {
+            self.db.warn_schema_mismatches(&table);
+        }
         let metadata = metadata_from_spec(&table, &spec)?;
         let modify = spec.driver.surreal.as_ref().and_then(|b| b.modify.clone());
         #[cfg(not(feature = "rhai"))]

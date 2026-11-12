@@ -99,6 +99,12 @@ impl TableShell for DioShell {
         Ok(())
     }
 
+    /// The facade's rows are the master's, so a value compares as the
+    /// master compares it.
+    fn comparable_condition(&self, condition: &Condition) -> Condition {
+        self.dio.master.comparable_condition(condition)
+    }
+
     fn set_search(&mut self, text: Option<&str>) -> Result<()> {
         self.query.search = text.map(str::to_string);
         Ok(())
@@ -212,9 +218,9 @@ impl DioShell {
     }
 
     /// `rows`, read from the master when `from_master` and from the cache
-    /// otherwise, narrowed by `local` and the Dio's residual. `local` holding
-    /// a clause the evaluator can't judge (a native condition) is an error,
-    /// never a pass.
+    /// otherwise, narrowed by `local` and the Dio's residual, both compared
+    /// as the master compares them. `local` holding a clause the evaluator
+    /// can't judge (a native condition) is an error, never a pass.
     ///
     /// Sorted by `local`'s order, or, when the handle has none, by the Dio's
     /// own: the residual's, which the master never applied, or on a cache
@@ -222,9 +228,10 @@ impl DioShell {
     /// sort is the evaluator's, which can differ from the master's collation
     /// (see [`Dio::cached`](crate::Dio::cached)).
     fn refine(&self, rows: Rows, local: &VistaQuery, from_master: bool) -> Result<Rows> {
+        let comparable = self.dio.master.comparable(local);
         let mut kept = Vec::with_capacity(rows.len());
         for (id, row) in rows {
-            if local.matches(&row, &self.metadata)? && admitted_by_dio(&self.dio, &row) {
+            if comparable.matches(&row, &self.metadata)? && admitted_by_dio(&self.dio, &row) {
                 kept.push((id, row));
             }
         }

@@ -751,6 +751,55 @@ fn injector_runs_on_reference_targets_with_kind_reference() {
     );
 }
 
+/// A has-one's stored target name is read from a bare build: the target's
+/// injector (roll-ups, rules, hooks), which builds further tables in turn,
+/// never runs for it.
+#[test]
+fn has_one_target_reads_the_stored_name_without_injecting_the_target() {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let log = seen.clone();
+    let injector: TableInjector<CborSource> = Arc::new(move |cx, _table| {
+        log.lock().unwrap().push(cx.key.to_string());
+        Ok(())
+    });
+    /// `investor` is stored as `app_investor`.
+    fn stored(spec: &Spec, src: CborSource, env: &Env) -> Result<CborTable> {
+        let name = match spec.name.as_str() {
+            "investor" => "app_investor".to_string(),
+            other => other.to_string(),
+        };
+        let mut table = Table::new(name, src)
+            .with_id_column("id")
+            .with_spec_references(spec, env, stored)?;
+        env.inject(&spec.name, &mut table, stored)?;
+        Ok(table)
+    }
+    let mut bid = spec("bid", &[]);
+    let investor: ReferenceSpec = serde_json::from_value(serde_json::json!({
+        "table": "investor",
+        "kind": "has_one",
+        "foreign_key": "investor",
+    }))
+    .unwrap();
+    bid.references.insert("investor".into(), investor);
+    let specs = vec![bid, spec("investor", &[])];
+    let env = Env::root("bid", Some(resolver(specs.clone())), Some(injector));
+    let bids = stored(&specs[0], CborSource, &env).unwrap();
+    assert_eq!(
+        bids.has_one_target("investor").as_deref(),
+        Some("app_investor")
+    );
+    assert_eq!(
+        *seen.lock().unwrap(),
+        ["bid"],
+        "the target is never injected"
+    );
+
+    // Traversal still builds the injected target.
+    bids.get_ref_target_erased("investor").unwrap();
+    assert_eq!(*seen.lock().unwrap(), ["bid", "investor"]);
+}
+
 #[test]
 fn injector_runs_on_bare_reference_targets_without_a_resolver() {
     let injector: TableInjector<CborSource> = Arc::new(|_cx, table| {

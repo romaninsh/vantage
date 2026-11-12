@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.1.0 — 2026-11-11
+
+- `vantage_type_system!` generates a lenient `coerce_<x>(value) -> Option<Self>` next to every
+  `from_<x>`, for values a form or script hands in as another shape: `"42"` for an integer,
+  `"2026-12-10"` for a date or datetime, an integer for a float or decimal, a SurrealDB epoch
+  datetime for an RFC 3339 one. It tries the strict `from_<x>` first, then each lenient form of
+  the value through the same strict decode, so each driver's own type impl still decides what is
+  valid. A datetime that is not exactly midnight UTC is never read as a date.
+- `from_<x>`, `try_get` and `AnyX::from` are unchanged: reads stay strict.
+- `LenientValue`, the trait that proposes the candidate forms, is implemented for
+  `ciborium::Value` and, with the `serde` feature, `serde_json::Value`. Type systems over another
+  value type (bson, DynamoDB) keep compiling; their `coerce_<x>` behaves like `from_<x>` until
+  they override it.
+
 ## 1.0.3 — 2026-10-25
 
 - Tests of one behaviour are folded into one test each (epoch-pair rendering, `changes_from`,

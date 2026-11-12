@@ -19,6 +19,21 @@ fn downcast_target<X: 'static>(target: Box<dyn Any>, relation: &str) -> Result<X
         .map_err(|_| error!("Failed to downcast related table", relation = relation))
 }
 
+/// A subquery join carries one key; further keys would be dropped, widening
+/// the target.
+fn single_key(reference: &dyn Reference, relation: &str, source_id: &str) -> Result<()> {
+    let keys = reference
+        .vista_reference(relation, String::new(), source_id)
+        .keys;
+    if keys.len() > 1 {
+        return Err(error!(
+            "a relation joined by more than one key can only be traversed from a row",
+            relation = relation
+        ));
+    }
+    Ok(())
+}
+
 impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
     /// Narrow the table to a single row by id.
     ///
@@ -93,6 +108,7 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
         let reference = self.lookup_ref(relation)?;
 
         let source_id = self.id_field_name();
+        single_key(reference, relation, &source_id)?;
 
         let mut target: Table<T, E2> = downcast_target(
             reference.build_target(self.data_source() as &dyn Any)?,
@@ -126,7 +142,7 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
             reference.build_target(self.data_source() as &dyn Any)?,
             relation,
         )?;
-        self.attach_correlated_condition(reference, &mut target)?;
+        self.attach_correlated_condition(relation, reference, &mut target)?;
         Ok(target)
     }
 
@@ -140,7 +156,7 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
             reference.build_target_erased(self.data_source() as &dyn Any)?,
             relation,
         )?;
-        self.attach_correlated_condition(reference, &mut target)?;
+        self.attach_correlated_condition(relation, reference, &mut target)?;
         Ok(target)
     }
 
@@ -150,10 +166,12 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
     /// and which `build_target*` closure produced `target`.
     fn attach_correlated_condition<E2: Entity<T::Value> + 'static>(
         &self,
+        relation: &str,
         reference: &dyn Reference,
         target: &mut Table<T, E2>,
     ) -> Result<()> {
         let source_id = self.id_field_name();
+        single_key(reference, relation, &source_id)?;
         let target_id = target.id_field_name();
         let (src_col, tgt_col) = reference.columns(&source_id, &target_id);
         let condition = self.data_source().try_related_correlated_condition(

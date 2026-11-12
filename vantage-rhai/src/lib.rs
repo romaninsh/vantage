@@ -21,10 +21,12 @@ pub use rhai;
 
 mod atomic;
 mod compiled;
+mod dates;
 mod error;
 mod host;
 mod json;
 mod limits;
+mod modules;
 mod namespace;
 mod resolver;
 mod row_pipe;
@@ -33,10 +35,12 @@ pub mod template;
 
 pub use atomic::register_atomic_syntax;
 pub use compiled::{Compiled, Env, Slot};
+pub use dates::Dates;
 pub use error::{Located, Result, RhaiError};
 pub use host::{AST_CACHE_BOUND, Host, HostBuilder, Mode, Vocab, background_host, ui_host};
 pub use json::{from_json, to_json};
 pub use limits::{BACKGROUND_MAX_OPERATIONS, Limits, UI_MAX_OPERATIONS};
+pub use modules::ModuleDir;
 pub use namespace::Namespace;
 pub use resolver::{Lookup, Resolver};
 pub use row_pipe::{RowAnswer, RowPipe};

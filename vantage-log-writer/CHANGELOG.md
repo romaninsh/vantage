@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.5 — 2026-11-11
+
+- The vista factory accepts the YAML types `date`, `time`, `timestamp` and `bytes`, written as
+  text.
+
 ## 0.7.4 — 2026-10-31
 
 - Requires vantage-vista 2.6.0. Inside an `atomic` block the log-writer vista writes directly and

@@ -30,7 +30,7 @@ impl SqlDialect for MysqlDB {
         query: SqlxQuery<'q, sqlx::MySql>,
         value: &'q AnyMysqlType,
     ) -> vantage_core::Result<SqlxQuery<'q, sqlx::MySql>> {
-        Ok(bind_mysql_value(query, value))
+        bind_mysql_value(query, value)
     }
 
     fn rows_affected(result: &MySqlQueryResult) -> u64 {
