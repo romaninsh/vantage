@@ -52,9 +52,10 @@ const UNITS_PER_DELIVERY: i64 = 12;
 const BOOTSTRAP_MIN: usize = 3;
 
 #[tokio::main]
-async fn main() {
-    if let Err(e) = run().await {
-        e.report();
+async fn main() -> std::process::ExitCode {
+    match run().await {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(e) => e.report(),
     }
 }
 
