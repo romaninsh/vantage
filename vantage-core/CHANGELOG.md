@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.1 — 2026-11-13
+
+- The `error` example returns or discards `report()`'s `ExitCode` explicitly; Rust 1.100 makes the
+  ignored value a warning. No library change.
+
 ## 1.3.0 — 2026-11-11
 
 - `ErrorKind::InvalidValue`, `mark_invalid_value()`, `is_invalid_value()`: a value does not fit

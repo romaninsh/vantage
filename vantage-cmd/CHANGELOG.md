@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.4 — 2026-11-13
+
+- Builds against vantage-cli-util 0.6.8 and vantage-table 3.8.0. No code change.
+
 ## 0.7.3 — 2026-11-11
 
 - The vista factory accepts the YAML types `date`, `time`, `timestamp` and `bytes`, read as
