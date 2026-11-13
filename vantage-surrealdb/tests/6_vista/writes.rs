@@ -4,7 +4,7 @@ use ciborium::Value as CborValue;
 use vantage_dataset::prelude::*;
 use vantage_surrealdb::types::AnySurrealType;
 use vantage_types::Record;
-use vantage_vista::FilterOp;
+use vantage_vista::{FilterOp, VistaFactory};
 
 use super::{TestResult, product_table, setup};
 
@@ -62,6 +62,23 @@ async fn vista_insert_without_id_reads_back_the_stored_row() -> TestResult {
         .from_table(product_table(db.clone(), &table_name))?;
     let stored = all.get_value(&id).await?.expect("stored");
     assert_eq!(stored.get("name"), Some(&CborValue::Text("Echo".into())));
+
+    // SurrealDB makes only the record id, so an `auto` id elsewhere could
+    // never be read back: the build refuses it.
+    let auto = |column: &str| format!("name: {table_name}\ncolumns:\n  {column}\n");
+    for column in [
+        "code: { type: string, flags: [id, auto] }",
+        "id: { type: string, flags: [id, auto], surreal: { field: code } }",
+    ] {
+        let err = db.vista_factory().from_yaml(&auto(column)).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("auto id column must be the record id"),
+            "{column}: {err}"
+        );
+    }
+    db.vista_factory()
+        .from_yaml(&auto("id: { type: string, flags: [id, auto] }"))?;
     Ok(())
 }
 

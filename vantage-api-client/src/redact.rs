@@ -93,11 +93,3 @@ pub(crate) fn is_secret_header(name: &str) -> bool {
         .iter()
         .any(|word| lower.contains(word))
 }
-
-/// One header as a log line shows it: credentials are `***`.
-pub(crate) fn header_line(name: &str, value: &str) -> String {
-    format!(
-        "{name}: {}",
-        if is_secret_header(name) { MASK } else { value }
-    )
-}

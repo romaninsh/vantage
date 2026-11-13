@@ -328,6 +328,20 @@ async fn a_failed_row_reads_without_outputs_and_is_tried_again() -> Result<()> {
         twice_of(&sweet, "alpha"),
         Some(CborValue::Integer(60.into()))
     );
+
+    // A paged window's refresh re-fetches the same rows. One the sugar
+    // failed on holds no outputs yet, so it is bound again and retried.
+    let tmp = TempDir::new().unwrap();
+    let (dio, sweet) = paged_sweet(&tmp, counted(Arc::default(), true)).await?;
+    assert_eq!(twice_of(&sweet, "alpha"), None);
+    dio.refresh().await?;
+    assert!(
+        support::eventually(Duration::from_secs(2), || twice_of(&sweet, "alpha")
+            .is_some())
+        .await,
+        "the refresh never retried the sugar: {:?}",
+        sweet.row(0)
+    );
     Ok(())
 }
 
@@ -372,8 +386,8 @@ async fn a_sugared_load_on_miss_caches_the_row_plain() -> Result<()> {
     Ok(())
 }
 
-/// A sugared paged view over two rows, its first window loaded.
-async fn paged_sweet(tmp: &TempDir) -> Result<(Dio, Arc<dyn TableScenery>)> {
+/// A paged view over two rows with `sugar`, its first window loaded.
+async fn paged_sweet(tmp: &TempDir, sugar: Sugar) -> Result<(Dio, Arc<dyn TableScenery>)> {
     let backend: Backend = Arc::new(Mutex::new(vec![
         ("a".into(), record("alpha", 30)),
         ("b".into(), record("beta", 10)),
@@ -382,7 +396,7 @@ async fn paged_sweet(tmp: &TempDir) -> Result<(Dio, Arc<dyn TableScenery>)> {
         .dio(chunk_master(&[("name", "String"), ("price", "i64")]))
         .build()
         .await?;
-    let sweet = dio.table_scenery().sugar(doubling()).open().await?;
+    let sweet = dio.table_scenery().sugar(sugar).open().await?;
     let mut gen_rx = sweet.subscribe();
     let initial = u64::from(*gen_rx.borrow_and_update());
     sweet.set_viewport(0..2, 0..2);
@@ -398,7 +412,7 @@ async fn paged_sweet(tmp: &TempDir) -> Result<(Dio, Arc<dyn TableScenery>)> {
 #[tokio::test]
 async fn rows_loaded_through_a_sugared_view_reach_the_cache_without_outputs() -> Result<()> {
     let tmp = TempDir::new().unwrap();
-    let (dio, _sweet) = paged_sweet(&tmp).await?;
+    let (dio, _sweet) = paged_sweet(&tmp, doubling()).await?;
     let cached = vantage_dataset::prelude::ReadableValueSet::get_value(&dio.cached(), "a")
         .await?
         .expect("the loaded row is cached");
@@ -412,7 +426,7 @@ async fn rows_loaded_through_a_sugared_view_reach_the_cache_without_outputs() ->
 #[tokio::test]
 async fn a_paged_sugared_view_shows_the_sugar_columns() -> Result<()> {
     let tmp = TempDir::new().unwrap();
-    let (_dio, sweet) = paged_sweet(&tmp).await?;
+    let (_dio, sweet) = paged_sweet(&tmp, doubling()).await?;
     assert!(
         support::eventually(Duration::from_secs(5), || twice_of(&sweet, "alpha")
             .is_some())

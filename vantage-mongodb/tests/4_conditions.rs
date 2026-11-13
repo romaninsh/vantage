@@ -141,13 +141,25 @@ fn ne_bool_true_negates_and_false_keeps_the_condition() {
     );
 }
 
-#[test]
-fn negating_a_plain_value_filter_negates_its_equality() {
+#[tokio::test]
+async fn negating_a_plain_value_filter_negates_its_equality() {
     let active = MongoCondition::Doc(doc! { "active": true });
     assert_eq!(
         as_doc(active.eq_bool(false)),
         doc! { "active": { "$not": { "$eq": true } } }
     );
+
+    // A regex value matches by pattern, so its negation is `$not: /re/`:
+    // `$eq` would compare the regex object literally.
+    let regex = Bson::RegularExpression(bson::Regex {
+        pattern: "^Time".into(),
+        options: String::new(),
+    });
+    let mut table = product_table(get_db().await);
+    table.add_condition(MongoCondition::Doc(doc! { "name": regex }).eq_bool(false));
+    let products = table.list_values().await.unwrap();
+    assert!(!products.contains_key(&MongoId::from("time_tart")));
+    assert!(products.contains_key(&MongoId::from("hover_cookies")));
 }
 
 #[tokio::test]

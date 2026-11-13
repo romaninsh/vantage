@@ -17,6 +17,11 @@
   as the GraphQL, memory and MongoDB factories already did.
 - Fix (VAN-596): a body template that mentions `secret.x` in a comment or a string no longer
   demands a bound secret. Only code, and `${}` inside backtick strings, is scanned.
+  The scanner follows Rhai's lexer: a backtick string has no escape but `\${`, a raw `#"…"#`
+  string has none, and an interpolation is closed by the `}` its own code closes, not one in a
+  comment or a string.
+- A caller header passed to `http_request` under the configured auth header's name (any case)
+  is masked in the debug log and redacted from errors, whatever the name looks like.
 
 ## 2.3.1 — 2026-11-11
 

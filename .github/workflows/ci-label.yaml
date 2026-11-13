@@ -33,7 +33,8 @@ jobs:
           }
           # Polls the run until it completes, for at most $1 seconds.
           wait_completed() {
-            for _ in $(seq 1 $(($1 / 5))); do
+            local seconds=$1
+            for _ in $(seq 1 $((seconds / 5))); do
               [ "$(gh run view "$id" -R "$GITHUB_REPOSITORY" --json status -q .status)" = completed ] && return 0
               sleep 5
             done
@@ -46,22 +47,26 @@ jobs:
             echo "no CI run for $SHA yet; it will read the label when it starts"
             exit 0
           fi
-          status=$(jq -r .status <<<"$run")
-          case "$status" in
-            queued | waiting | pending | requested)
-              echo "CI run $id is $status: it will read the label when it starts"
-              exit 0
-              ;;
-            completed) ;;
-            *)
-              gh run cancel "$id" -R "$GITHUB_REPOSITORY"
-              if ! wait_completed 180; then
-                echo "cancel did not take effect in 3 minutes; forcing it"
-                gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$id/force-cancel"
-                wait_completed 120 || { echo "run $id is still not completed"; exit 1; }
-              fi
-              ;;
-          esac
+          if [ "$(jq -r .status <<<"$run")" != completed ]; then
+            # The run reads the labels in its `changes` job. A run's own status
+            # can be queued after that job ran, so ask the job.
+            changes=$(gh run view "$id" -R "$GITHUB_REPOSITORY" --json jobs \
+              -q '.jobs[] | select(.name == "changes / changes") | .status') || exit 1
+            case "$changes" in
+              "" | queued | waiting | pending | requested)
+                echo "CI run $id has not started its changes job: it will read the label"
+                exit 0
+                ;;
+            esac
+            gh run cancel "$id" -R "$GITHUB_REPOSITORY"
+            if ! wait_completed 180; then
+              echo "cancel did not take effect in 3 minutes; forcing it"
+              # A run that completed meanwhile answers 409.
+              gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$id/force-cancel" \
+                || echo "force-cancel failed; checking whether the run completed"
+              wait_completed 120 || { echo "run $id is still not completed"; exit 1; }
+            fi
+          fi
           # Again: the cancel can take minutes.
           moved && exit 0
           gh run rerun "$id" -R "$GITHUB_REPOSITORY"

@@ -68,6 +68,8 @@ fn negate_doc(doc: Document) -> Document {
                     return doc! { key: { "$not": inner.clone() } };
                 }
                 Bson::Document(_) => {}
+                // `$eq` would compare the regex object, not match by it.
+                Bson::RegularExpression(_) => return doc! { key: { "$not": val.clone() } },
                 other => return doc! { key: { "$not": { "$eq": other.clone() } } },
             }
         }

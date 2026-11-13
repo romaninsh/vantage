@@ -12,9 +12,23 @@ use crate::scenery::enriched_record::{EnrichedRecord, RowStatus};
 use super::SharedRows;
 
 impl SharedRows {
-    fn same_but_sugar(&self, bound: &Record<CborValue>, fetched: &Record<CborValue>) -> bool {
+    fn same_but_sugar(
+        &self,
+        id: &str,
+        bound: &Record<CborValue>,
+        fetched: &Record<CborValue>,
+    ) -> bool {
         if self.sugar_columns.is_empty() {
             return bound == fetched;
+        }
+        // A row the sugar failed on holds no outputs: binding it again lets
+        // the load's sugar pass retry it.
+        let sweetened = self
+            .read_cache
+            .as_ref()
+            .is_some_and(|sugared| sugared.has_outputs_for(id, fetched));
+        if !sweetened {
+            return false;
         }
         let mut plain = bound.clone();
         for name in self.sugar_columns.iter() {
@@ -50,12 +64,12 @@ impl SceneryChunkTarget for SharedRows {
         // change. Only a new/!Fresh slot or a different record is "dirty", and
         // only a dirty load bumps the generation (see `loader::commit`). A
         // sugared slot holds the outputs the commit merged in, so they are
-        // left out of the comparison.
+        // left out of the comparison; one without them is rebound.
         {
             let rows = self.rows.read().unwrap();
             if let Some(existing) = rows.get(&idx)
                 && existing.status == RowStatus::Fresh
-                && self.same_but_sugar(&existing.record, &record)
+                && self.same_but_sugar(&id, &existing.record, &record)
             {
                 return ChunkWrite::Skipped;
             }

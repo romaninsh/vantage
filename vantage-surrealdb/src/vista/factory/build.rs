@@ -1,12 +1,10 @@
 //! Spec → table lowering: a stored table, a `rhai:` query source, or a
 //! `base:` vista derived from another spec, plus `expr:` columns.
 
-use vantage_core::Result;
-#[cfg(not(feature = "rhai"))]
-use vantage_core::error;
+use vantage_core::{Result, error};
 use vantage_table::table::{BuildEnv, BuildKind, Table};
 use vantage_types::EmptyEntity;
-use vantage_vista::resolve_base_spec;
+use vantage_vista::{ColumnFlag, resolve_base_spec};
 
 use super::columns::build_column;
 use crate::statements::SurrealSelect;
@@ -48,7 +46,9 @@ pub(super) fn build_surreal_table(
             table = add_expr_column(table, name, code)?;
         }
     }
-    table.set_spec_id(&spec.resolve_id_column("id"), &spec.columns)?;
+    let id = spec.resolve_id_column("id");
+    check_auto_id(spec, &id)?;
+    table.set_spec_id(&id, &spec.columns)?;
 
     let table = table
         .with_spec_references(spec, env, build_surreal_table)?
@@ -57,6 +57,31 @@ pub(super) fn build_surreal_table(
     let mut table = import_dotted_columns(spec, table)?;
     env.inject(&spec.name, &mut table, build_surreal_table)?;
     Ok(table)
+}
+
+/// SurrealDB makes only the record id, so an insert under an `auto` id
+/// stored anywhere else writes a row it can't read back.
+fn check_auto_id(spec: &SurrealVistaSpec, id: &str) -> Result<()> {
+    let Some(column) = spec.columns.get(id) else {
+        return Ok(());
+    };
+    if !column.has_flag(ColumnFlag::Auto) {
+        return Ok(());
+    }
+    let field = column
+        .driver
+        .surreal
+        .as_ref()
+        .and_then(|b| b.field.as_deref());
+    if id == "id" && field.is_none_or(|f| f == "id") {
+        return Ok(());
+    }
+    Err(error!(
+        "an auto id column must be the record id, `id`, the one id SurrealDB makes; \
+         rename the column to `id` or drop the `auto` flag",
+        table = spec.name.as_str(),
+        column = id
+    ))
 }
 
 /// A dotted column (`batch.name`) is an implicit reference, imported

@@ -523,6 +523,7 @@ where
         table.copy_columns_from(source, Some(columns));
         table.copy_relations_from(source, Some(relations));
         table.id_field = source.id_field.clone();
+        table.id_auto = source.id_auto;
         table.title_field = source.title_field.clone();
         table.title_fields = source.title_fields.clone();
         table

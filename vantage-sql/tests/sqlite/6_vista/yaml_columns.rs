@@ -1,13 +1,16 @@
 //! YAML column declarations: flags reaching the vista column, and `lazy:`
 //! columns the vista computes per record.
 
+use std::sync::Arc;
+
 #[cfg(feature = "rhai")]
 use ciborium::Value as CborValue;
 #[cfg(feature = "rhai")]
 use vantage_dataset::prelude::*;
+use vantage_sql::sqlite::vista::SqliteVistaSpec;
 #[cfg(feature = "rhai")]
 use vantage_types::Record;
-use vantage_vista::{ColumnFlag, VistaFactory};
+use vantage_vista::{ColumnFlag, SpecResolver, VistaFactory};
 
 use super::{TestResult, setup};
 
@@ -37,11 +40,32 @@ columns:
     let id = vista.column("id").expect("id");
     assert!(!id.has_flag(ColumnFlag::Auto), "{id:?}");
 
-    let auto = db
-        .vista_factory()
-        .from_yaml("name: product\ncolumns:\n  id: { type: int, flags: [id, auto] }\n")?;
+    let auto_yaml = "name: product\ncolumns:\n  id: { type: int, flags: [id, auto] }\n  name: { type: string }\n";
+    let auto = db.vista_factory().from_yaml(auto_yaml)?;
     let id = auto.column("id").expect("id");
     assert!(id.has_flag(ColumnFlag::Auto), "{id:?}");
+
+    // A vista derived from it keeps the auto id, unless it picks another id
+    // column.
+    let base: SqliteVistaSpec = serde_yaml_ng::from_str(auto_yaml)?;
+    let resolver: Arc<dyn SpecResolver<SqliteVistaSpec>> =
+        Arc::new(move |name: &str| (name == "product").then(|| base.clone()));
+    let derived = |extra: &str| {
+        let yaml = format!(
+            "name: derived\ncolumns: {{}}\n{extra}sqlite:\n  base: product\n  inherit:\n    columns: [id, name]\n"
+        );
+        db.vista_factory()
+            .with_resolver(resolver.clone())
+            .build_from_spec(serde_yaml_ng::from_str(&yaml).unwrap())
+            .unwrap()
+    };
+    let id = derived("").column("id").cloned().expect("id");
+    assert!(id.has_flag(ColumnFlag::Auto), "{id:?}");
+    let name = derived("id_column: name\n")
+        .column("name")
+        .cloned()
+        .expect("name");
+    assert!(!name.has_flag(ColumnFlag::Auto), "{name:?}");
     Ok(())
 }
 

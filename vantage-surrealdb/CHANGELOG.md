@@ -7,7 +7,8 @@ Requires vantage-table 3.8.0.
 - Fix (VAN-421): `surreal::fx` accepts number, string, array and map arguments, not only
   expressions and identifiers.
 - Fix (VAN-389): a YAML spec id column flagged `auto` marks the Vista id `Auto`, so a scripted
-  insert can leave the id out.
+  insert can leave the id out. SurrealDB makes only the record id, so `auto` on any other id
+  column is a build error naming the column; the insert would write a row it can't read back.
 
 ## 2.3.0 — 2026-11-11
 

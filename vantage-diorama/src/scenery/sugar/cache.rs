@@ -49,6 +49,16 @@ impl SugaredCache {
         r
     }
 
+    /// Whether the sugar ran on this very `row` and succeeded: a failed row
+    /// is never memoized.
+    pub(crate) fn has_outputs_for(&self, id: &str, row: &Record<CborValue>) -> bool {
+        self.memo
+            .lock()
+            .unwrap()
+            .get(id)
+            .is_some_and(|(print, _)| *print == fingerprint(row))
+    }
+
     /// Merge outputs into `rows`, from the memo where the row is unchanged.
     pub(crate) async fn sweeten(&self, rows: &mut [(&str, &mut Record<CborValue>)]) {
         let mut misses = Vec::new();
