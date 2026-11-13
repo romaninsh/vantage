@@ -446,8 +446,12 @@ impl GraphqlApiBuilder {
     }
 
     /// Set the `Authorization` header value (e.g. `"Bearer <token>"`).
-    pub fn auth(mut self, auth: impl Into<String>) -> Self {
-        self.auth_header = AuthHeader::new(auth);
+    pub fn auth(self, auth: impl Into<String>) -> Self {
+        self.fixed_auth(AuthHeader::new(auth))
+    }
+
+    fn fixed_auth(mut self, header: AuthHeader) -> Self {
+        self.auth_header = header;
         self.transport.auth_refresher = None;
         self
     }
@@ -460,13 +464,8 @@ impl GraphqlApiBuilder {
     /// leaves the API's host; the request fails with the `3xx` status. A
     /// client passed to [`http_client`](Self::http_client) has to do this
     /// itself, see [`same_origin_redirects`](crate::same_origin_redirects).
-    pub fn header_auth(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
-        self.auth_header = AuthHeader::Named {
-            name: name.into(),
-            value: value.into(),
-        };
-        self.transport.auth_refresher = None;
-        self
+    pub fn header_auth(self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        self.fixed_auth(AuthHeader::named(name, value))
     }
 
     /// Get the bearer token from `refresher` instead of a fixed header: it

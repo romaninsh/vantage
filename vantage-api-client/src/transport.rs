@@ -51,6 +51,13 @@ impl AuthHeader {
         Self::Fixed(value.into())
     }
 
+    pub(crate) fn named(name: impl Into<String>, value: impl Into<String>) -> Self {
+        Self::Named {
+            name: name.into(),
+            value: value.into(),
+        }
+    }
+
     /// The header the credential goes out under.
     pub(crate) fn name(&self) -> &str {
         match self {
