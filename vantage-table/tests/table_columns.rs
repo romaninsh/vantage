@@ -260,6 +260,16 @@ fn id_text_and_auto_id_default_to_off_and_are_set_by_their_builders() {
     let flagged = table().with_text_id().with_auto_id();
     assert!(flagged.id_is_text());
     assert!(flagged.has_auto_id());
+
+    // Auto belongs to the id column it was set for: naming the same id keeps
+    // it, naming another id drops it.
+    let mut flagged = table();
+    flagged.set_id_field("id");
+    let mut flagged = flagged.with_auto_id();
+    flagged.set_id_field("id");
+    assert!(flagged.has_auto_id());
+    flagged.set_id_field("uuid");
+    assert!(!flagged.has_auto_id());
 }
 
 #[test]

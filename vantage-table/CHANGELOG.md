@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.8.1 — 2026-11-13
+
+- A derived spec whose `id_column` names a different column takes `auto` from that column's own
+  flag, so a derived table over an `auto` id keeps it.
+- `set_id_field` clears the auto id when it names a different column, so a derived table that
+  switches id doesn't mark the new one auto.
+
 ## 3.8.0 — 2026-11-13
 
 - `Table::set_spec_id(id, &columns)`: like `set_spec_id_field`, and also marks the table's id

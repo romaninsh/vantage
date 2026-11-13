@@ -50,22 +50,31 @@ columns:
     let base: SqliteVistaSpec = serde_yaml_ng::from_str(auto_yaml)?;
     let resolver: Arc<dyn SpecResolver<SqliteVistaSpec>> =
         Arc::new(move |name: &str| (name == "product").then(|| base.clone()));
-    let derived = |extra: &str| {
+    let derived = |columns: &str, extra: &str| {
         let yaml = format!(
-            "name: derived\ncolumns: {{}}\n{extra}sqlite:\n  base: product\n  inherit:\n    columns: [id, name]\n"
+            "name: derived\ncolumns: {columns}\n{extra}sqlite:\n  base: product\n  inherit:\n    columns: [id, name]\n"
         );
         db.vista_factory()
             .with_resolver(resolver.clone())
             .build_from_spec(serde_yaml_ng::from_str(&yaml).unwrap())
             .unwrap()
     };
-    let id = derived("").column("id").cloned().expect("id");
+    let id = derived("{}", "").column("id").cloned().expect("id");
     assert!(id.has_flag(ColumnFlag::Auto), "{id:?}");
-    let name = derived("id_column: name\n")
+    let name = derived("{}", "id_column: name\n")
         .column("name")
         .cloned()
         .expect("name");
     assert!(!name.has_flag(ColumnFlag::Auto), "{name:?}");
+    // ...and takes Auto from the new id column's own flag.
+    let code = derived(
+        "{ code: { type: int, flags: [auto] } }",
+        "id_column: code\n",
+    )
+    .column("code")
+    .cloned()
+    .expect("code");
+    assert!(code.has_flag(ColumnFlag::Auto), "{code:?}");
     Ok(())
 }
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.2 — 2026-11-13
+
+- Test only: the YAML column-flags test also covers a derived spec that picks an `auto` id column.
+  No library change.
+
 ## 0.12.1 — 2026-11-13
 
 Requires vantage-table 3.8.0.
