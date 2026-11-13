@@ -259,6 +259,19 @@ jobs:
           if [ "$BUILD_IN_SUITE" = true ]; then
             cargo llvm-cov report --lcov --output-path "lcov-$NAME.info"
           else
+            # Cargo 1.100's build-dir layout keeps test binaries in
+            # debug/build/<pkg>/<hash>/out/. cargo-llvm-cov 0.9.1 walks such an out/
+            # only with a fingerprint/ beside it (a build script's out/ otherwise),
+            # and an archive carries no fingerprints: mark each archived binary's unit.
+            ext=target/llvm-cov-target/target
+            meta=$ext/nextest/binaries-metadata.json
+            root=$(jq -r '."rust-build-meta"."target-directory"' "$meta")
+            jq -r --arg root "$root/" '(."rust-binaries"[]."binary-path" | ltrimstr($root)),
+              (."rust-build-meta"."non-test-binaries"[][].path)' "$meta" \
+              | while read -r bin; do
+                  out=$(dirname "$ext/$bin")
+                  if [ "$(basename "$out")" = out ]; then mkdir -p "$(dirname "$out")/fingerprint"; fi
+                done
             cargo llvm-cov report --nextest-archive-file "$ARCHIVE" --lcov --output-path "lcov-$NAME.info"
           fi
           # Read: every test process left a profile of its whole binary, and
