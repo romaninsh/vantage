@@ -1,7 +1,7 @@
 [package]
 edition = "2024"
 name = "vantage-api-client"
-version = "2.3.1"
+version = "2.4.0"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
 description = "Vantage extension for REST and GraphQL HTTP API backends"
@@ -27,7 +27,7 @@ tokio = { version = "1.52", features = ["time"] }
 tracing = "0.1"
 urlencoding = "2.1"
 uuid = { version = "1", features = ["serde", "v7"] }
-vantage-api-pool = { version = "1.2.0", path = "../vantage-api-pool" }
+vantage-api-pool = { version = "1.3.0", path = "../vantage-api-pool" }
 vantage-core = { version = "1.0.0", path = "../vantage-core" }
 vantage-dataset = { version = "1.1.2", path = "../vantage-dataset" }
 vantage-expressions = { version = "1.3.0", path = "../vantage-expressions" }

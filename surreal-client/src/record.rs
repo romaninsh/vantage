@@ -285,7 +285,7 @@ impl RecordRange {
                 if self.start_inclusive {
                     start_val
                 } else {
-                    format!(">{}", start_val)
+                    format!("{}>", start_val)
                 }
             }
             None => String::new(),
@@ -308,9 +308,9 @@ impl RecordRange {
                     }
                 };
                 if self.end_inclusive {
-                    end_val
-                } else {
                     format!("={}", end_val)
+                } else {
+                    end_val
                 }
             }
             None => String::new(),

@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use reqwest::RequestBuilder;
-use reqwest::header::AUTHORIZATION;
+use reqwest::header::{HeaderName, HeaderValue};
 use vantage_api_pool::resilient::{
     AuthRefresher, CallPolicy, ClientError, ResilientClient, TransportObserver,
 };
@@ -26,7 +26,8 @@ use crate::redact::{MASK, Redaction};
 /// caller's token, e.g. one clone per signed-in session.
 pub type BearerSource = Arc<dyn Fn() -> Option<String> + Send + Sync>;
 
-/// The `Authorization` header a datasource adds to its requests. Held in
+/// The auth header a datasource adds to its requests: `Authorization`, or
+/// the one an API key names. Held in
 /// its own type so that `Debug` — derived on every struct that carries
 /// one — prints `Some("<set>")` instead of leaking the token into a log
 /// line.
@@ -40,11 +41,22 @@ pub(crate) enum AuthHeader {
     Fixed(String),
     /// A token asked for per request.
     Source(BearerSource),
+    /// A key sent verbatim under a header of its own (`X-API-Key`) in
+    /// place of `Authorization`.
+    Named { name: String, value: String },
 }
 
 impl AuthHeader {
     pub(crate) fn new(value: impl Into<String>) -> Self {
         Self::Fixed(value.into())
+    }
+
+    /// The header the credential goes out under.
+    pub(crate) fn name(&self) -> &str {
+        match self {
+            Self::Named { name, .. } => name,
+            _ => "Authorization",
+        }
     }
 
     /// The value for the request going out now: the fixed value, or
@@ -53,23 +65,60 @@ impl AuthHeader {
     pub(crate) fn value(&self) -> Option<Cow<'_, str>> {
         match self {
             Self::None => None,
-            Self::Fixed(value) => Some(Cow::Borrowed(value)),
+            Self::Fixed(value) | Self::Named { value, .. } => Some(Cow::Borrowed(value)),
             Self::Source(source) => source().map(|token| Cow::Owned(format!("Bearer {token}"))),
         }
+    }
+
+    /// A fixed name and value that HTTP can't carry, as an error. Checked
+    /// before anything is sent: a bad header would otherwise surface as a
+    /// transport error, which an essential call retries forever. A bearer
+    /// source is asked per attempt, so it isn't checked here.
+    pub(crate) fn validate(&self) -> vantage_core::Result<()> {
+        if let Self::Named { name, .. } = self {
+            HeaderName::from_bytes(name.as_bytes()).map_err(|_| {
+                error!(
+                    "Configured auth header name is not valid",
+                    name = name.as_str()
+                )
+            })?;
+        }
+        if let Self::Fixed(value) | Self::Named { value, .. } = self {
+            HeaderValue::from_str(value).map_err(|_| {
+                error!(
+                    "Configured auth header value is not valid",
+                    name = self.name()
+                )
+            })?;
+        }
+        Ok(())
     }
 
     /// `req` with this header added, when there is one to send. Call it
     /// inside the request-building closure so a source is asked again on
     /// every attempt. The value that goes out is noted on `redaction`, so
     /// the token an error masks is the one that was sent.
+    /// The value is marked sensitive, so reqwest and hyper never print it.
     pub(crate) fn apply(&self, req: RequestBuilder, redaction: &Redaction) -> RequestBuilder {
-        match self.value() {
-            Some(value) => {
-                redaction.sent(&value);
-                req.header(AUTHORIZATION, value.as_ref())
+        let Some(value) = self.value() else {
+            return req;
+        };
+        redaction.sent(&value);
+        match HeaderValue::from_str(&value) {
+            Ok(mut header) => {
+                header.set_sensitive(true);
+                req.header(self.name(), header)
             }
-            None => req,
+            // A bearer source's token isn't validated up front; let reqwest
+            // report it as the builder error it is.
+            Err(_) => req.header(self.name(), value.as_ref()),
         }
+    }
+
+    /// The credential goes out under a header reqwest doesn't strip when a
+    /// redirect leaves the origin.
+    fn is_named(&self) -> bool {
+        matches!(self, Self::Named { .. })
     }
 
     /// What a debug dump shows in place of the value. A source isn't
@@ -77,7 +126,7 @@ impl AuthHeader {
     pub(crate) fn masked(&self) -> Option<&'static str> {
         match self {
             Self::None => None,
-            Self::Fixed(_) => Some("<set>"),
+            Self::Fixed(_) | Self::Named { .. } => Some("<set>"),
             Self::Source(_) => Some("<per request>"),
         }
     }
@@ -163,10 +212,58 @@ impl std::fmt::Debug for ClientConfig {
     }
 }
 
-pub(crate) fn build_client(cfg: ClientConfig) -> ResilientClient {
+/// How many redirects [`same_origin_redirects`] follows, as reqwest's
+/// default policy does.
+const MAX_REDIRECTS: usize = 10;
+
+/// A redirect policy that follows redirects within the request's origin
+/// (scheme, host and port) and stops at one leading elsewhere: the `3xx`
+/// comes back as the response, and an API call fails with its status.
+///
+/// reqwest drops `Authorization`, `Cookie` and `Proxy-Authorization` on a
+/// cross-origin redirect but forwards every other header, so a key sent
+/// with `header_auth` would reach the other host. The client this crate
+/// builds uses this policy whenever `header_auth` is set; give it to a
+/// client you pass to `http_client` yourself:
+///
+/// ```no_run
+/// use vantage_api_client::{RestApi, same_origin_redirects};
+///
+/// let http = reqwest::Client::builder()
+///     .redirect(same_origin_redirects())
+///     .build()
+///     .unwrap();
+/// let api = RestApi::builder("https://api.example.com")
+///     .http_client(http)
+///     .header_auth("X-API-Key", "k-123")
+///     .build();
+/// ```
+pub fn same_origin_redirects() -> reqwest::redirect::Policy {
+    reqwest::redirect::Policy::custom(|attempt| {
+        if attempt.previous().len() > MAX_REDIRECTS {
+            return attempt.error("too many redirects");
+        }
+        let same_origin = attempt
+            .previous()
+            .first()
+            .is_none_or(|first| first.origin() == attempt.url().origin());
+        if same_origin {
+            attempt.follow()
+        } else {
+            attempt.stop()
+        }
+    })
+}
+
+/// The client for one API. `auth` decides the redirect policy of the
+/// client built here; a supplied client keeps its own.
+pub(crate) fn build_client(cfg: ClientConfig, auth: &AuthHeader) -> ResilientClient {
     let mut b = ResilientClient::builder()
         .max_parallel(cfg.max_parallel)
         .default_breaker();
+    if auth.is_named() {
+        b = b.configure_http(|http| http.redirect(same_origin_redirects()));
+    }
     if let Some(rate) = cfg.rate_limit {
         b = b.rate_limit(rate);
     }

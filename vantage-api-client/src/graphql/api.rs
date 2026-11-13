@@ -298,6 +298,7 @@ impl GraphqlApi {
 
         let body = Body { query, variables };
 
+        self.auth_header.validate()?;
         let policy = crate::transport::policy_for(Priority::current());
         let redaction = Redaction::default();
         let response = self
@@ -451,6 +452,23 @@ impl GraphqlApiBuilder {
         self
     }
 
+    /// Send `value` verbatim as the `name` header (`X-API-Key`), for APIs
+    /// that take their key outside `Authorization`. Replaces
+    /// [`auth`](Self::auth); errors mask the value.
+    ///
+    /// A redirect to another origin is not followed, so the key never
+    /// leaves the API's host; the request fails with the `3xx` status. A
+    /// client passed to [`http_client`](Self::http_client) has to do this
+    /// itself, see [`same_origin_redirects`](crate::same_origin_redirects).
+    pub fn header_auth(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        self.auth_header = AuthHeader::Named {
+            name: name.into(),
+            value: value.into(),
+        };
+        self.transport.auth_refresher = None;
+        self
+    }
+
     /// Get the bearer token from `refresher` instead of a fixed header: it
     /// is asked on the first request, and again when the API answers `401`.
     /// A request waits for it, so a refresher may run an interactive
@@ -470,7 +488,11 @@ impl GraphqlApiBuilder {
         self
     }
 
-    /// A pre-configured `reqwest::Client` (timeouts, proxies, TLS).
+    /// A pre-configured `reqwest::Client` (timeouts, proxies, TLS), used as
+    /// is. With [`header_auth`](Self::header_auth), build it with
+    /// [`same_origin_redirects`](crate::same_origin_redirects) (or no
+    /// redirects): reqwest forwards a custom header on a redirect to
+    /// another host.
     pub fn http_client(mut self, client: reqwest::Client) -> Self {
         self.transport.http = Some(client);
         self
@@ -496,7 +518,7 @@ impl GraphqlApiBuilder {
     pub fn build(self) -> GraphqlApi {
         GraphqlApi {
             endpoint: self.endpoint,
-            client: crate::transport::build_client(self.transport),
+            client: crate::transport::build_client(self.transport, &self.auth_header),
             auth_header: self.auth_header,
             dialect: self.dialect,
             filter_arg_name: self.filter_arg_name,

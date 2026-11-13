@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.8 — 2026-11-13
+
+- Fix (VAN-438): `:gt=5` with no field name is an "Empty field name before operator" error. It
+  was parsed as a relation named `gt=5`.
+
 ## 0.6.7 — 2026-10-26
 
 - Tests of one behaviour are folded into one test each (an `id=` condition rendered as cbor-diag,

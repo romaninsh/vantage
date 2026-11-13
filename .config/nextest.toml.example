@@ -12,7 +12,8 @@
 # `cargo test -p vantage-diorama --test bdd`.
 default-filter = 'not binary(bdd)'
 failure-output = "immediate-final"
-slow-timeout = { period = "30s", terminate-after = 4 }
+# House rule: no test runs past 5 s. Killed at the first period.
+slow-timeout = { period = "5s", terminate-after = 1 }
 
 # Parallel writes to the shared SurrealDB instance raise
 # "Transaction conflict". Serialise them; everything else stays parallel.

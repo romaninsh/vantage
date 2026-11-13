@@ -9,13 +9,14 @@ on:
 
 permissions:
   actions: write
+  pull-requests: read
 
 jobs:
   rerun:
     if: github.event.label.name == 'ALL_TESTS'
     # gh and jq only: GitHub's one-CPU runner.
     runs-on: ubuntu-slim
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - env:
           GH_TOKEN: ${{ github.token }}
@@ -26,8 +27,17 @@ jobs:
           # itself. Re-running the older one would join the PR's concurrency
           # group and cancel it.
           moved() {
-            [ "$(gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json headRefOid -q .headRefOid)" != "$SHA" ] \
+            head=$(gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json headRefOid -q .headRefOid) || exit 1
+            [ "$head" != "$SHA" ] \
               && echo "the PR moved past $SHA: its newer run reads the labels"
+          }
+          # Polls the run until it completes, for at most $1 seconds.
+          wait_completed() {
+            for _ in $(seq 1 $(($1 / 5))); do
+              [ "$(gh run view "$id" -R "$GITHUB_REPOSITORY" --json status -q .status)" = completed ] && return 0
+              sleep 5
+            done
+            return 1
           }
           moved && exit 0
           run=$(gh run list -R "$GITHUB_REPOSITORY" --workflow ci.yaml --commit "$SHA" --limit 1 --json databaseId,status -q '.[0]')
@@ -36,10 +46,22 @@ jobs:
             echo "no CI run for $SHA yet; it will read the label when it starts"
             exit 0
           fi
-          if [ "$(jq -r .status <<<"$run")" != completed ]; then
-            gh run cancel "$id" -R "$GITHUB_REPOSITORY"
-            gh run watch "$id" -R "$GITHUB_REPOSITORY" > /dev/null || true
-          fi
-          # Again: the watch can take minutes.
+          status=$(jq -r .status <<<"$run")
+          case "$status" in
+            queued | waiting | pending | requested)
+              echo "CI run $id is $status: it will read the label when it starts"
+              exit 0
+              ;;
+            completed) ;;
+            *)
+              gh run cancel "$id" -R "$GITHUB_REPOSITORY"
+              if ! wait_completed 180; then
+                echo "cancel did not take effect in 3 minutes; forcing it"
+                gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$id/force-cancel"
+                wait_completed 120 || { echo "run $id is still not completed"; exit 1; }
+              fi
+              ;;
+          esac
+          # Again: the cancel can take minutes.
           moved && exit 0
           gh run rerun "$id" -R "$GITHUB_REPOSITORY"

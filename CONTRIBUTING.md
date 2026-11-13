@@ -21,6 +21,12 @@ installs the nightly through rustup, and if the tool is missing or the wrong ver
 the install command. Snapshots are built with `--all-features`. A crate gets a snapshot by being
 added to `CRATES` in the script.
 
+## Test time limit
+
+No test runs past 5 s. `.config/nextest.toml` (copy of `.config/nextest.toml.example`) kills it and
+fails the suite; CI runs on a paid runner, and a failed suite costs less than a hung one. Make
+waits configurable and give each wait one deadline.
+
 ## Contract tests and gap tests
 
 Every `TableShell` driver has a contract test (`tests/vista_contract.rs` or similar) that calls

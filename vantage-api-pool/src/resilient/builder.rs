@@ -9,7 +9,7 @@ use tokio::sync::{RwLock, Semaphore};
 
 use super::auth::{AuthRefresher, AuthState};
 use super::breaker::CircuitBreaker;
-use super::http::{DEFAULT_REQUEST_TIMEOUT, LazyHttp};
+use super::http::{ConfigureHttp, DEFAULT_REQUEST_TIMEOUT, LazyHttp};
 use super::rate::TokenBucket;
 use super::{ResilientClient, RetryPolicy, TransportObserver};
 
@@ -17,6 +17,7 @@ use super::{ResilientClient, RetryPolicy, TransportObserver};
 pub struct ResilientClientBuilder {
     http: Option<reqwest::Client>,
     timeout: Option<Duration>,
+    configure_http: Option<ConfigureHttp>,
     max_parallel: usize,
     policy: RetryPolicy,
     breaker: Option<(usize, Duration, Duration)>,
@@ -30,6 +31,7 @@ impl Default for ResilientClientBuilder {
         Self {
             http: None,
             timeout: Some(DEFAULT_REQUEST_TIMEOUT),
+            configure_http: None,
             max_parallel: 8,
             policy: RetryPolicy::default(),
             breaker: None,
@@ -120,6 +122,18 @@ impl ResilientClientBuilder {
         self
     }
 
+    /// Run `configure` over the default client's builder when it is built on
+    /// the first request (and again if that build fails), e.g. to set a
+    /// redirect policy. Like [`request_timeout`](Self::request_timeout), it
+    /// does not apply to a client passed to [`http_client`](Self::http_client).
+    pub fn configure_http(
+        mut self,
+        configure: impl Fn(reqwest::ClientBuilder) -> reqwest::ClientBuilder + Send + Sync + 'static,
+    ) -> Self {
+        self.configure_http = Some(Arc::new(configure));
+        self
+    }
+
     /// At most `per_second` attempts per second, with a burst of
     /// `per_second.ceil()`.
     pub fn rate_limit(self, per_second: f64) -> Self {
@@ -152,7 +166,7 @@ impl ResilientClientBuilder {
     pub fn build(self) -> ResilientClient {
         let http = match self.http {
             Some(client) => LazyHttp::supplied(client),
-            None => LazyHttp::deferred(self.timeout),
+            None => LazyHttp::deferred(self.timeout, self.configure_http),
         };
         ResilientClient {
             http: Arc::new(http),

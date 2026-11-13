@@ -448,7 +448,6 @@ fn an_index_tells_apart_distinct_integers_it_cannot_tell_apart_by_magnitude() {
 }
 
 #[test]
-#[ignore = "possible bug: an indexed Eq on integer 2^53+1 misses the equal float 2^53 that a scan finds"]
 fn an_index_never_splits_values_a_scan_calls_equal() {
     let big = 1_i64 << 53;
     let cells = [int(big + 1), CborValue::Float(big as f64)];

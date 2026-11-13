@@ -235,7 +235,6 @@ fn test_display_shows_each_kind_of_value() {
 }
 
 #[test]
-#[ignore = "possible bug: Display of an integer prints the CBOR debug form `Integer(42)`, not `42` like bool and float"]
 fn test_display_shows_an_integer_as_its_digits() {
     assert_eq!(AnyRedbType::new(42i64).to_string(), "42");
 }

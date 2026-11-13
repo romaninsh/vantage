@@ -240,13 +240,7 @@ impl RestApi {
         let shown_url = redaction.url(&self.shown_url(&join_base_path(&self.base_url, path)));
         let url = self.sent_url(&join_base_path(&self.base_url, path));
 
-        // A fixed value is checked before anything is sent; a bad one would
-        // otherwise surface as a transport error, which an essential call
-        // retries forever. A bearer source is asked per attempt, below.
-        if let AuthHeader::Fixed(auth) = &self.auth_header {
-            HeaderValue::from_str(auth)
-                .map_err(|_| error!("Configured Authorization header value is not valid"))?;
-        }
+        self.auth_header.validate()?;
 
         let mut header_map = HeaderMap::new();
         for (name, value) in headers {
@@ -262,7 +256,7 @@ impl RestApi {
             let lines: Vec<String> = self
                 .auth_header
                 .masked()
-                .map(|_| format!("Authorization: {MASK}"))
+                .map(|_| format!("{}: {MASK}", self.auth_header.name()))
                 .into_iter()
                 .chain(headers.iter().map(|(name, value)| header_line(name, value)))
                 .collect();

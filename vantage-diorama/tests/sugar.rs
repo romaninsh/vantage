@@ -410,7 +410,6 @@ async fn rows_loaded_through_a_sugared_view_reach_the_cache_without_outputs() ->
 /// `sugar(..)` reads rows with the display-only columns merged in, whatever
 /// loads them.
 #[tokio::test]
-#[ignore = "possible bug: a paged sugared view shows the loaded window without its sugar columns"]
 async fn a_paged_sugared_view_shows_the_sugar_columns() -> Result<()> {
     let tmp = TempDir::new().unwrap();
     let (_dio, sweet) = paged_sweet(&tmp).await?;

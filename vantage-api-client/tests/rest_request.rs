@@ -8,14 +8,15 @@ use ciborium::Value as CborValue;
 use support::{mount, requests, test_client};
 use vantage_api_client::{
     FilterStrategy, OrderingParams, PaginationParams, ResponseShape, RestApi, RestApiBuilder,
-    RestApiVistaFactory, RestApiVistaSpec, eq_condition,
+    RestApiVistaFactory, RestApiVistaSpec, eq_condition, same_origin_redirects,
 };
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_expressions::Expression;
 use vantage_table::table::Table;
 use vantage_types::EmptyEntity;
 use vantage_vista::{FilterOp, SortDirection, Vista, VistaFactory};
-use wiremock::MockServer;
+use wiremock::matchers::{header, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn bare(server: &MockServer) -> RestApiBuilder {
     RestApi::builder(server.uri())
@@ -73,6 +74,69 @@ async fn eq_conditions_become_query_params() {
             Some("done=true&n=7&ratio=1.5&status=active&title=a%20b%26c%3Dd".into())
         )
     );
+}
+
+/// An API key goes out verbatim under the header it names, not as
+/// `Authorization`, and the preview shows that header masked.
+#[tokio::test]
+async fn api_key_auth_sends_its_named_header() {
+    let server = MockServer::start().await;
+    mount(&server, "GET", 200, "[]").await;
+    let api = bare(&server).header_auth("X-API-Key", "k-123").build();
+    table("users", api.clone()).list_values().await.unwrap();
+    let received = server.received_requests().await.unwrap();
+    let headers = &received[0].headers;
+    assert_eq!(
+        headers.get("x-api-key").and_then(|v| v.to_str().ok()),
+        Some("k-123")
+    );
+    assert!(headers.get("authorization").is_none());
+
+    let query = vista(api, USERS).preview().query.unwrap();
+    assert!(query.contains("\nX-API-Key: "), "{query}");
+    assert!(!query.contains("k-123"), "{query}");
+}
+
+/// A redirect to another origin is not followed while an API key rides in
+/// a named header (reqwest strips only `Authorization`-like headers on
+/// such a hop); a redirect within the origin still is, header and all.
+#[tokio::test]
+async fn api_key_auth_never_follows_a_redirect_to_another_origin() {
+    let api_host = MockServer::start().await;
+    let other_host = MockServer::start().await;
+    Mock::given(path("/users"))
+        .respond_with(
+            ResponseTemplate::new(302)
+                .insert_header("location", format!("{}/users", other_host.uri())),
+        )
+        .mount(&api_host)
+        .await;
+    mount(&other_host, "GET", 200, "[]").await;
+    let built = RestApi::builder(api_host.uri()).response_shape(ResponseShape::BareArray);
+    let supplied = reqwest::Client::builder()
+        .no_proxy()
+        .redirect(same_origin_redirects())
+        .build()
+        .unwrap();
+    for builder in [built.clone(), built.http_client(supplied)] {
+        let api = builder.header_auth("X-API-Key", "k-123").build();
+        let err = table("users", api).list_values().await.unwrap_err();
+        assert!(err.to_string().contains("302"), "{err}");
+        assert_eq!(requests(&other_host).await, 0);
+    }
+
+    let server = MockServer::start().await;
+    Mock::given(path("/users"))
+        .respond_with(ResponseTemplate::new(302).insert_header("location", "/moved"))
+        .mount(&server)
+        .await;
+    Mock::given(path("/moved"))
+        .and(header("x-api-key", "k-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("[]"))
+        .mount(&server)
+        .await;
+    let api = bare(&server).header_auth("X-API-Key", "k-123").build();
+    table("users", api).list_values().await.unwrap();
 }
 
 #[test]

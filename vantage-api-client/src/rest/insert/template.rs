@@ -25,11 +25,16 @@ mod enabled {
 
     /// The secret names `source` reads, found by scanning its text: a miss
     /// in a Rhai map is a silent `()`, so an unbound secret would otherwise
-    /// send null. A name built at run time (`secret[x]`) is not seen.
+    /// send null. A name built at run time (`secret[x]`) is not seen, and a
+    /// `secret.` inside a comment or a string literal is not a reference.
     fn secret_names(source: &str) -> Vec<String> {
         let is_ident = |c: char| c.is_alphanumeric() || c == '_';
         let mut names = Vec::new();
+        let skipped = non_code_ranges(source);
         for (at, _) in source.match_indices("secret") {
+            if skipped.iter().any(|r| r.contains(&at)) {
+                continue;
+            }
             let before = source[..at].chars().next_back();
             if before.is_some_and(|c| is_ident(c) || c == '.') {
                 continue;
@@ -56,6 +61,82 @@ mod enabled {
             }
         }
         names
+    }
+
+    /// The byte ranges of Rhai `src` that are not code: `//` and (nested)
+    /// `/* */` comments, and `"`, `'` and `` ` `` literals. A backtick
+    /// string's `${ … }` interpolation is code.
+    fn non_code_ranges(src: &str) -> Vec<std::ops::Range<usize>> {
+        let bytes = src.as_bytes();
+        let mut ranges = Vec::new();
+        let mut i = 0;
+        while i < bytes.len() {
+            let start = i;
+            match bytes[i] {
+                b'/' if bytes.get(i + 1) == Some(&b'/') => {
+                    while i < bytes.len() && bytes[i] != b'\n' {
+                        i += 1;
+                    }
+                }
+                b'/' if bytes.get(i + 1) == Some(&b'*') => {
+                    let mut depth = 0;
+                    while i < bytes.len() {
+                        if bytes[i..].starts_with(b"/*") {
+                            depth += 1;
+                            i += 2;
+                        } else if bytes[i..].starts_with(b"*/") {
+                            depth -= 1;
+                            i += 2;
+                            if depth == 0 {
+                                break;
+                            }
+                        } else {
+                            i += 1;
+                        }
+                    }
+                }
+                b'`' => {
+                    i += 1;
+                    let mut literal_from = start;
+                    while i < bytes.len() && bytes[i] != b'`' {
+                        if bytes[i] == b'\\' {
+                            i += 2;
+                        } else if bytes[i..].starts_with(b"${") {
+                            ranges.push(literal_from..i + 2);
+                            i += 2;
+                            let mut depth = 1;
+                            while i < bytes.len() && depth > 0 {
+                                match bytes[i] {
+                                    b'{' => depth += 1,
+                                    b'}' => depth -= 1,
+                                    _ => {}
+                                }
+                                i += 1;
+                            }
+                            literal_from = i.saturating_sub(1);
+                        } else {
+                            i += 1;
+                        }
+                    }
+                    i += 1;
+                    ranges.push(literal_from..i.min(bytes.len()));
+                    continue;
+                }
+                quote @ (b'"' | b'\'') => {
+                    i += 1;
+                    while i < bytes.len() && bytes[i] != quote {
+                        i += if bytes[i] == b'\\' { 2 } else { 1 };
+                    }
+                    i += 1;
+                }
+                _ => {
+                    i += 1;
+                    continue;
+                }
+            }
+            ranges.push(start..i.min(bytes.len()));
+        }
+        ranges
     }
 
     impl fmt::Debug for BodyTemplate {

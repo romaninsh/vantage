@@ -59,6 +59,24 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         self.set_id_field(id);
         Ok(())
     }
+
+    /// [`set_spec_id_field`](Self::set_spec_id_field), and mark the id
+    /// backend-made ([`with_auto_id`](Self::with_auto_id)) when its spec
+    /// column carries `auto`. For drivers whose backend can make ids.
+    pub fn set_spec_id<C>(
+        &mut self,
+        id: &str,
+        columns: &IndexMap<String, ColumnSpec<C>>,
+    ) -> Result<()> {
+        self.set_spec_id_field(id)?;
+        if columns
+            .get(id)
+            .is_some_and(|c| c.has_flag(ColumnFlag::Auto))
+        {
+            self.id_auto = true;
+        }
+        Ok(())
+    }
 }
 
 impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E>

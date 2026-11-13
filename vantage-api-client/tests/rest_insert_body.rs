@@ -145,6 +145,30 @@ async fn a_secret_with_quotes_and_code_is_sent_as_data() {
 }
 
 #[tokio::test]
+async fn a_comment_or_string_naming_secret_binds_no_secret() {
+    let server = accepting().await;
+    let ep = endpoint(
+        &server,
+        r#"{ body: '#{ note: "uses secret.nope", /* secret.other */ n: record.name } // secret.third' }"#,
+    )
+    .await
+    .unwrap();
+    ep.send(&[record("a", 1)]).await.unwrap();
+    assert_eq!(
+        bodies(&server).await,
+        vec![json!({"note": "uses secret.nope", "n": "a"})]
+    );
+
+    // Code inside a backtick interpolation is still scanned.
+    let server = accepting().await;
+    let ep = endpoint(&server, r#"{ body: '#{ t: `x ${secret.tok}` }' }"#)
+        .await
+        .unwrap();
+    let err = ep.send(&[record("a", 1)]).await.unwrap_err();
+    assert!(err.to_string().contains("tok"), "{err}");
+}
+
+#[tokio::test]
 async fn a_body_secret_never_reaches_an_error_or_debug_output() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

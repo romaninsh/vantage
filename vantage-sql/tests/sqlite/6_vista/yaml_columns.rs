@@ -36,6 +36,29 @@ columns:
     Ok(())
 }
 
+/// An id column flagged `auto` makes the vista id auto, so scripted inserts
+/// may leave the id to the database.
+#[tokio::test]
+async fn spec_auto_flag_marks_the_vista_id_auto() -> TestResult {
+    let db = setup().await;
+    let yaml = r#"
+name: product
+columns:
+  id: { type: int, flags: [id, auto] }
+  name: { type: string }
+"#;
+    let vista = db.vista_factory().from_yaml(yaml)?;
+    let id = vista.column("id").expect("id");
+    assert!(id.has_flag(ColumnFlag::Auto), "{id:?}");
+
+    let plain = db
+        .vista_factory()
+        .from_yaml("name: product\ncolumns:\n  id: { type: int, flags: [id] }\n")?;
+    let id = plain.column("id").expect("id");
+    assert!(!id.has_flag(ColumnFlag::Auto), "{id:?}");
+    Ok(())
+}
+
 /// A `lazy:` column runs its Rhai script on each returned record (`row` in
 /// scope), in declaration order — the second script reads the first's value.
 #[cfg(feature = "rhai")]

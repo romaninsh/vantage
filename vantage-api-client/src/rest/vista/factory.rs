@@ -12,6 +12,7 @@ use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::{Result, error};
 use vantage_table::column::core::Column as TableColumn;
+use vantage_table::table::spec::spec_references;
 use vantage_table::table::{Orderable, Table, VistaMetadataOptions};
 use vantage_types::{EmptyEntity, Entity};
 use vantage_vista::{
@@ -158,8 +159,8 @@ impl VistaFactory for RestApiVistaFactory {
         // `api.endpoint`); the parent only declares the join.
         let mut metadata = metadata_from_table(&table, false);
         let source_id = spec.resolve_id_column("id");
-        for (relation, reference) in &spec.references {
-            metadata = metadata.with_reference(reference.to_reference(relation, &source_id)?);
+        for reference in spec_references(&spec, &source_id)? {
+            metadata = metadata.with_reference(reference);
         }
 
         let capabilities = rest_capabilities(table.data_source());

@@ -449,7 +449,7 @@ impl SurrealClient {
         let mut engine = self.engine().await?;
 
         let params = if let Some(args) = args {
-            json!([func, args])
+            json!([func, null, args])
         } else {
             json!([func])
         };

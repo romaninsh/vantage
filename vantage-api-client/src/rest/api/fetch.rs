@@ -144,7 +144,7 @@ impl RestApi {
             let headers = self
                 .auth_header
                 .masked()
-                .map(|_| format!("Authorization: {MASK}"))
+                .map(|_| format!("{}: {MASK}", self.auth_header.name()))
                 .unwrap_or_default();
             if probe {
                 tracing::debug!(target: "vantage_api_client::rest", table = table_name, url = %shown, headers = %headers, "REST GET (count probe)");
@@ -158,6 +158,7 @@ impl RestApi {
         // one slow GET than anything local. Reported regardless of `debug` so
         // the cost is attributable from a default log; a request over a second
         // is worth an operator's attention, hence `info` at that point.
+        self.auth_header.validate()?;
         let started = std::time::Instant::now();
         let policy = crate::transport::policy_for(Priority::current());
         let response = self

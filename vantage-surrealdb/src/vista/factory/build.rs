@@ -48,7 +48,7 @@ pub(super) fn build_surreal_table(
             table = add_expr_column(table, name, code)?;
         }
     }
-    table.set_spec_id_field(&spec.resolve_id_column("id"))?;
+    table.set_spec_id(&spec.resolve_id_column("id"), &spec.columns)?;
 
     let table = table
         .with_spec_references(spec, env, build_surreal_table)?

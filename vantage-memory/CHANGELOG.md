@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.1.1 — 2026-11-13
+
+- Fix (VAN-432): an index keyed an integer above 2^53 apart from the float a scan calls equal to
+  it, so an indexed lookup missed rows a scan found. Integers now key as their `f64` value.
+
 ## 3.1.0 — 2026-10-31
 
 Requires vantage-vista 2.6.0.

@@ -54,7 +54,7 @@ pub(crate) fn build_mongo_table(
         table.set_spec_id_field("_id")?;
     } else {
         table.add_spec_columns(&spec.columns, build_column)?;
-        table.set_spec_id_field(&spec.resolve_id_column("_id"))?;
+        table.set_spec_id(&spec.resolve_id_column("_id"), &spec.columns)?;
     }
     let mut table = table.with_spec_references(spec, env, build_mongo_table)?;
     // A dotted column name is a join through `has_one` references, which

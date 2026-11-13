@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.0 — 2026-11-13
+
+- `ResilientClientBuilder::configure_http` runs a closure over the default client's
+  `reqwest::ClientBuilder` when it is built on the first request, so a caller can set a redirect
+  policy (or anything else) without giving up the deferred build. A client passed to
+  `http_client` is untouched.
+
 ## 1.2.0 — 2026-11-10
 
 - `ClientError::retry_after` carries the response's `Retry-After`, so a caller running its own

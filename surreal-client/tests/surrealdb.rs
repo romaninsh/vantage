@@ -748,7 +748,6 @@ async fn record_range_with_only_an_inclusive_start_runs_to_the_end() {
 }
 
 #[tokio::test]
-#[ignore = "possible bug: an inclusive end renders as `..end`, which SurrealDB reads as exclusive"]
 async fn record_range_with_inclusive_bounds_includes_both_ends() {
     let client = get_client().await;
     range_table(&client, "sc_range_incl").await;
@@ -762,7 +761,6 @@ async fn record_range_with_inclusive_bounds_includes_both_ends() {
 }
 
 #[tokio::test]
-#[ignore = "possible bug: an exclusive end renders as `..=end`, which SurrealDB reads as inclusive"]
 async fn record_range_with_exclusive_end_stops_before_it() {
     let client = get_client().await;
     range_table(&client, "sc_range_excl_end").await;
@@ -776,7 +774,6 @@ async fn record_range_with_exclusive_end_stops_before_it() {
 }
 
 #[tokio::test]
-#[ignore = "possible bug: an exclusive start renders as `table:>start..`, which SurrealDB fails to parse (its syntax is `start>..`)"]
 async fn record_range_with_exclusive_start_skips_it() {
     let client = get_client().await;
     range_table(&client, "sc_range_excl_start").await;
@@ -942,7 +939,6 @@ async fn relate_creates_an_edge_between_records() {
 }
 
 #[tokio::test]
-#[ignore = "possible bug: run sends its arguments in the RPC's version slot, so SurrealDB answers \"Expected version to be string\""]
 async fn run_calls_a_function_with_arguments() {
     let client = get_client().await;
 

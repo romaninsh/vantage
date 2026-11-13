@@ -11,6 +11,19 @@ use crate::scenery::enriched_record::{EnrichedRecord, RowStatus};
 
 use super::SharedRows;
 
+impl SharedRows {
+    fn same_but_sugar(&self, bound: &Record<CborValue>, fetched: &Record<CborValue>) -> bool {
+        if self.sugar_columns.is_empty() {
+            return bound == fetched;
+        }
+        let mut plain = bound.clone();
+        for name in self.sugar_columns.iter() {
+            plain.shift_remove(name);
+        }
+        plain == *fetched
+    }
+}
+
 impl SceneryChunkTarget for SharedRows {
     /// A total learned from the chunk fetch itself, so a paged lens sizes the
     /// scrollbar without a separate count request on open.
@@ -35,12 +48,14 @@ impl SceneryChunkTarget for SharedRows {
         // Skip the write entirely when this slot already holds the same fresh
         // record: a refresh that re-fetches identical data must not look like a
         // change. Only a new/!Fresh slot or a different record is "dirty", and
-        // only a dirty load bumps the generation (see `loader::commit`).
+        // only a dirty load bumps the generation (see `loader::commit`). A
+        // sugared slot holds the outputs the commit merged in, so they are
+        // left out of the comparison.
         {
             let rows = self.rows.read().unwrap();
             if let Some(existing) = rows.get(&idx)
                 && existing.status == RowStatus::Fresh
-                && existing.record == record
+                && self.same_but_sugar(&existing.record, &record)
             {
                 return ChunkWrite::Skipped;
             }

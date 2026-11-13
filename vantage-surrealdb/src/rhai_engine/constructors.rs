@@ -112,21 +112,7 @@ pub fn make_expr(template: &str, args: Array) -> Result<RhaiExpr, Box<rhai::Eval
 // ── SurrealDB function call ────────────────────────────────────────────
 
 pub fn make_fx(name: &str, args: Array) -> Result<RhaiExpr, Box<rhai::EvalAltResult>> {
-    let exprs: Result<Vec<Expr>, _> = args
-        .into_iter()
-        .map(|a| {
-            if let Some(e) = a.clone().try_cast::<RhaiExpr>() {
-                Ok(e.0)
-            } else if let Some(i) = a.clone().try_cast::<RhaiIdent>() {
-                Ok(i.0.expr())
-            } else {
-                Err(super::convert::rhai_err(format!(
-                    "fx: expected Expr or Ident, got '{}'",
-                    a.type_name()
-                )))
-            }
-        })
-        .collect();
+    let exprs: Result<Vec<Expr>, _> = args.into_iter().map(super::operators::to_expr).collect();
     Ok(RhaiExpr(Fx::new(name, exprs?).expr()))
 }
 

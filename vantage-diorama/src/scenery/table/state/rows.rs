@@ -21,9 +21,10 @@ impl SharedRows {
         &self,
         dio_inner: &DioInner,
     ) -> Arc<dyn crate::lens::cache_backend::CacheTable> {
-        self.read_cache
-            .clone()
-            .unwrap_or_else(|| dio_inner.cache.clone())
+        match &self.read_cache {
+            Some(sugared) => sugared.clone(),
+            None => dio_inner.cache.clone(),
+        }
     }
 
     /// Stamp the slot for `id` with `status`, re-reading its current cache

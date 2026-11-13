@@ -14,7 +14,7 @@ use tokio::sync::{Notify, mpsc};
 use vantage_vista::{Condition, VistaQuery};
 
 use crate::dio::DioInner;
-use crate::lens::cache_backend::CacheTable;
+use crate::scenery::sugar::SugaredCache;
 use crate::scenery::table::ViewportRequest;
 use crate::scenery::table::loader::viewport_loop;
 use crate::scenery::table::plan::Serving;
@@ -33,7 +33,7 @@ pub(crate) struct Init {
     pub(crate) page_size: usize,
     pub(crate) titles_only: bool,
     pub(crate) paged: bool,
-    pub(crate) read_cache: Option<Arc<dyn CacheTable>>,
+    pub(crate) read_cache: Option<Arc<SugaredCache>>,
     pub(crate) sugar_columns: Arc<HashSet<String>>,
 }
 
