@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.2.1 — 2026-11-13
+
+Requires vantage-table 3.8.0.
+
+- Fix (VAN-442): negating an `And`, a multi-key document or a deferred condition gave
+  `(NOT a) AND (NOT b)`, an unnegated deferred condition, or invalid `$not` placement. It now
+  negates the whole condition, using `$nor` where `$not` does not apply.
+- Fix (VAN-389): a YAML spec id column flagged `auto` marks the Vista id `Auto`, so a scripted
+  insert can leave the id out. MongoDB generates only `_id`, so an `auto` id column stored at
+  any other path is a build error naming the column.
+- Negating a condition whose value is a regular expression gives `{ field: { $not: /re/ } }`;
+  it was `$not: { $eq: /re/ }`, which compares the regex object and so matched every row.
+- The `stream_pool_size_caps_concurrent_streams` test runs in about 1.3 s instead of 8 s, inside
+  the 5 s test limit (NEXTEST-5S).
+
 ## 3.2.0 — 2026-11-11
 
 - A write the server refuses with `DocumentValidationFailure` (code 121) now reads as the broken

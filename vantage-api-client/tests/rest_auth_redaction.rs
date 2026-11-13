@@ -179,6 +179,17 @@ async fn debug_logs_and_errors_redact_credentials() {
     let table: Table<RestApi, EmptyEntity> = Table::new("things", fixed).with_id_column("id");
     let fixed_error = table.list_values().await.unwrap_err().to_string();
 
+    // A caller header overriding a configured auth header whose name looks
+    // like nothing secret.
+    let named = builder(&server)
+        .header_auth("X-Credential", "cred-111")
+        .build();
+    let override_error = named
+        .http_request(Method::POST, "/x", &[("x-credential", "cred-222")], None)
+        .await
+        .unwrap_err()
+        .to_string();
+
     // A transport error: nothing is listening.
     let closed = MockServer::start().await;
     let closed_uri = closed.uri();
@@ -199,17 +210,28 @@ async fn debug_logs_and_errors_redact_credentials() {
     assert!(log.contains("api_secret=***"), "{log}");
     assert!(log.contains("Authorization: ***"), "{log}");
     assert!(log.contains("x-api-key: ***"), "{log}");
+    assert!(log.contains("x-credential: ***"), "{log}");
     for text in [
         &read_error,
         &key_error,
         &insert_error,
         &fixed_error,
+        &override_error,
         &transport_error,
         &log,
     ] {
         assert_never(
             text,
-            &["=s3", " s3", "tok-123", "key-456", "fixed-789", "G-ABC123"],
+            &[
+                "=s3",
+                " s3",
+                "tok-123",
+                "key-456",
+                "fixed-789",
+                "cred-111",
+                "cred-222",
+                "G-ABC123",
+            ],
         );
     }
 }

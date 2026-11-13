@@ -1,7 +1,15 @@
 mod totals;
 mod vanished;
 
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use ciborium::Value as CborValue;
+use vantage_types::Record;
+
 use crate::dio::DioEvent;
+use crate::lens::ChunkSink;
+use crate::scenery::enriched_record::EnrichedRecord;
 use crate::scenery::table::state::SharedRows;
 
 use super::guards::{PendingChunk, restore_bound_rows};
@@ -66,6 +74,7 @@ pub(super) async fn finish_chunk_load(state: &SharedRows, pending: PendingChunk)
             );
         }
         Ok(()) => {
+            sweeten_bound(state, &writer).await;
             tap_cache_write(tap, state, flush_report.as_ref());
             // The window came back — whatever it contained, this view now has
             // an answer rather than a not-yet.
@@ -185,6 +194,52 @@ pub(super) async fn finish_chunk_load(state: &SharedRows, pending: PendingChunk)
                 range: effective_range,
                 error: e.to_string(),
             });
+        }
+    }
+}
+
+/// A window binds the master's plain rows. Once they are committed, a
+/// sugared view rebinds each slot this load bound with the sugar's outputs
+/// merged in, in one sugar call. A slot rebound while the sugar ran keeps
+/// its newer row.
+async fn sweeten_bound(state: &SharedRows, writer: &ChunkSink) {
+    let Some(sugared) = state.read_cache.clone() else {
+        return;
+    };
+    let bound: HashMap<usize, Arc<EnrichedRecord>> = {
+        let rows = state.rows.read().unwrap();
+        writer
+            .bound_rows()
+            .into_iter()
+            .filter_map(|(idx, _)| rows.get(&idx).map(|row| (idx, row.clone())))
+            .collect()
+    };
+    if bound.is_empty() {
+        return;
+    }
+    let mut slots: Vec<(usize, String, Arc<EnrichedRecord>, Record<CborValue>)> = state
+        .id_to_idx
+        .read()
+        .unwrap()
+        .iter()
+        .filter_map(|(id, idx)| {
+            let row = bound.get(idx)?;
+            Some((*idx, id.clone(), row.clone(), row.record.clone()))
+        })
+        .collect();
+    let mut refs: Vec<(&str, &mut Record<CborValue>)> = slots
+        .iter_mut()
+        .map(|(_, id, _, record)| (id.as_str(), record))
+        .collect();
+    sugared.sweeten(&mut refs).await;
+    let mut rows = state.rows.write().unwrap();
+    for (idx, _, plain, record) in slots {
+        if rows.get(&idx).is_some_and(|row| Arc::ptr_eq(row, &plain)) {
+            let sweet = EnrichedRecord {
+                record,
+                ..(*plain).clone()
+            };
+            rows.insert(idx, Arc::new(sweet));
         }
     }
 }

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.12.1 — 2026-11-13
+
+Requires vantage-table 3.8.0.
+
+- Fix (VAN-389): a YAML spec id column flagged `auto` marks the Vista id `Auto`, so a scripted
+  insert can leave the id out (SQLite, Postgres and MySQL). A `base:` vista keeps the base's
+  auto id, unless its `id_column` names another column.
+
 ## 0.12.0 — 2026-11-11
 
 - Typed writes on SQLite, PostgreSQL and MySQL. `coerce_column_value` types a written value by

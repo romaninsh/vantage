@@ -85,7 +85,7 @@ impl std::fmt::Display for AnyRedbType {
         match &self.value {
             ciborium::Value::Null => write!(f, "null"),
             ciborium::Value::Bool(b) => write!(f, "{}", b),
-            ciborium::Value::Integer(i) => write!(f, "{:?}", i),
+            ciborium::Value::Integer(i) => write!(f, "{}", i128::from(*i)),
             ciborium::Value::Float(x) => write!(f, "{}", x),
             ciborium::Value::Text(s) => write!(f, "{:?}", s),
             ciborium::Value::Bytes(b) => write!(f, "Bytes({} bytes)", b.len()),

@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, PoisonError};
 use std::time::{Duration, Instant};
 
 use ciborium::Value as CborValue;
@@ -162,11 +162,11 @@ impl SurrealClient {
     }
 
     fn backoff_state(&self) -> std::sync::MutexGuard<'_, Backoff> {
-        self.backoff.lock().unwrap_or_else(|e| e.into_inner())
+        self.backoff.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     fn session_state(&self) -> std::sync::MutexGuard<'_, SessionState> {
-        self.session.lock().unwrap_or_else(|e| e.into_inner())
+        self.session.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Whether this client can run interactive transactions
@@ -449,7 +449,7 @@ impl SurrealClient {
         let mut engine = self.engine().await?;
 
         let params = if let Some(args) = args {
-            json!([func, args])
+            json!([func, null, args])
         } else {
             json!([func])
         };

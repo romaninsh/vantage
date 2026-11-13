@@ -22,7 +22,7 @@ impl MongoSelect {
                 stored.push(resolved);
             }
         }
-        Ok((merge_documents(stored)?, merge_documents(joined)?))
+        Ok((merge_documents(stored), merge_documents(joined)))
     }
 
     /// The filter as `$match` stages: one on stored fields, one on joined

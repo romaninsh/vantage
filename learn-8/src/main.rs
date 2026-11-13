@@ -16,9 +16,10 @@ use vantage_sql::prelude::*;
 const DB_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/products.db");
 
 #[tokio::main]
-async fn main() {
-    if let Err(e) = run().await {
-        e.report();
+async fn main() -> std::process::ExitCode {
+    match run().await {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(e) => e.report(),
     }
 }
 

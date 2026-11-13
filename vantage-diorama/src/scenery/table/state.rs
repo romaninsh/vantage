@@ -8,7 +8,7 @@ use vantage_vista::{Condition, VistaCapabilities, VistaQuery};
 
 use crate::dio::DioInner;
 use crate::dio::augment_scheduler::AugmentTicket;
-use crate::lens::cache_backend::CacheTable;
+use crate::scenery::sugar::SugaredCache;
 
 use super::ViewportRequest;
 use super::view::{ViewHook, ViewId};
@@ -40,7 +40,7 @@ pub(crate) struct SharedRows {
     /// A sugared wrapper these rows are read through, when the view that
     /// built them was opened with [`sugar`](super::TableSceneryBuilder::sugar).
     /// See [`Self::reader`].
-    pub(crate) read_cache: Option<Arc<dyn CacheTable>>,
+    pub(crate) read_cache: Option<Arc<SugaredCache>>,
     /// The sugar's output columns, empty without sugar. A clause on one is
     /// never offered to the master.
     pub(crate) sugar_columns: Arc<HashSet<String>>,

@@ -54,7 +54,7 @@ impl MongoCondition {
                     for c in conditions {
                         docs.push(c.resolve().await?);
                     }
-                    merge_documents(docs)
+                    Ok(merge_documents(docs))
                 }
             }
         })
@@ -93,15 +93,15 @@ fn bson_to_document(value: Bson) -> vantage_core::Result<Document> {
 /// - Empty list → `{}`
 /// - Single doc → returned as-is
 /// - Multiple docs → `{ "$and": [ doc1, doc2, ... ] }`
-pub(crate) fn merge_documents(docs: Vec<Document>) -> vantage_core::Result<Document> {
-    Ok(match docs.len() {
+pub(crate) fn merge_documents(docs: Vec<Document>) -> Document {
+    match docs.len() {
         0 => Document::new(),
         1 => docs.into_iter().next().unwrap(),
         _ => {
             let array: Vec<Bson> = docs.into_iter().map(Bson::Document).collect();
             bson::doc! { "$and": array }
         }
-    })
+    }
 }
 
 /// Resolve an iterator of `MongoCondition` references into a single filter document.
@@ -112,5 +112,5 @@ pub async fn resolve_conditions<'a>(
     for c in conditions {
         docs.push(c.resolve().await?);
     }
-    merge_documents(docs)
+    Ok(merge_documents(docs))
 }

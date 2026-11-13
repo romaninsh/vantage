@@ -119,7 +119,7 @@ fn handle_result_value(field_name: &str, value: AnySurrealType) -> vantage_core:
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> std::process::ExitCode {
     let args: Vec<String> = env::args().collect();
 
     let result = async {
@@ -147,8 +147,11 @@ async fn main() {
     }
     .await;
 
-    if let Err(e) = result {
-        use std::process::Termination;
-        e.report();
+    match result {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(e) => {
+            use std::process::Termination;
+            e.report()
+        }
     }
 }

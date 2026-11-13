@@ -1,18 +1,22 @@
 //! YAML column declarations: flags reaching the vista column, and `lazy:`
 //! columns the vista computes per record.
 
+use std::sync::Arc;
+
 #[cfg(feature = "rhai")]
 use ciborium::Value as CborValue;
 #[cfg(feature = "rhai")]
 use vantage_dataset::prelude::*;
+use vantage_sql::sqlite::vista::SqliteVistaSpec;
 #[cfg(feature = "rhai")]
 use vantage_types::Record;
-use vantage_vista::{ColumnFlag, VistaFactory};
+use vantage_vista::{ColumnFlag, SpecResolver, VistaFactory};
 
 use super::{TestResult, setup};
 
 /// The YAML flags with a typed counterpart reach the vista column through
-/// the typed table.
+/// the typed table. An id flagged `auto` makes the vista id auto, so scripted
+/// inserts may leave the id to the database.
 #[tokio::test]
 async fn vista_yaml_column_flags_reach_the_vista() -> TestResult {
     let db = setup().await;
@@ -33,6 +37,35 @@ columns:
         is_deleted.has_flag(ColumnFlag::from("label")),
         "{is_deleted:?}"
     );
+    let id = vista.column("id").expect("id");
+    assert!(!id.has_flag(ColumnFlag::Auto), "{id:?}");
+
+    let auto_yaml = "name: product\ncolumns:\n  id: { type: int, flags: [id, auto] }\n  name: { type: string }\n";
+    let auto = db.vista_factory().from_yaml(auto_yaml)?;
+    let id = auto.column("id").expect("id");
+    assert!(id.has_flag(ColumnFlag::Auto), "{id:?}");
+
+    // A vista derived from it keeps the auto id, unless it picks another id
+    // column.
+    let base: SqliteVistaSpec = serde_yaml_ng::from_str(auto_yaml)?;
+    let resolver: Arc<dyn SpecResolver<SqliteVistaSpec>> =
+        Arc::new(move |name: &str| (name == "product").then(|| base.clone()));
+    let derived = |extra: &str| {
+        let yaml = format!(
+            "name: derived\ncolumns: {{}}\n{extra}sqlite:\n  base: product\n  inherit:\n    columns: [id, name]\n"
+        );
+        db.vista_factory()
+            .with_resolver(resolver.clone())
+            .build_from_spec(serde_yaml_ng::from_str(&yaml).unwrap())
+            .unwrap()
+    };
+    let id = derived("").column("id").cloned().expect("id");
+    assert!(id.has_flag(ColumnFlag::Auto), "{id:?}");
+    let name = derived("id_column: name\n")
+        .column("name")
+        .cloned()
+        .expect("name");
+    assert!(!name.has_flag(ColumnFlag::Auto), "{name:?}");
     Ok(())
 }
 

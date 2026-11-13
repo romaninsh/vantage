@@ -1,11 +1,7 @@
 //! [`RestApiBuilder`]: configuring a [`RestApi`].
 
-use std::sync::Arc;
-
-use vantage_api_pool::resilient::TransportObserver;
-
 use super::{FilterStrategy, OrderingParams, PaginationParams, ResponseShape, RestApi};
-use crate::transport::{AuthHeader, QueryAuth};
+use crate::transport::{AuthHeader, QueryAuth, client_builder_methods};
 
 /// Builder for [`RestApi`]. Lets callers pick a [`ResponseShape`] and
 /// override the pagination parameter names.
@@ -59,72 +55,23 @@ impl RestApiBuilder {
         }
     }
 
-    /// Concurrent requests to this API at most (default 4).
-    pub fn max_parallel(mut self, n: usize) -> Self {
-        self.transport.max_parallel = n.max(1);
-        self
-    }
-
-    /// Requests per second to this API at most.
-    pub fn rate_limit(mut self, per_second: f64) -> Self {
-        self.transport.rate_limit = Some(per_second);
-        self
-    }
-
-    /// Give up on one request after `timeout` (default 30 s). Ignored when a
-    /// client is supplied with [`http_client`](Self::http_client).
-    pub fn request_timeout(mut self, timeout: std::time::Duration) -> Self {
-        self.transport.request_timeout = Some(Some(timeout));
-        self
-    }
-
-    /// Never time a request out. Ignored when a client is supplied.
-    pub fn no_request_timeout(mut self) -> Self {
-        self.transport.request_timeout = Some(None);
-        self
-    }
-
-    /// Report every attempt, retry and breaker transition under `key`
-    /// (the datasource name).
-    pub fn observer(
-        mut self,
-        key: impl Into<Arc<str>>,
-        observer: Arc<dyn TransportObserver>,
-    ) -> Self {
-        self.transport.observer = Some((key.into(), observer));
-        self
-    }
-
-    /// A pre-configured `reqwest::Client` (timeouts, proxies, TLS).
-    pub fn http_client(mut self, client: reqwest::Client) -> Self {
-        self.transport.http = Some(client);
-        self
-    }
+    client_builder_methods!();
 
     /// Set the Authorization header value (e.g. "Bearer `<token>`").
-    pub fn auth(mut self, auth: impl Into<String>) -> Self {
-        self.auth_header = AuthHeader::new(auth);
-        self.transport.auth_refresher = None;
-        self
+    pub fn auth(self, auth: impl Into<String>) -> Self {
+        self.fixed_auth(AuthHeader::new(auth))
     }
 
-    /// Get the bearer token from `refresher` instead of a fixed header: it
-    /// is asked on the first request, and again when the API answers `401`.
-    /// A request waits for it, so a refresher may run an interactive
-    /// sign-in. Replaces [`auth`](Self::auth).
-    pub fn auth_refresher(mut self, refresher: crate::AuthRefresher) -> Self {
-        self.auth_header = AuthHeader::default();
-        self.transport.auth_refresher = Some(refresher);
-        self
-    }
-
-    /// Ask `source` for the bearer token on every request, retries
-    /// included; see [`BearerSource`](crate::BearerSource). Replaces
-    /// [`auth`](Self::auth) and [`auth_refresher`](Self::auth_refresher).
-    pub fn bearer_source(mut self, source: crate::BearerSource) -> Self {
-        self.auth_header = AuthHeader::Source(source);
-        self.transport.auth_refresher = None;
-        self
+    /// Send `value` verbatim as the `name` header (`X-API-Key`), for APIs
+    /// that take their key outside `Authorization`. Replaces
+    /// [`auth`](Self::auth); logs, errors and previews mask the value.
+    ///
+    /// A redirect to another origin is not followed, so the key never
+    /// leaves the API's host; the request fails with the `3xx` status. A
+    /// client passed to [`http_client`](Self::http_client) has to do this
+    /// itself, see [`same_origin_redirects`](crate::same_origin_redirects).
+    pub fn header_auth(self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        self.fixed_auth(AuthHeader::named(name, value))
     }
 
     /// Send `param=value` on every request, reads and inserts alike, for
@@ -201,7 +148,7 @@ impl RestApiBuilder {
     pub fn build(self) -> RestApi {
         RestApi {
             base_url: self.base_url,
-            client: crate::transport::build_client(self.transport),
+            client: crate::transport::build_client(self.transport, &self.auth_header),
             auth_header: self.auth_header,
             response_shape: self.response_shape,
             pagination: self.pagination,

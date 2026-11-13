@@ -145,6 +145,13 @@ pub fn parse_token(arg: &str) -> Result<Token> {
 }
 
 fn parse_relation_token(arg: &str, rest: &str) -> Result<Token> {
+    // `:gt=5` is a condition missing its field, not a relation named `gt=5`.
+    if let Some((op_str, _)) = rest.split_once('=')
+        && Op::parse(op_str).is_some()
+    {
+        let eq_pos = arg.find('=').expect("rest contains `=`");
+        return parse_condition_token(arg, eq_pos);
+    }
     let (rel, sel) = split_bracket_suffix(rest)?;
     if rel.is_empty() {
         return Err(error!("Empty relation name in token", token = arg));

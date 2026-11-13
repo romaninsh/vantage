@@ -4,6 +4,7 @@
 #[cfg(feature = "rhai")]
 mod enabled {
     use std::fmt;
+    use std::ops::Range;
     use std::sync::Arc;
 
     use indexmap::IndexMap;
@@ -25,11 +26,16 @@ mod enabled {
 
     /// The secret names `source` reads, found by scanning its text: a miss
     /// in a Rhai map is a silent `()`, so an unbound secret would otherwise
-    /// send null. A name built at run time (`secret[x]`) is not seen.
+    /// send null. A name built at run time (`secret[x]`) is not seen, and a
+    /// `secret.` inside a comment or a string literal is not a reference.
     fn secret_names(source: &str) -> Vec<String> {
         let is_ident = |c: char| c.is_alphanumeric() || c == '_';
         let mut names = Vec::new();
+        let skipped = non_code_ranges(source);
         for (at, _) in source.match_indices("secret") {
+            if skipped.iter().any(|r| r.contains(&at)) {
+                continue;
+            }
             let before = source[..at].chars().next_back();
             if before.is_some_and(|c| is_ident(c) || c == '.') {
                 continue;
@@ -56,6 +62,154 @@ mod enabled {
             }
         }
         names
+    }
+
+    /// The byte ranges of Rhai `src` that are not code: `//` and (nested)
+    /// `/* */` comments, and `"`, `'`, `` ` `` and raw `#"…"#` literals. A
+    /// backtick string's `${ … }` interpolation is code.
+    fn non_code_ranges(src: &str) -> Vec<Range<usize>> {
+        let mut lexer = Lexer {
+            bytes: src.as_bytes(),
+            at: 0,
+            ranges: Vec::new(),
+        };
+        lexer.code(false);
+        lexer.ranges
+    }
+
+    /// The `#`s that open a raw string at the start of `rest`, if one does.
+    fn raw_string_hashes(rest: &[u8]) -> Option<usize> {
+        let hashes = rest.iter().take_while(|&&b| b == b'#').count();
+        (hashes > 0 && rest.get(hashes) == Some(&b'"')).then_some(hashes)
+    }
+
+    /// Walks Rhai source by its lexical rules, noting the ranges that are
+    /// not code.
+    struct Lexer<'a> {
+        bytes: &'a [u8],
+        at: usize,
+        ranges: Vec<Range<usize>>,
+    }
+
+    impl Lexer<'_> {
+        fn rest(&self) -> &[u8] {
+            &self.bytes[self.at.min(self.bytes.len())..]
+        }
+
+        /// Code to the end, or in an `interpolation` to just past the `}`
+        /// that closes it.
+        fn code(&mut self, interpolation: bool) {
+            let mut depth = 0usize;
+            while let Some(&byte) = self.bytes.get(self.at) {
+                if self.non_code() {
+                    continue;
+                }
+                self.at += 1;
+                match byte {
+                    b'{' => depth += 1,
+                    b'}' if interpolation && depth == 0 => return,
+                    b'}' => depth = depth.saturating_sub(1),
+                    _ => {}
+                }
+            }
+        }
+
+        /// Steps over the comment or literal at the cursor, noting its
+        /// range. False when code is there.
+        fn non_code(&mut self) -> bool {
+            let start = self.at;
+            let rest = self.rest();
+            match rest.first() {
+                Some(b'/') if rest.starts_with(b"//") => self.line_comment(),
+                Some(b'/') if rest.starts_with(b"/*") => self.block_comment(),
+                Some(b'"' | b'\'') => self.quoted(),
+                Some(b'#') if raw_string_hashes(rest).is_some() => self.raw_string(),
+                Some(b'`') => {
+                    // Notes its literal pieces itself, around the code.
+                    self.backtick();
+                    return true;
+                }
+                _ => return false,
+            }
+            self.at = self.at.min(self.bytes.len());
+            self.ranges.push(start..self.at);
+            true
+        }
+
+        fn line_comment(&mut self) {
+            let rest = self.rest();
+            self.at += rest.iter().position(|&b| b == b'\n').unwrap_or(rest.len());
+        }
+
+        /// A `/* */` comment; they nest.
+        fn block_comment(&mut self) {
+            let mut depth = 0usize;
+            while self.at < self.bytes.len() {
+                let rest = self.rest();
+                if rest.starts_with(b"/*") {
+                    depth += 1;
+                } else if rest.starts_with(b"*/") {
+                    depth -= 1;
+                } else {
+                    self.at += 1;
+                    continue;
+                }
+                self.at += 2;
+                if depth == 0 {
+                    return;
+                }
+            }
+        }
+
+        /// A `"` string or `'` character, with `\` escapes.
+        fn quoted(&mut self) {
+            let quote = self.bytes[self.at];
+            self.at += 1;
+            while let Some(&byte) = self.bytes.get(self.at) {
+                self.at += if byte == b'\\' { 2 } else { 1 };
+                if byte == quote {
+                    return;
+                }
+            }
+        }
+
+        /// `#"…"#` with any number of `#`s: no escapes at all.
+        fn raw_string(&mut self) {
+            let hashes = raw_string_hashes(self.rest()).unwrap_or(0);
+            self.at += hashes + 1;
+            let mut closing = vec![b'"'];
+            closing.resize(hashes + 1, b'#');
+            let rest = self.rest();
+            self.at += rest
+                .windows(closing.len())
+                .position(|w| w == closing)
+                .map_or(rest.len(), |end| end + closing.len());
+        }
+
+        /// A backtick string: verbatim, but for the `\${` escape, and each
+        /// `${ … }` in it is code.
+        fn backtick(&mut self) {
+            let mut literal_from = self.at;
+            self.at += 1;
+            while let Some(&byte) = self.bytes.get(self.at) {
+                if byte == b'`' {
+                    break;
+                }
+                let rest = self.rest();
+                if rest.starts_with(b"\\${") {
+                    self.at += 3;
+                } else if rest.starts_with(b"${") {
+                    self.at += 2;
+                    self.ranges.push(literal_from..self.at);
+                    self.code(true);
+                    literal_from = self.at - 1;
+                } else {
+                    self.at += 1;
+                }
+            }
+            self.at = (self.at + 1).min(self.bytes.len());
+            self.ranges.push(literal_from..self.at);
+        }
     }
 
     impl fmt::Debug for BodyTemplate {

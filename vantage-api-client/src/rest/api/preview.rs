@@ -80,11 +80,11 @@ impl RestApi {
     }
 
     /// The GET of `url`, with the query credential as `param=***` and the
-    /// `Authorization` header when one is configured, its value masked.
+    /// auth header when one is configured, its value masked.
     fn request(&self, url: &str) -> String {
         let url = self.shown_url(url);
         match self.auth_header.masked() {
-            Some(masked) => format!("GET {url}\nAuthorization: {masked}"),
+            Some(masked) => format!("GET {url}\n{}: {masked}", self.auth_header.name()),
             None => format!("GET {url}"),
         }
     }

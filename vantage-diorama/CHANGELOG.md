@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.6.1 — 2026-11-13
+
+- Fix (VAN-451): a paged sugared view kept its sugar columns out of the rows its window loads
+  bound. The commit of a chunk now sweetens the rows it bound, and the "unchanged row" check
+  ignores sugar columns so a refresh does not count every row as dirty. A row the sugar failed
+  on is still bound again by a refresh, so the sugar retries it.
+
 ## 1.6.0 — 2026-11-11
 
 - `DioBuilder::retry_subscribe()` (use with `live()`): a Dio whose first subscribe fails no

@@ -66,7 +66,7 @@ impl TableSceneryBuilder {
         dio.refresh_if_stale();
         let sugared = sugar.is_some();
         let sugar_columns = sugar.as_ref().map(|s| s.outputs()).unwrap_or_default();
-        let read_cache = sugar.map(|s| SugaredCache::wrap(dio.cache.clone(), s));
+        let read_cache = sugar.map(|s| SugaredCache::new(dio.cache.clone(), s));
 
         let load_order = cap.map_or(order.clone(), |cap| cap.load_order(order.clone()));
         let query = compose(&filters, &[], search.clone(), load_order);

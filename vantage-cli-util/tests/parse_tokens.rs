@@ -207,6 +207,12 @@ fn relation_needs_a_name() {
 }
 
 #[test]
+fn colon_operator_without_a_field_is_an_error() {
+    let err = parse_token(":gt=5").unwrap_err().to_string();
+    assert!(err.contains("Empty field name before operator"), "{err}");
+}
+
+#[test]
 fn equals_prefix_is_a_column_override() {
     assert_eq!(
         parse_token("=name,salary").unwrap(),

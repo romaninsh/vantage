@@ -244,13 +244,13 @@ async fn a_has_one_narrows_the_target_id_by_the_parents_foreign_key() {
 }
 
 #[test]
-fn a_column_level_reference_does_not_become_a_relation() {
+fn column_references_sugar_registers_a_relation() {
     let server_less = RestApi::new("http://x");
     let users = vista(
         server_less,
         "name: albums\ncolumns:\n  id: { type: int, flags: [id] }\n  userId: { type: int, references: users }\n",
     );
-    assert!(users.reference("userId").is_none());
+    assert!(users.reference("userId").is_some());
 }
 
 #[tokio::test]

@@ -23,6 +23,10 @@ pub(crate) struct SugaredCache {
 
 impl SugaredCache {
     pub(crate) fn wrap(inner: Arc<dyn CacheTable>, sugar: Sugar) -> Arc<dyn CacheTable> {
+        SugaredCache::new(inner, sugar)
+    }
+
+    pub(crate) fn new(inner: Arc<dyn CacheTable>, sugar: Sugar) -> Arc<SugaredCache> {
         Arc::new(SugaredCache {
             inner,
             sugar,
@@ -45,8 +49,18 @@ impl SugaredCache {
         r
     }
 
+    /// Whether the sugar ran on this very `row` and succeeded: a failed row
+    /// is never memoized.
+    pub(crate) fn has_outputs_for(&self, id: &str, row: &Record<CborValue>) -> bool {
+        self.memo
+            .lock()
+            .unwrap()
+            .get(id)
+            .is_some_and(|(print, _)| *print == fingerprint(row))
+    }
+
     /// Merge outputs into `rows`, from the memo where the row is unchanged.
-    async fn sweeten(&self, rows: &mut [(&str, &mut Record<CborValue>)]) {
+    pub(crate) async fn sweeten(&self, rows: &mut [(&str, &mut Record<CborValue>)]) {
         let mut misses = Vec::new();
         {
             let memo = self.memo.lock().unwrap();

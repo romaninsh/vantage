@@ -169,7 +169,7 @@ where
     for (name, col_spec) in spec.columns.iter().filter(|(n, _)| !n.contains('.')) {
         table.add_spec_column(name, col_spec, T::spec_column)?;
     }
-    table.set_spec_id_field(&spec.resolve_id_column("id"))?;
+    table.set_spec_id(&spec.resolve_id_column("id"), &spec.columns)?;
 
     let mut table = table.with_spec_references(spec, env, build_spec_table::<T>)?;
 

@@ -31,7 +31,7 @@ fn key(v: &CborValue) -> Option<String> {
             if n.unsigned_abs() <= MAX_EXACT as u128 {
                 Some(format!("n:{n}"))
             } else {
-                Some(format!("f:{}", (n as f64).to_bits()))
+                key(&CborValue::Float(n as f64))
             }
         }
         CborValue::Float(f) if f.is_finite() && f.fract() == 0.0 && f.abs() <= MAX_EXACT as f64 => {

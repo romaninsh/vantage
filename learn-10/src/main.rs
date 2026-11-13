@@ -8,9 +8,10 @@ use vantage_sql::prelude::*;
 use vantage_vista::SortDirection;
 
 #[tokio::main]
-async fn main() {
-    if let Err(e) = run().await {
-        e.report();
+async fn main() -> std::process::ExitCode {
+    match run().await {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(e) => e.report(),
     }
 }
 

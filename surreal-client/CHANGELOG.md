@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.1 — 2026-11-13
+
+- Fix (VAN-448): `record_range` rendered its bounds wrong. An exclusive start went out as `>start`
+  instead of `start>`, and the inclusive and exclusive end forms were swapped.
+- Fix (VAN-448): `run` sent `[func, args]` to the RPC; it takes `[name, version, args]`, so
+  function arguments were read as the version.
+
 ## 1.2.0 — 2026-11-11
 
 - A closed socket no longer hangs callers. When the reader loop stops (close frame, receive error,

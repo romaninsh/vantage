@@ -6,6 +6,7 @@ use vantage_core::{Context, Result, error};
 use vantage_table::column::core::Column as TableColumn;
 use vantage_table::table::{BuildEnv, Table};
 use vantage_types::EmptyEntity;
+use vantage_vista::ColumnFlag;
 
 use super::build_column;
 use crate::mongodb::impls::joins::table_joins;
@@ -54,7 +55,9 @@ pub(crate) fn build_mongo_table(
         table.set_spec_id_field("_id")?;
     } else {
         table.add_spec_columns(&spec.columns, build_column)?;
-        table.set_spec_id_field(&spec.resolve_id_column("_id"))?;
+        let id = spec.resolve_id_column("_id");
+        check_auto_id(spec, &id)?;
+        table.set_spec_id(&id, &spec.columns)?;
     }
     let mut table = table.with_spec_references(spec, env, build_mongo_table)?;
     // A dotted column name is a join through `has_one` references, which
@@ -98,6 +101,30 @@ pub(crate) fn missing_rhai(slot: &str) -> vantage_core::VantageError {
         "vista declares a Rhai script but vantage-mongodb was built without the `rhai` feature",
         slot = slot
     )
+}
+
+/// MongoDB generates only `_id`, so an `auto` id stored under another path
+/// would be missing from every inserted row.
+fn check_auto_id(spec: &MongoVistaSpec, id: &str) -> Result<()> {
+    let Some(column) = spec.columns.get(id) else {
+        return Ok(());
+    };
+    if !column.has_flag(ColumnFlag::Auto) {
+        return Ok(());
+    }
+    let path = match column.driver.mongo.as_ref() {
+        Some(block) => block.resolved_path(id)?,
+        None => None,
+    };
+    if path.as_deref().unwrap_or(&[id.to_string()]) == ["_id"] {
+        return Ok(());
+    }
+    Err(error!(
+        "an auto id column must be stored at `_id`, the one field MongoDB generates; \
+         map it there with `mongo: { field: _id }` or drop the `auto` flag",
+        table = spec.name.as_str(),
+        column = id
+    ))
 }
 
 /// A dotted column names a join, so it cannot carry a BSON path of its own,

@@ -9,17 +9,15 @@
 //! The query language itself is handled by the query builder in the
 //! `select` module — `GraphqlApi` is just transport.
 
-use std::sync::Arc;
-
 use indexmap::IndexMap;
 use serde::Serialize;
 use serde_json::Value;
-use vantage_api_pool::resilient::{ResilientClient, TransportEvent, TransportObserver};
+use vantage_api_pool::resilient::{ResilientClient, TransportEvent};
 use vantage_core::{Priority, Result, error};
 
 use crate::graphql::condition::FilterDialect;
 use crate::redact::Redaction;
-use crate::transport::AuthHeader;
+use crate::transport::{AuthHeader, client_builder_methods};
 
 /// GraphQL HTTP data source. Cheap to clone — the inner `ResilientClient`
 /// is `Arc`-wrapped.
@@ -298,6 +296,7 @@ impl GraphqlApi {
 
         let body = Body { query, variables };
 
+        self.auth_header.validate()?;
         let policy = crate::transport::policy_for(Priority::current());
         let redaction = Redaction::default();
         let response = self
@@ -381,41 +380,7 @@ impl GraphqlApiBuilder {
         }
     }
 
-    /// Concurrent requests to this API at most (default 4).
-    pub fn max_parallel(mut self, n: usize) -> Self {
-        self.transport.max_parallel = n.max(1);
-        self
-    }
-
-    /// Requests per second to this API at most.
-    pub fn rate_limit(mut self, per_second: f64) -> Self {
-        self.transport.rate_limit = Some(per_second);
-        self
-    }
-
-    /// Give up on one request after `timeout` (default 30 s). Ignored when a
-    /// client is supplied with [`http_client`](Self::http_client).
-    pub fn request_timeout(mut self, timeout: std::time::Duration) -> Self {
-        self.transport.request_timeout = Some(Some(timeout));
-        self
-    }
-
-    /// Never time a request out. Ignored when a client is supplied.
-    pub fn no_request_timeout(mut self) -> Self {
-        self.transport.request_timeout = Some(None);
-        self
-    }
-
-    /// Report every attempt, retry and breaker transition under `key`
-    /// (the datasource name).
-    pub fn observer(
-        mut self,
-        key: impl Into<Arc<str>>,
-        observer: Arc<dyn TransportObserver>,
-    ) -> Self {
-        self.transport.observer = Some((key.into(), observer));
-        self
-    }
+    client_builder_methods!();
 
     /// Literal arguments always passed to the root field, e.g.
     /// `json!({ "input": {} })` for a mandatory non-null input object.
@@ -445,35 +410,20 @@ impl GraphqlApiBuilder {
     }
 
     /// Set the `Authorization` header value (e.g. `"Bearer <token>"`).
-    pub fn auth(mut self, auth: impl Into<String>) -> Self {
-        self.auth_header = AuthHeader::new(auth);
-        self.transport.auth_refresher = None;
-        self
+    pub fn auth(self, auth: impl Into<String>) -> Self {
+        self.fixed_auth(AuthHeader::new(auth))
     }
 
-    /// Get the bearer token from `refresher` instead of a fixed header: it
-    /// is asked on the first request, and again when the API answers `401`.
-    /// A request waits for it, so a refresher may run an interactive
-    /// sign-in. Replaces [`auth`](Self::auth).
-    pub fn auth_refresher(mut self, refresher: crate::AuthRefresher) -> Self {
-        self.auth_header = AuthHeader::default();
-        self.transport.auth_refresher = Some(refresher);
-        self
-    }
-
-    /// Ask `source` for the bearer token on every request, retries
-    /// included; see [`BearerSource`](crate::BearerSource). Replaces
-    /// [`auth`](Self::auth) and [`auth_refresher`](Self::auth_refresher).
-    pub fn bearer_source(mut self, source: crate::BearerSource) -> Self {
-        self.auth_header = AuthHeader::Source(source);
-        self.transport.auth_refresher = None;
-        self
-    }
-
-    /// A pre-configured `reqwest::Client` (timeouts, proxies, TLS).
-    pub fn http_client(mut self, client: reqwest::Client) -> Self {
-        self.transport.http = Some(client);
-        self
+    /// Send `value` verbatim as the `name` header (`X-API-Key`), for APIs
+    /// that take their key outside `Authorization`. Replaces
+    /// [`auth`](Self::auth); errors mask the value.
+    ///
+    /// A redirect to another origin is not followed, so the key never
+    /// leaves the API's host; the request fails with the `3xx` status. A
+    /// client passed to [`http_client`](Self::http_client) has to do this
+    /// itself, see [`same_origin_redirects`](crate::same_origin_redirects).
+    pub fn header_auth(self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        self.fixed_auth(AuthHeader::named(name, value))
     }
 
     /// Pick the filter dialect used to render conditions on tables.
@@ -496,7 +446,7 @@ impl GraphqlApiBuilder {
     pub fn build(self) -> GraphqlApi {
         GraphqlApi {
             endpoint: self.endpoint,
-            client: crate::transport::build_client(self.transport),
+            client: crate::transport::build_client(self.transport, &self.auth_header),
             auth_header: self.auth_header,
             dialect: self.dialect,
             filter_arg_name: self.filter_arg_name,

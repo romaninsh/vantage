@@ -51,7 +51,7 @@ fn main() {
     match result {
         Ok(data) => println!("Success: {}", data),
         Err(e) => {
-            e.report();
+            let _ = e.report();
         }
     };
 
@@ -62,7 +62,7 @@ fn main() {
     match result {
         Ok(_) => println!("Success"),
         Err(e) => {
-            e.report();
+            let _ = e.report();
             println!();
         }
     }
@@ -75,7 +75,7 @@ fn main() {
     match result {
         Ok(_) => println!("Success"),
         Err(e) => {
-            e.report();
+            let _ = e.report();
             println!();
         }
     }
@@ -102,7 +102,7 @@ fn main() {
         Ok(_) => println!("Success"),
         Err(e) => {
             use std::process::Termination;
-            e.report();
+            let _ = e.report();
             println!();
         }
     }

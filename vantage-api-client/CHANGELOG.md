@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.4.0 — 2026-11-13
+
+- `AuthHeader::Named { name, value }` and a `header_auth(name, value)` builder method on the REST
+  and GraphQL clients: send a credential under a header other than `Authorization`. `header_auth`
+  replaces `auth` and clears the refresher, as `auth` does. Debug logs and the request preview
+  show `<name>: ***` rather than a hard-coded `Authorization`.
+- Fix (VAN-592): an api-key credential can now go out under its configured header; the client
+  had no way to name one.
+- With `header_auth` set, the client this crate builds no longer follows a redirect to another
+  origin: reqwest forwards custom headers across hosts, so the key would have reached the
+  redirect target. The `3xx` fails the request; same-origin redirects still work. A client
+  passed to `http_client` keeps its own policy: build it with the new `same_origin_redirects()`.
+  Auth header values are marked sensitive. Requires vantage-api-pool 1.3.0.
+- Fix (VAN-417): the REST vista factory registers column-level `references:` sugar as relations,
+  as the GraphQL, memory and MongoDB factories already did.
+- Fix (VAN-596): a body template that mentions `secret.x` in a comment or a string no longer
+  demands a bound secret. Only code, and `${}` inside backtick strings, is scanned.
+  The scanner follows Rhai's lexer: a backtick string has no escape but `\${`, a raw `#"…"#`
+  string has none, and an interpolation is closed by the `}` its own code closes, not one in a
+  comment or a string.
+- A caller header passed to `http_request` under the configured auth header's name (any case)
+  is masked in the debug log and redacted from errors, whatever the name looks like.
+
 ## 2.3.1 — 2026-11-11
 
 - The REST vista factory accepts the YAML types `date`, `time`, `timestamp` and `bytes`, read

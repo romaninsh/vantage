@@ -8,7 +8,7 @@ use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use vantage_api_pool::resilient::{CallPolicy, ClientError, ResilientClient, TransportEvent};
 use vantage_core::{Priority, error};
 
-use crate::redact::{MASK, Redaction, header_line, is_secret_header};
+use crate::redact::{MASK, Redaction, is_secret_header};
 use crate::rest::TableInsert;
 use crate::transport::{AuthHeader, QueryAuth};
 
@@ -154,6 +154,12 @@ impl RestApi {
         }
     }
 
+    /// A caller header whose value is a credential: one that looks like it,
+    /// or one that overrides the configured auth header, whatever its name.
+    fn is_secret_header(&self, name: &str) -> bool {
+        is_secret_header(name) || self.auth_header.name().eq_ignore_ascii_case(name)
+    }
+
     /// A clone whose requests carry the bearer token `source` gives at the
     /// moment each one goes out, in place of the configured `auth`. The
     /// clone shares this API's client — connection pool, parallel cap,
@@ -213,7 +219,7 @@ impl RestApi {
         let policy = crate::transport::policy_for(Priority::current());
         let redaction = headers
             .iter()
-            .filter(|(name, _)| is_secret_header(name))
+            .filter(|(name, _)| self.is_secret_header(name))
             .fold(self.redaction(), |r, (_, value)| r.value(*value));
         self.http_request_with_policy(&policy, method, path, headers, body, &redaction)
             .await?
@@ -240,13 +246,7 @@ impl RestApi {
         let shown_url = redaction.url(&self.shown_url(&join_base_path(&self.base_url, path)));
         let url = self.sent_url(&join_base_path(&self.base_url, path));
 
-        // A fixed value is checked before anything is sent; a bad one would
-        // otherwise surface as a transport error, which an essential call
-        // retries forever. A bearer source is asked per attempt, below.
-        if let AuthHeader::Fixed(auth) = &self.auth_header {
-            HeaderValue::from_str(auth)
-                .map_err(|_| error!("Configured Authorization header value is not valid"))?;
-        }
+        self.auth_header.validate()?;
 
         let mut header_map = HeaderMap::new();
         for (name, value) in headers {
@@ -262,9 +262,16 @@ impl RestApi {
             let lines: Vec<String> = self
                 .auth_header
                 .masked()
-                .map(|_| format!("Authorization: {MASK}"))
+                .map(|_| format!("{}: {MASK}", self.auth_header.name()))
                 .into_iter()
-                .chain(headers.iter().map(|(name, value)| header_line(name, value)))
+                .chain(headers.iter().map(|(name, value)| {
+                    let shown = if self.is_secret_header(name) {
+                        MASK
+                    } else {
+                        value
+                    };
+                    format!("{name}: {shown}")
+                }))
                 .collect();
             tracing::info!(
                 target: "vantage_api_client::rest",

@@ -15,7 +15,7 @@ pub fn spawn(db: SqliteDB) {
             tokio::time::sleep(Duration::from_millis(800)).await;
             tick += 1;
             if let Err(e) = step(&db, tick).await {
-                e.report();
+                let _ = e.report();
             }
         }
     });

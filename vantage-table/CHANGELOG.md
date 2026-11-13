@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.8.0 — 2026-11-13
+
+- `Table::set_spec_id(id, &columns)`: like `set_spec_id_field`, and also marks the table's id
+  `auto` when that id's spec column carries `ColumnFlag::Auto`. SQL, SurrealDB and MongoDB spec
+  factories use it.
+- Fix (VAN-389): a YAML id column flagged `auto` never reached the Vista, so a scripted insert
+  without an id was refused for a numeric id column.
+- `Table::derive_from` keeps the source's auto id; `derive_from_spec` drops it when the spec's
+  `id_column` names a different column.
+
 ## 3.7.0 — 2026-11-11
 
 - `TableSource::coerce_column_value(table, column, value) -> Result<Value>`, next to

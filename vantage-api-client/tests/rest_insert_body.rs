@@ -145,6 +145,52 @@ async fn a_secret_with_quotes_and_code_is_sent_as_data() {
 }
 
 #[tokio::test]
+async fn a_comment_or_string_naming_secret_binds_no_secret() {
+    let server = accepting().await;
+    let ep = endpoint(
+        &server,
+        r#"{ body: '#{ note: "uses secret.nope", /* secret.other */ n: record.name } // secret.third' }"#,
+    )
+    .await
+    .unwrap();
+    ep.send(&[record("a", 1)]).await.unwrap();
+    assert_eq!(
+        bodies(&server).await,
+        vec![json!({"note": "uses secret.nope", "n": "a"})]
+    );
+
+    // Code inside a backtick interpolation is still scanned, and so is code
+    // after a literal that ends the way Rhai lexes it: a backtick string
+    // has no `\` escapes, a raw string none at all, and a `}` in an
+    // interpolation's comment doesn't close it.
+    for body in [
+        r#"#{ t: `x ${secret.tok}` }"#,
+        r#"#{ note: `path\`, t: secret.tok }"#,
+        r##"#{ note: #"path\"#, t: secret.tok }"##,
+        r###"#{ note: ##"a "# b"##, t: secret.tok }"###,
+        r#"#{ t: `x ${ /* } */ secret.tok }` }"#,
+    ] {
+        let server = accepting().await;
+        let ep = endpoint(&server, &format!("{{ body: '{body}' }}"))
+            .await
+            .unwrap();
+        let err = ep.send(&[record("a", 1)]).await.unwrap_err().to_string();
+        assert!(
+            err.contains("not bound") && err.contains("tok"),
+            "{body}: {err}"
+        );
+    }
+
+    // A string inside an interpolation is not a reference either.
+    let server = accepting().await;
+    let ep = endpoint(&server, r#"{ body: '#{ t: `x ${ "secret.nope" }` }' }"#)
+        .await
+        .unwrap();
+    ep.send(&[record("a", 1)]).await.unwrap();
+    assert_eq!(bodies(&server).await, vec![json!({"t": "x secret.nope"})]);
+}
+
+#[tokio::test]
 async fn a_body_secret_never_reaches_an_error_or_debug_output() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

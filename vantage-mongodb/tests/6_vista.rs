@@ -207,6 +207,22 @@ mongo:
     assert_eq!(row.get("name"), Some(&CborValue::Text("Marty".to_string())));
     assert_eq!(row.get("is_paying_client"), Some(&CborValue::Bool(true)));
 
+    // MongoDB generates only `_id`: an auto id stored anywhere else would be
+    // missing from every inserted row, so the build refuses it.
+    let auto = |column: &str| format!("name: client\ncolumns:\n  id: {column}\n");
+    let err = db
+        .vista_factory()
+        .from_yaml(&auto("{ type: object_id, flags: [id, auto] }"))
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("auto id column must be stored at `_id`"),
+        "{err}"
+    );
+    db.vista_factory().from_yaml(&auto(
+        "{ type: object_id, flags: [id, auto], mongo: { field: _id } }",
+    ))?;
+
     teardown(&db, &name).await;
     Ok(())
 }

@@ -6,10 +6,10 @@
 //! identifiers. A condition is negated with `eq_bool(false)` (or
 //! `ne_bool(true)`) on [`MongoCondition`].
 
-use bson::{Bson, doc};
-use vantage_expressions::Expressive;
+use bson::{Bson, Document, doc};
+use vantage_expressions::{DeferredFn, Expressive};
 
-use crate::condition::MongoCondition;
+use crate::condition::{MongoCondition, merge_documents};
 use crate::types::{AnyMongoType, MongoType};
 
 fn field_name<T>(expr: &(impl Expressive<T> + ?Sized)) -> String {
@@ -21,30 +21,60 @@ fn to_bson_val(value: impl Into<AnyMongoType>) -> Bson {
     any.to_bson()
 }
 
-/// Wraps each field of a document in `$not`. A deferred condition passes
-/// through unchanged.
+/// `{ "$nor": [filter] }` matches exactly the rows `filter` rejects.
+fn nor(filter: Document) -> Document {
+    doc! { "$nor": [filter] }
+}
+
+/// A single-field filter becomes `{ field: { "$not": ... } }`. Anything wider
+/// (several fields, a top-level operator, an `And`) is NOT (a AND b), which
+/// is `$nor` of the whole filter, not the conjunction of negated parts. A
+/// deferred part makes the negation deferred too.
 fn negate(cond: MongoCondition) -> MongoCondition {
-    match cond {
-        MongoCondition::Doc(doc) => {
-            let mut negated = bson::Document::new();
-            for (key, val) in doc {
-                match val {
-                    Bson::Document(inner) => {
-                        negated.insert(key, doc! { "$not": inner });
-                    }
-                    other => {
-                        negated.insert(key, doc! { "$not": { "$eq": other } });
-                    }
-                }
+    let immediate = match &cond {
+        MongoCondition::Doc(doc) => Some(doc.clone()),
+        MongoCondition::And(parts) => parts
+            .iter()
+            .map(|part| match part {
+                MongoCondition::Doc(doc) => Some(doc.clone()),
+                _ => None,
+            })
+            .collect::<Option<Vec<_>>>()
+            .map(merge_documents),
+        _ => None,
+    };
+    match immediate {
+        Some(doc) => MongoCondition::Doc(negate_doc(doc)),
+        None => MongoCondition::Deferred(DeferredFn::from_fn(move || {
+            let cond = cond.clone();
+            async move {
+                let resolved = cond.resolve().await?;
+                Ok(AnyMongoType::untyped(Bson::Document(negate_doc(resolved))))
             }
-            MongoCondition::Doc(negated)
-        }
-        MongoCondition::And(conditions) => {
-            MongoCondition::And(conditions.into_iter().map(negate).collect())
-        }
-        // A deferred condition has no document to wrap until it resolves.
-        other => other,
+        })),
     }
+}
+
+/// A single field with an operator document keeps the `$not` form (`$not`
+/// takes only operator expressions); everything else goes through `$nor`.
+fn negate_doc(doc: Document) -> Document {
+    if doc.len() == 1 {
+        let (key, val) = doc.iter().next().unwrap();
+        if !key.starts_with('$') {
+            match val {
+                Bson::Document(inner)
+                    if !inner.is_empty() && inner.keys().all(|k| k.starts_with('$')) =>
+                {
+                    return doc! { key: { "$not": inner.clone() } };
+                }
+                Bson::Document(_) => {}
+                // `$eq` would compare the regex object, not match by it.
+                Bson::RegularExpression(_) => return doc! { key: { "$not": val.clone() } },
+                other => return doc! { key: { "$not": { "$eq": other.clone() } } },
+            }
+        }
+    }
+    nor(doc)
 }
 
 /// Operators that produce a [`MongoCondition`]. Import this instead of

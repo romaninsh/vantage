@@ -15,9 +15,10 @@ const PREFIX: &str = "csv/by_station/GM";
 const PAGE_SIZE: usize = 1000;
 
 #[tokio::main]
-async fn main() {
-    if let Err(e) = run().await {
-        e.report();
+async fn main() -> std::process::ExitCode {
+    match run().await {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(e) => e.report(),
     }
 }
 

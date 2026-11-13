@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.3 — 2026-11-13
+
+- Fix (VAN-440): `Display` for an integer value printed `Integer(42)`; it prints `42`.
+
 ## 0.8.2 — 2026-10-26
 
 - Tests of one behaviour are folded into one test each (reopening a file, insert ids, deletes,

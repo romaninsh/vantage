@@ -227,14 +227,15 @@ async fn open_stream_does_not_block_reads() -> TestResult {
 #[tokio::test]
 async fn stream_pool_size_caps_concurrent_streams() -> TestResult {
     let observer = observer().await;
-    let span = Duration::from_millis(2500);
+    let span = Duration::from_millis(600);
 
     // A zero pool would only fail on the first watch; it is raised to one.
     // Vistas on clones of the handle share its stream client, so its one connection.
     let narrow = setup("").await.with_stream_pool_size(0);
     assert_eq!(narrow.stream_pool_size(), 1);
     let (left, right) = (tasks(&narrow.clone()), tasks(&narrow.clone()));
-    let polls = poll_all(&[&left, &right], 2).await;
+    // Each further watch waits out a full `getMore` (about a second) for the one connection.
+    let polls = poll_all(&[&left, &right], 1).await;
     expect_get_more(&observer, &narrow, STREAM_APP_NAME).await;
     let peak = peak_get_mores(&observer, &narrow, STREAM_APP_NAME, span).await;
     assert!(
