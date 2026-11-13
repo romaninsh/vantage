@@ -144,7 +144,11 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// to flag it. [`Self::with_id_column`] is the typed shortcut that
     /// creates the column for you.
     pub fn set_id_field(&mut self, name: impl Into<String>) {
-        self.id_field = Some(name.into());
+        let name = name.into();
+        if self.id_field.as_deref() != Some(name.as_str()) {
+            self.id_auto = false;
+        }
+        self.id_field = Some(name);
     }
 
     /// Mark an already-added column as a display title.

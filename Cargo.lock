@@ -5803,7 +5803,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-cmd"
-version = "0.7.4"
+version = "0.7.5"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -6086,7 +6086,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-sql"
-version = "0.12.1"
+version = "0.12.2"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -6151,7 +6151,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "3.8.0"
+version = "3.8.1"
 dependencies = [
  "async-stream",
  "async-trait",
