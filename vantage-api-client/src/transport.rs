@@ -206,6 +206,86 @@ impl Default for ClientConfig {
     }
 }
 
+/// The builder methods `RestApiBuilder` and `GraphqlApiBuilder` share,
+/// expanded inside each one's `impl` block. The builder needs a
+/// `transport: ClientConfig` and an `auth_header: AuthHeader` field.
+macro_rules! client_builder_methods {
+    () => {
+        /// Concurrent requests to this API at most (default 4).
+        pub fn max_parallel(mut self, n: usize) -> Self {
+            self.transport.max_parallel = n.max(1);
+            self
+        }
+
+        /// Requests per second to this API at most.
+        pub fn rate_limit(mut self, per_second: f64) -> Self {
+            self.transport.rate_limit = Some(per_second);
+            self
+        }
+
+        /// Give up on one request after `timeout` (default 30 s). Ignored when a
+        /// client is supplied with [`http_client`](Self::http_client).
+        pub fn request_timeout(mut self, timeout: std::time::Duration) -> Self {
+            self.transport.request_timeout = Some(Some(timeout));
+            self
+        }
+
+        /// Never time a request out. Ignored when a client is supplied.
+        pub fn no_request_timeout(mut self) -> Self {
+            self.transport.request_timeout = Some(None);
+            self
+        }
+
+        /// Report every attempt, retry and breaker transition under `key`
+        /// (the datasource name).
+        pub fn observer(
+            mut self,
+            key: impl Into<std::sync::Arc<str>>,
+            observer: std::sync::Arc<dyn $crate::TransportObserver>,
+        ) -> Self {
+            self.transport.observer = Some((key.into(), observer));
+            self
+        }
+
+        /// A pre-configured `reqwest::Client` (timeouts, proxies, TLS), used as
+        /// is. With [`header_auth`](Self::header_auth), build it with
+        /// [`same_origin_redirects`](crate::same_origin_redirects) (or no
+        /// redirects): reqwest forwards a custom header on a redirect to
+        /// another host.
+        pub fn http_client(mut self, client: reqwest::Client) -> Self {
+            self.transport.http = Some(client);
+            self
+        }
+
+        fn fixed_auth(mut self, header: $crate::transport::AuthHeader) -> Self {
+            self.auth_header = header;
+            self.transport.auth_refresher = None;
+            self
+        }
+
+        /// Get the bearer token from `refresher` instead of a fixed header: it
+        /// is asked on the first request, and again when the API answers `401`.
+        /// A request waits for it, so a refresher may run an interactive
+        /// sign-in. Replaces [`auth`](Self::auth).
+        pub fn auth_refresher(mut self, refresher: $crate::AuthRefresher) -> Self {
+            self.auth_header = $crate::transport::AuthHeader::default();
+            self.transport.auth_refresher = Some(refresher);
+            self
+        }
+
+        /// Ask `source` for the bearer token on every request, retries
+        /// included; see [`BearerSource`](crate::BearerSource). Replaces
+        /// [`auth`](Self::auth) and [`auth_refresher`](Self::auth_refresher).
+        pub fn bearer_source(mut self, source: $crate::BearerSource) -> Self {
+            self.auth_header = $crate::transport::AuthHeader::Source(source);
+            self.transport.auth_refresher = None;
+            self
+        }
+    };
+}
+
+pub(crate) use client_builder_methods;
+
 impl std::fmt::Debug for ClientConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ClientConfig")
