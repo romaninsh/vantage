@@ -57,6 +57,9 @@ jobs:
                 echo "CI run $id has not started its changes job: it will read the label"
                 exit 0
                 ;;
+              *)
+                echo "CI run $id's changes job is $changes: cancelling and rerunning it"
+                ;;
             esac
             gh run cancel "$id" -R "$GITHUB_REPOSITORY"
             if ! wait_completed 180; then
