@@ -280,11 +280,15 @@ where
         );
         table.add_spec_columns(&spec.columns, &build_column)?;
         if let Some(id) = &spec.id_column {
-            // The base made its own id, not this one.
+            // The base made its own id, not this one: a different id is
+            // auto only when its own column says so.
             if table.id_field.as_deref() != Some(id.as_str()) {
-                table.id_auto = false;
+                table.set_id_field(id);
+                table.id_auto = spec
+                    .columns
+                    .get(id)
+                    .is_some_and(|c| c.has_flag(ColumnFlag::Auto));
             }
-            table.set_id_field(id);
         }
         table.with_contained_specs(&spec.contained, build_column)
     }
