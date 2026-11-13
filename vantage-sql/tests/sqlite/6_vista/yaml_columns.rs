@@ -12,7 +12,8 @@ use vantage_vista::{ColumnFlag, VistaFactory};
 use super::{TestResult, setup};
 
 /// The YAML flags with a typed counterpart reach the vista column through
-/// the typed table.
+/// the typed table. An id flagged `auto` makes the vista id auto, so scripted
+/// inserts may leave the id to the database.
 #[tokio::test]
 async fn vista_yaml_column_flags_reach_the_vista() -> TestResult {
     let db = setup().await;
@@ -33,29 +34,14 @@ columns:
         is_deleted.has_flag(ColumnFlag::from("label")),
         "{is_deleted:?}"
     );
-    Ok(())
-}
-
-/// An id column flagged `auto` makes the vista id auto, so scripted inserts
-/// may leave the id to the database.
-#[tokio::test]
-async fn spec_auto_flag_marks_the_vista_id_auto() -> TestResult {
-    let db = setup().await;
-    let yaml = r#"
-name: product
-columns:
-  id: { type: int, flags: [id, auto] }
-  name: { type: string }
-"#;
-    let vista = db.vista_factory().from_yaml(yaml)?;
     let id = vista.column("id").expect("id");
-    assert!(id.has_flag(ColumnFlag::Auto), "{id:?}");
-
-    let plain = db
-        .vista_factory()
-        .from_yaml("name: product\ncolumns:\n  id: { type: int, flags: [id] }\n")?;
-    let id = plain.column("id").expect("id");
     assert!(!id.has_flag(ColumnFlag::Auto), "{id:?}");
+
+    let auto = db
+        .vista_factory()
+        .from_yaml("name: product\ncolumns:\n  id: { type: int, flags: [id, auto] }\n")?;
+    let id = auto.column("id").expect("id");
+    assert!(id.has_flag(ColumnFlag::Auto), "{id:?}");
     Ok(())
 }
 
