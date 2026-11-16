@@ -6,6 +6,7 @@ pub mod operation;
 mod rollup;
 mod table_source;
 
+pub(crate) use rollup::Fill;
 pub use rollup::{MemoryRollup, MemoryRollupExt};
 
 use std::sync::Arc;
@@ -21,7 +22,7 @@ use vantage_table::traits::column_like::ColumnLike;
 use vantage_types::{Entity, Record};
 use vantage_vista::Transaction;
 
-use crate::eval::matches_all;
+use crate::eval::{Query, matches_all};
 use crate::store::{MemoryStore, MemoryTableHandle, Row, TableDef};
 use crate::tx::MemoryTx;
 use crate::types::AnyMemoryType;
@@ -33,7 +34,7 @@ pub struct MemoryDB {
     store: MemoryStore,
     tx: Option<Arc<MemoryTx>>,
     /// Roll-up columns, by table name.
-    rollups: Arc<Vec<(String, MemoryRollup)>>,
+    rollups: Arc<Vec<(String, rollup::RollupColumn)>>,
 }
 
 impl MemoryDB {
@@ -143,20 +144,21 @@ impl MemoryDB {
         Ok(store)
     }
 
-    /// Rows matching the table's conditions and orders, roll-ups filled;
-    /// `windowed` also applies its pagination.
+    /// Rows matching the table's conditions and orders, with the roll-ups
+    /// `fill` asks for; `windowed` also applies its pagination.
     pub(crate) async fn rows<E: Entity<AnyMemoryType>>(
         &self,
         table: &Table<Self, E>,
         windowed: bool,
+        fill: Fill<'_>,
     ) -> Result<Vec<(String, Row)>> {
         self.settle(
             async {
-                let mut q = table_query(table).await?;
+                let mut q = table_query(self, table).await?;
                 if !windowed {
                     q = q.window(0, None);
                 }
-                self.query_rows(table, &q).await
+                self.query_rows(table, &q, fill).await
             }
             .await,
         )
@@ -168,7 +170,7 @@ impl MemoryDB {
         table: &Table<Self, E>,
         row: &Record<CborValue>,
     ) -> Result<bool> {
-        matches_all(&table_query(table).await?, row)
+        matches_all(&table_query(self, table).await?, row)
     }
 
     pub(crate) fn outside(table: &str, id: &str) -> VantageError {
@@ -204,8 +206,9 @@ impl MemoryDB {
         id: &str,
         row: Row,
     ) -> Result<Option<Row>> {
-        let row = self.filled_row(table, id, row).await?;
-        Ok(self.in_set(table, &row).await?.then_some(row))
+        let q = table_query(self, table).await?;
+        let row = self.filled_row(table, &q, id, row).await?;
+        Ok(matches_all(&q, &row)?.then_some(row))
     }
 
     /// Stored row `id` as a read returns it.
@@ -215,7 +218,7 @@ impl MemoryDB {
         id: &str,
         stored: Row,
     ) -> Result<Record<AnyMemoryType>> {
-        let row = self.filled_row(table, id, stored).await?;
+        let row = self.filled_row(table, &Query::new(), id, stored).await?;
         Ok(from_cbor_record(&row))
     }
 

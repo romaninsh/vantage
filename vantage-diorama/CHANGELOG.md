@@ -10,6 +10,8 @@
   sort (`set_order`, the header click) is still one column, and a scenery that inherits the
   Dio's order takes only its first column. Requires vantage-vista 2.11.0.
 
+- Requires vantage-table 4.0.0.
+
 ## 1.6.1 — 2026-11-13
 
 - Fix (VAN-451): a paged sugared view kept its sugar columns out of the rows its window loads

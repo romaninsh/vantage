@@ -1,6 +1,7 @@
 //! Spec columns as typed table columns, and each column's BSON path.
 
 use bson::oid::ObjectId;
+use chrono::{DateTime, NaiveDate, Utc};
 use indexmap::IndexMap;
 use vantage_core::{Result, error};
 use vantage_table::column::core::Column as TableColumn;
@@ -28,9 +29,10 @@ pub(crate) fn build_column(
 /// YAML type alias → typed `Column` (then erased to `Column<AnyMongoType>`).
 /// `object_id`, `datetime` and `decimal` columns parse written text back
 /// into their BSON type (see `source::coerce`). `date` and `timestamp` are
-/// aliases of `datetime`: a BSON DateTime with millisecond precision, not
-/// the BSON Timestamp type. BSON has no time of day, so `time` is text;
-/// `bytes` is a byte count.
+/// stored as a BSON DateTime too (millisecond precision, not the BSON
+/// Timestamp type) and read back typed; their column types are the chrono
+/// types the SQL drivers declare them with. BSON has no time of day, so
+/// `time` is text; `bytes` is a byte count.
 fn column_for_type(name: &str, ty: &str) -> Result<TableColumn<AnyMongoType>> {
     let col: TableColumn<AnyMongoType> = match ty {
         "int" | "integer" | "i64" | "i32" | "bytes" => {
@@ -44,9 +46,9 @@ fn column_for_type(name: &str, ty: &str) -> Result<TableColumn<AnyMongoType>> {
         "object_id" | "objectid" | "oid" => {
             TableColumn::from_column(TableColumn::<ObjectId>::new(name))
         }
-        "datetime" | "date" | "timestamp" => {
-            TableColumn::from_column(TableColumn::<bson::DateTime>::new(name))
-        }
+        "datetime" => TableColumn::from_column(TableColumn::<bson::DateTime>::new(name)),
+        "date" => TableColumn::from_column(TableColumn::<NaiveDate>::new(name)),
+        "timestamp" => TableColumn::from_column(TableColumn::<DateTime<Utc>>::new(name)),
         "decimal" => TableColumn::from_column(TableColumn::<bson::Decimal128>::new(name)),
         other => {
             return Err(error!(

@@ -38,10 +38,10 @@ impl MongoDB {
     /// The documents `select` reads, filtered, sorted and paged.
     pub(crate) async fn read_docs(&self, select: &MongoSelect) -> Result<Vec<Document>> {
         if self.reads_pipeline(select) {
-            let pipeline = select.as_read_pipeline().await?;
+            let pipeline = select.as_read_pipeline(self).await?;
             return self.aggregate_docs(select, pipeline).await;
         }
-        let filter = select.build_filter().await?;
+        let filter = select.build_filter(self).await?;
         let coll = self.select_collection(select)?;
         let options = select.build_find_options();
         collect_in_session!(self, coll.find(filter).with_options(options))
@@ -57,7 +57,7 @@ impl MongoDB {
         field: &str,
         empty: Bson,
     ) -> Result<Bson> {
-        let pipeline = select.as_aggregate_pipeline(func, field).await?;
+        let pipeline = select.as_aggregate_pipeline(func, field, self).await?;
         let docs = self.aggregate_docs(select, pipeline).await?;
         Ok(docs
             .first()
@@ -69,7 +69,7 @@ impl MongoDB {
     /// The number of documents `select` matches, ignoring its paging.
     pub(crate) async fn count_docs(&self, select: &MongoSelect) -> Result<i64> {
         if self.reads_pipeline(select) {
-            let pipeline = select.as_count_pipeline().await?;
+            let pipeline = select.as_count_pipeline(self).await?;
             let docs = self.aggregate_docs(select, pipeline).await?;
             return Ok(match docs.first().and_then(|d| d.get("count")) {
                 Some(Bson::Int32(n)) => i64::from(*n),
@@ -77,7 +77,7 @@ impl MongoDB {
                 _ => 0,
             });
         }
-        let filter = select.build_filter().await?;
+        let filter = select.build_filter(self).await?;
         let coll = self.select_collection(select)?;
         let count = in_session!(self, coll.count_documents(filter))
             .map_err(|e| error!("MongoDB count_documents failed", details = e.to_string()))?;

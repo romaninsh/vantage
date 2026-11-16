@@ -18,7 +18,7 @@ impl MongoTableShell {
         let mut window = self.table.clone();
         keyset::add_id_tiebreak(&mut window);
         window.set_pagination(Some(Pagination::window(offset as i64, limit as i64)));
-        Ok(Page::new(self.to_rows(window.list_values().await?)))
+        Ok(Page::new(self.to_rows(window.list_values().await?)?))
     }
 
     /// The next `limit` rows strictly after the row `token` names, in the
@@ -53,6 +53,6 @@ impl MongoTableShell {
             )?),
             _ => None,
         };
-        Ok((Page::new(self.to_rows(raw)), next_token))
+        Ok((Page::new(self.to_rows(raw)?), next_token))
     }
 }

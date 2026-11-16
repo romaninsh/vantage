@@ -15,6 +15,7 @@ use crate::types::AnySurrealType;
 /// into more specific result types that SurrealDB supports natively.
 pub trait SurrealTableExt<E: Entity<AnySurrealType>> {
     /// `SELECT col1, col2, … FROM ONLY table [WHERE …]` — first row only.
+    /// Panics if an expression callback fails, as `Table::select` does.
     fn select_first(&self) -> SurrealSelect<result::SingleRow>;
 
     /// `SELECT VALUE <col> FROM table [WHERE …]` — every row's value of one column.
@@ -37,7 +38,7 @@ impl<E: Entity<AnySurrealType>> SurrealTableExt<E> for Table<SurrealDB, E> {
                 table = self.table_name()
             ));
         }
-        Ok(self.select().only(column))
+        Ok(self.try_select()?.only(column))
     }
 
     fn select_single(&self, column: &str) -> Result<SurrealSelect<result::Single>> {
@@ -48,6 +49,6 @@ impl<E: Entity<AnySurrealType>> SurrealTableExt<E> for Table<SurrealDB, E> {
                 table = self.table_name()
             ));
         }
-        Ok(self.select().only(column).only_first_row())
+        Ok(self.try_select()?.only(column).only_first_row())
     }
 }

@@ -1,5 +1,8 @@
+use std::any::type_name;
+
 use crate::sqlite::operation::SqliteOperation;
 use async_trait::async_trait;
+use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::{Result, error};
@@ -9,11 +12,12 @@ use vantage_expressions::traits::expressive::ExpressiveEnum;
 use vantage_expressions::{Expression, Expressive, Selectable};
 use vantage_table::column::core::{Column, ColumnType};
 use vantage_table::table::Table;
+use vantage_table::traits::column_like::ColumnLike;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 use vantage_vista::Transaction;
 
-use crate::declared::{sql_coerce_fn, sql_declared_types};
+use crate::declared::{sql_coerce_fn, sql_declared_types, without_option};
 use crate::primitives::identifier::ident;
 use crate::sqlite::SqliteDB;
 use crate::sqlite::types::{AnySqliteType, SqliteType};
@@ -24,8 +28,59 @@ use vantage_expressions::expr_any;
 
 sql_declared_types!(sql_coerce_fn!(SqliteDB, SqliteType, AnySqliteType));
 
+/// A stored cell as `column` of `table` declares it: the read side of
+/// `coerce_column`. SQLite keeps a date, time or timestamp as text, which its
+/// storage class can't tell from a string, so the declared type decides.
+/// Every other cell stays as the row decoded it.
+fn read_column<E: Entity<AnySqliteType>>(
+    table: &Table<SqliteDB, E>,
+    column: &str,
+    value: CborValue,
+) -> Result<AnySqliteType> {
+    let CborValue::Text(text) = &value else {
+        return Ok(AnySqliteType::untyped(value));
+    };
+    let Some(declared) = table.columns().get(column) else {
+        return Ok(AnySqliteType::untyped(value));
+    };
+    let declared_type = without_option(declared.get_type());
+    let read = if declared_type == type_name::<NaiveDate>() {
+        stored::<NaiveDate>(text).ok_or("date")
+    } else if declared_type == type_name::<NaiveTime>() {
+        stored::<NaiveTime>(text).ok_or("time")
+    } else if declared_type == type_name::<NaiveDateTime>() {
+        stored::<NaiveDateTime>(text).ok_or("datetime")
+    } else if declared_type == type_name::<DateTime<Utc>>() {
+        stored::<DateTime<Utc>>(text).ok_or("timestamp")
+    } else {
+        return Ok(AnySqliteType::untyped(value));
+    };
+    read.map_err(|expected| {
+        error!(
+            format!(
+                "`{column}` of `{}` holds {text:?}, which is not a `{expected}`",
+                table.table_name()
+            ),
+            table = table.table_name(),
+            column = column,
+            expected = expected,
+            value = text
+        )
+    })
+}
+
+/// `text` through the decode writes use, so a read takes every form a write
+/// does. `""` is no value, as a write treats it.
+fn stored<T: SqliteType>(text: &str) -> Option<AnySqliteType> {
+    if text.is_empty() {
+        return Some(AnySqliteType::untyped(CborValue::Null));
+    }
+    T::coerce_cbor(CborValue::Text(text.to_string())).map(AnySqliteType::new)
+}
+
 /// Parse the CBOR array result from execute() into an IndexMap of id → Record.
-fn parse_rows(
+fn parse_rows<E: Entity<AnySqliteType>>(
+    table: &Table<SqliteDB, E>,
     result: AnySqliteType,
     id_field_name: &str,
 ) -> Result<IndexMap<String, Record<AnySqliteType>>> {
@@ -69,7 +124,8 @@ fn parse_rows(
                     other => Some(format!("{other:?}")),
                 };
             }
-            record.insert(key, AnySqliteType::untyped(v));
+            let cell = read_column(table, &key, v)?;
+            record.insert(key, cell);
         }
 
         // A row that never carried the id column at all is a query-construction
@@ -226,10 +282,10 @@ impl TableSource for SqliteDB {
     {
         let id_field_name = table.id_field_name();
 
-        let select = table.select();
+        let select = table.try_select()?;
         let result = self.execute(&select.expr()).await?;
 
-        parse_rows(result, &id_field_name)
+        parse_rows(table, result, &id_field_name)
     }
 
     async fn get_table_value<E>(
@@ -244,10 +300,10 @@ impl TableSource for SqliteDB {
 
         let id_val = id.clone();
         let condition = sqlite_expr!("{} = {}", (ident(&id_field_name)), id_val);
-        let select = table.select().with_condition(condition);
+        let select = table.try_select()?.with_condition(condition);
         let result = self.execute(&select.expr()).await?;
 
-        let mut rows = parse_rows(result, &id_field_name)?;
+        let mut rows = parse_rows(table, result, &id_field_name)?;
         Ok(rows.swap_remove(id))
     }
 
@@ -260,11 +316,11 @@ impl TableSource for SqliteDB {
     {
         let id_field_name = table.id_field_name();
 
-        let mut select = table.select();
+        let mut select = table.try_select()?;
         select.set_limit(Some(1), None);
         let result = self.execute(&select.expr()).await?;
 
-        let mut rows = parse_rows(result, &id_field_name)?;
+        let mut rows = parse_rows(table, result, &id_field_name)?;
         Ok(rows.swap_remove_index(0))
     }
 
@@ -272,7 +328,7 @@ impl TableSource for SqliteDB {
     where
         E: Entity<Self::Value>,
     {
-        let select = table.select();
+        let select = table.select_empty();
         let result = self.aggregate(&select, "count", sqlite_expr!("*")).await?;
         result.try_get::<i64>().ok_or_else(|| {
             error!(
@@ -290,7 +346,8 @@ impl TableSource for SqliteDB {
     where
         E: Entity<Self::Value>,
     {
-        self.aggregate(&table.select(), "sum", column.expr()).await
+        let value = table.try_column_expr_of(column)?;
+        self.aggregate(&table.select_empty(), "sum", value).await
     }
 
     async fn get_table_max<E>(
@@ -301,7 +358,8 @@ impl TableSource for SqliteDB {
     where
         E: Entity<Self::Value>,
     {
-        self.aggregate(&table.select(), "max", column.expr()).await
+        let value = table.try_column_expr_of(column)?;
+        self.aggregate(&table.select_empty(), "max", value).await
     }
 
     async fn get_table_min<E>(
@@ -312,7 +370,8 @@ impl TableSource for SqliteDB {
     where
         E: Entity<Self::Value>,
     {
-        self.aggregate(&table.select(), "min", column.expr()).await
+        let value = table.try_column_expr_of(column)?;
+        self.aggregate(&table.select_empty(), "min", value).await
     }
 
     async fn insert_table_value<E>(
@@ -449,7 +508,7 @@ impl TableSource for SqliteDB {
         let base = insert.expr();
         let returning = expr_any!("{} RETURNING {}", (base), (ident(&id_field_name)));
         let result = self.execute(&returning).await?;
-        let mut rows = parse_rows(result, &id_field_name)?;
+        let mut rows = parse_rows(table, result, &id_field_name)?;
         rows.swap_remove_index(0).map(|(id, _)| id).ok_or_else(|| {
             error!(
                 "insert returned no usable id — the row's id came back NULL; \
@@ -520,10 +579,11 @@ impl TableSource for SqliteDB {
         E: Entity<Self::Value> + 'static,
         Self: ExprDataSource<Self::Value> + Sized,
     {
-        let mut select = table.select();
-        select.clear_fields();
-        select.clear_order_by();
-        select.add_field(column.name());
+        // Only this column's callback runs: an inherited rule builds this
+        // subquery while its own table is being built.
+        let select = table
+            .try_select_only(column)
+            .unwrap_or_else(|e| panic!("{e}"));
 
         let subquery = select.expr();
         AssociatedExpression::new(subquery, self)

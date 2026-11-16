@@ -10,6 +10,7 @@ use vantage_table::sorting::{OrderBy, SortDirection as TableSortDirection};
 use vantage_types::Record;
 use vantage_vista::{Condition, FilterOp, NativeCondition, SortDirection};
 
+use super::coerce::{self, BsonKind};
 use super::{MongoTableShell, conditions};
 use crate::condition::MongoCondition;
 use crate::id::MongoId;
@@ -39,9 +40,38 @@ impl MongoTableShell {
             self.nested_path(field)
                 .ok_or_else(|| error!("Unknown column for condition", field = field))?
         };
-        let filter = conditions::op_filter(&path, condition.op, &cbor_to_bson(&condition.value))?;
+        let operand = match self.typed_kind(condition) {
+            Some(kind) => coerce::declared(field, kind, &condition.value)?,
+            None => cbor_to_bson(&condition.value),
+        };
+        let filter = conditions::op_filter(&path, condition.op, &operand)?;
         self.table.add_condition(filter);
         Ok(())
+    }
+
+    /// The kind of a `date` or `timestamp` column `condition` compares: its
+    /// value is typed as a write is, so text in any form a write takes
+    /// compares against the stored DateTime, and a value that doesn't fit is
+    /// the write's error. `Like` matches the value's own text.
+    fn typed_kind(&self, condition: &Condition) -> Option<BsonKind> {
+        let kind = *self.declared.get(condition.column.as_str())?;
+        (kind.reads_typed() && condition.op != FilterOp::Like).then_some(kind)
+    }
+
+    /// `condition` with its value as a read returns the operand
+    /// [`apply_condition`](Self::apply_condition) sends, so rows held in
+    /// memory are judged as the database judged them. A condition
+    /// `apply_condition` refuses stays as given.
+    pub(super) fn typed_condition(&self, condition: &Condition) -> Condition {
+        let mut condition = condition.clone();
+        let typed = self.typed_kind(&condition).and_then(|kind| {
+            let operand = coerce::declared(&condition.column, kind, &condition.value).ok()?;
+            coerce::rendered(Some(kind), &operand)
+        });
+        if let Some(value) = typed {
+            condition.value = value;
+        }
+        condition
     }
 
     /// The BSON path of `root.rest`, when `root` is a declared column: the
@@ -145,12 +175,12 @@ impl MongoTableShell {
         table
             .get_value(id.clone())
             .await?
-            .map(|record| self.unflatten_to_cbor(record))
             .ok_or_else(|| {
                 error!(
                     "inserted row can't be read back through the set",
                     id = id.to_string()
                 )
             })
+            .and_then(|record| self.unflatten_to_cbor(record))
     }
 }

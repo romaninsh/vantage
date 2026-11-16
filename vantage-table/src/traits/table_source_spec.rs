@@ -13,6 +13,14 @@ pub trait TableSourceSpec: Clone + Send + Sync + 'static {
     /// Build a name-based source. Used by `Table::new` and the REST drivers'
     /// `set_table_name`.
     fn from_name(name: String) -> Self;
+
+    /// This source read under `alias` (`FROM "employee" AS "employee_rollup"`),
+    /// which then is its [`name`](TableSourceSpec::name). `None` for a source
+    /// that can't be aliased.
+    fn aliased(&self, alias: &str) -> Option<Self> {
+        let _ = alias;
+        None
+    }
 }
 
 impl TableSourceSpec for String {

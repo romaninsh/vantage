@@ -19,6 +19,10 @@ use crate::traits::table_source_spec::TableSourceSpec;
 pub enum SelectSource<S> {
     /// A physical table/collection name.
     Name(String),
+    /// A physical table read under another name, rendered
+    /// `FROM <name> AS <alias>`. A subquery over the outer query's own table
+    /// uses it to tell its rows from the outer ones.
+    Aliased { name: String, alias: String },
     /// A query used as the FROM source, rendered `FROM (<select>) AS <alias>`.
     Query { select: Box<S>, alias: String },
 }
@@ -37,12 +41,30 @@ impl<S: Clone + Send + Sync + 'static> TableSourceSpec for SelectSource<S> {
     fn name(&self) -> &str {
         match self {
             SelectSource::Name(name) => name.as_str(),
-            SelectSource::Query { alias, .. } => alias.as_str(),
+            SelectSource::Aliased { alias, .. } | SelectSource::Query { alias, .. } => {
+                alias.as_str()
+            }
         }
     }
 
     fn from_name(name: String) -> Self {
         SelectSource::Name(name)
+    }
+
+    fn aliased(&self, alias: &str) -> Option<Self> {
+        let alias = alias.to_string();
+        Some(match self {
+            SelectSource::Name(name) | SelectSource::Aliased { name, .. } => {
+                SelectSource::Aliased {
+                    name: name.clone(),
+                    alias,
+                }
+            }
+            SelectSource::Query { select, .. } => SelectSource::Query {
+                select: select.clone(),
+                alias,
+            },
+        })
     }
 }
 
@@ -95,6 +117,9 @@ where
     {
         match self {
             SelectSource::Name(name) => select.add_source(name.as_str(), None),
+            SelectSource::Aliased { name, alias } => {
+                select.add_source(name.as_str(), Some(alias.clone()))
+            }
             SelectSource::Query {
                 select: query,
                 alias,

@@ -149,7 +149,7 @@ async fn rule_with_condition_narrows_the_table() -> TestResult {
 
     let table = target.into_table();
     assert_eq!(
-        table.select().build_filter().await?,
+        table.select().build_filter(table.data_source()).await?,
         doc! { "bakery_id": 3_i64 }
     );
     assert!(matches!(

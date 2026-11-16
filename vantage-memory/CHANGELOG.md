@@ -2,7 +2,7 @@
 
 ## 4.0.0 — 2026-11-14
 
-Requires vantage-table 3.8.0 and vantage-vista 2.11.0.
+Requires vantage-table 4.0.0 and vantage-vista 2.11.0.
 
 - **Typed tables.** A memory Vista is now built over `Table<MemoryDB>`, so table hooks and build
   injectors apply. `MemoryTableShell::new` and `MemoryCatalog` are gone; build through
@@ -39,6 +39,17 @@ Requires vantage-table 3.8.0 and vantage-vista 2.11.0.
   change channel and transaction claim, for running alternative futures from one state.
 - A memory Vista takes `add_order`: later columns break the ties of the first, so a Rhai
   `.sort("a").sort("b")` sorts by both.
+
+- Requires vantage-table 4.0.0. Roll-ups are planned on the `MemoryDB` doing the read and only
+  for the columns a read selects, filters or sorts on: `MemoryRollupExt::with_lazy_memory_rollup`
+  and `MemoryDB::check_rollups`. A roll-up column a read did not fill is left out of its rows. A
+  roll-up over the table's own relation aggregates another column correctly; a column rolling
+  up itself is an error.
+- A condition over a related table (`MemoryCondition::DeferredIn`) reads that table through the
+  `MemoryDB` resolving it, so inside a transaction it sees the transaction's rows. It holds a
+  `RelatedRead` closure; `MemoryCondition::resolve`, `Query::resolve` and `table_query` take the
+  `MemoryDB`.
+- `Tag(101)` (time) compares as its text, like dates and datetimes.
 
 ## 3.1.1 — 2026-11-13
 

@@ -34,23 +34,29 @@ where
     /// the object or record link a declared, stored root column holds.
     ///
     /// `None` when neither the field nor such a root is a column.
-    fn condition_subject(&self, field: &str) -> Option<Expr> {
+    fn condition_subject(&self, field: &str) -> Result<Option<Expr>> {
         if self.table.is_calculated_column(field)
-            && let Some(expression) = self.table.get_column_expr(field)
+            && let Some(expression) = self.table.try_get_column_expr(field)?
         {
-            return Some(surreal_expr!("({})", (expression)));
+            return Ok(Some(surreal_expr!("({})", (expression))));
         }
         if let Some(column) = self.table.columns().get(field) {
-            return Some(column.expr());
+            return Ok(Some(column.expr()));
         }
-        let (root, path) = field.split_once('.')?;
+        let Some((root, path)) = field.split_once('.') else {
+            return Ok(None);
+        };
         if self.table.is_calculated_column(root) {
-            return None;
+            return Ok(None);
         }
-        let root = self.table.columns().get(root)?.expr();
-        Some(path.split('.').fold(root, |subject, segment| {
-            surreal_expr!("{}.{}", (subject), (Identifier::new(segment)))
-        }))
+        let Some(root) = self.table.columns().get(root) else {
+            return Ok(None);
+        };
+        Ok(Some(
+            path.split('.').fold(root.expr(), |subject, segment| {
+                surreal_expr!("{}.{}", (subject), (Identifier::new(segment)))
+            }),
+        ))
     }
 
     /// `value` as `field` compares it: typed by the column exactly as a write
@@ -97,7 +103,7 @@ where
     pub(super) fn apply_condition(&mut self, condition: &Condition) -> Result<()> {
         let field = condition.column.as_str();
         let subject = self
-            .condition_subject(field)
+            .condition_subject(field)?
             .ok_or_else(|| error!("Unknown column for condition", field = field))?;
         let value = &condition.value;
         let operand = || AnySurrealType::from(self.operand(field, value));

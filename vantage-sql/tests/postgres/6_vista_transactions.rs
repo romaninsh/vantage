@@ -12,6 +12,7 @@ use async_trait::async_trait;
 use sqlx::postgres::PgPoolOptions;
 use vantage_sql::postgres::PostgresDB;
 use vantage_table::table::Table;
+use vantage_table::traits::table_source::TableSource;
 use vantage_types::EmptyEntity;
 use vantage_vista::contract::{self, TxFixture, TxTables};
 
@@ -60,10 +61,14 @@ impl PostgresTx {
 
 fn tables(db: PostgresDB, (a, b): (String, String)) -> TxTables {
     let factory = db.vista_factory();
+    // `b` narrowed to the rows whose `a_id` is the id of a row of `a`.
+    let b_of_a = db.related_in_condition("a_id", &table_a(db.clone(), &a, &b), "id");
+    let b_of_a = table_b(db.clone(), &b).with_condition(b_of_a);
     TxTables::new(
         factory.from_table(table_a(db.clone(), &a, &b)).unwrap(),
         factory.from_table(table_b(db, &b)).unwrap(),
     )
+    .with_b_of_a(factory.from_table(b_of_a).unwrap())
 }
 
 fn table_a(db: PostgresDB, a: &str, b: &str) -> Table<PostgresDB, EmptyEntity> {

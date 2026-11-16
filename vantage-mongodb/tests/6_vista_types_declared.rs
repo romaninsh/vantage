@@ -1,7 +1,7 @@
-//! YAML columns declared `object_id`, `datetime` (`timestamp`) or `decimal`
-//! parse written text into their BSON type, refuse text that does not parse,
-//! and leave stored data that does not fit the type alone when it is written
-//! back unchanged. Requires a running MongoDB (`MONGODB_URL`, defaults to
+//! YAML columns declared `object_id`, `datetime`, `date`, `timestamp` or
+//! `decimal` parse written text into their BSON type, refuse text that does
+//! not parse, and leave stored data that does not fit the type alone when it
+//! is written back unchanged. `date` and `timestamp` read back typed. Requires a running MongoDB (`MONGODB_URL`, defaults to
 //! `mongodb://localhost:27017`); each test runs against a fresh randomised
 //! database and drops it on the way out.
 
@@ -18,7 +18,7 @@ use vantage_dataset::prelude::*;
 use vantage_mongodb::MongoDB;
 use vantage_mongodb::vista::MongoVistaSpec;
 use vantage_types::Record;
-use vantage_vista::{Vista, VistaFactory};
+use vantage_vista::{Condition, FilterOp, Vista, VistaFactory, VistaMetadata};
 
 type TestResult = std::result::Result<(), Box<dyn Error>>;
 
@@ -510,6 +510,271 @@ async fn declared_empty_text_and_null_clear_on_insert_and_over_a_stored_value_on
     partial.insert("when".to_string(), text(""));
     vista.patch_value("n1", &partial).await?;
     assert_eq!(raw(&db, "n1").await.get("when"), Some(&Bson::Null));
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+const DATED_EVENTS: &str = r#"
+name: event
+columns:
+  _id: { flags: [id] }
+  due: { type: date }
+  at: { type: timestamp }
+  note: {}
+mongo:
+  collection: events
+"#;
+
+fn dated_events(db: &MongoDB) -> Vista {
+    let spec: MongoVistaSpec = serde_yaml_ng::from_str(DATED_EVENTS).expect("spec yaml");
+    db.vista_factory()
+        .build_from_spec(spec)
+        .expect("dated events vista")
+}
+
+fn dated_row(due: &str, at: &str) -> Record<CborValue> {
+    let mut row = Record::new();
+    row.insert("due".into(), text(due));
+    row.insert("at".into(), text(at));
+    row
+}
+
+fn instant(rfc3339: &str) -> Bson {
+    Bson::DateTime(DateTime::parse_rfc3339_str(rfc3339).unwrap())
+}
+
+/// The text forms SQLite's `date` and `timestamp` columns take. Naive text
+/// is UTC; a date is stored as midnight UTC.
+#[tokio::test]
+async fn declared_date_and_timestamp_store_datetimes_and_read_typed() -> TestResult {
+    let (db, name) = setup().await;
+    let vista = dated_events(&db);
+
+    let cases = [
+        ("2026-01-05 10:00:00", "2026-01-05T10:00:00Z"),
+        ("2026-01-05T10:00:00", "2026-01-05T10:00:00Z"),
+        ("2026-01-05T10:00", "2026-01-05T10:00:00Z"),
+        ("2026-01-05 10:00", "2026-01-05T10:00:00Z"),
+        ("2026-01-05T10:00:00Z", "2026-01-05T10:00:00Z"),
+        ("2026-01-05 10:00:00.250", "2026-01-05T10:00:00.250Z"),
+        ("2026-01-05T10:00:00.250Z", "2026-01-05T10:00:00.250Z"),
+        ("2026-01-05T12:00:00+02:00", "2026-01-05T10:00:00Z"),
+        ("2026-01-05", "2026-01-05T00:00:00Z"),
+    ];
+    for (i, (written, utc)) in cases.into_iter().enumerate() {
+        let id = format!("t{i}");
+        vista
+            .insert_value(id.as_str(), &dated_row("2026-12-10", written))
+            .await?;
+        let stored = raw(&db, &id).await;
+        assert_eq!(stored.get("at"), Some(&instant(utc)), "{written}");
+        assert_eq!(
+            stored.get("due"),
+            Some(&instant("2026-12-10T00:00:00Z")),
+            "{written}"
+        );
+
+        let row = vista.get_value(id.as_str()).await?.expect("row");
+        assert_eq!(row.get("at"), Some(&tag(0, text(utc))), "{written}");
+        assert_eq!(row.get("due"), Some(&tag(100, text("2026-12-10"))));
+
+        // Written back as read, the stored values stay.
+        vista.replace_value(id.as_str(), &row).await?;
+        assert_eq!(raw(&db, &id).await, stored, "{written}");
+    }
+
+    // The tagged forms a read returns, and a date at midnight UTC.
+    let mut tagged = Record::new();
+    tagged.insert("due".into(), tag(0, text("2026-12-10T00:00:00Z")));
+    tagged.insert("at".into(), tag(100, text("2026-12-10")));
+    vista.insert_value("t-tagged", &tagged).await?;
+    let stored = raw(&db, "t-tagged").await;
+    assert_eq!(stored.get("due"), Some(&instant("2026-12-10T00:00:00Z")));
+    assert_eq!(stored.get("at"), Some(&instant("2026-12-10T00:00:00Z")));
+
+    // Every row lists typed too.
+    for (id, row) in vista.list_values().await? {
+        assert!(
+            matches!(row.get("due"), Some(CborValue::Tag(100, _))),
+            "{id}"
+        );
+        assert!(matches!(row.get("at"), Some(CborValue::Tag(0, _))), "{id}");
+    }
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn declared_date_and_timestamp_refuse_values_that_do_not_fit() -> TestResult {
+    let (db, name) = setup().await;
+    let vista = dated_events(&db);
+
+    for (column, expected, value) in [
+        ("due", "date", text("tomorrow")),
+        // A time of day is not a date.
+        ("due", "date", text("2026-12-10T08:00:00Z")),
+        ("due", "date", int(20261210)),
+        ("at", "timestamp", text("soon")),
+        ("at", "timestamp", text("10:00")),
+        ("at", "timestamp", CborValue::Bool(true)),
+    ] {
+        let mut row = dated_row("2026-12-10", "2026-01-05T10:00:00Z");
+        row.insert(column.to_string(), value.clone());
+        let err = vista
+            .insert_value("r1", &row)
+            .await
+            .expect_err("a value that does not fit must be refused");
+        assert!(err.is_conflict(), "{value:?}: {err}");
+        assert!(err.to_string().contains(column), "{value:?}: {err}");
+        assert!(err.to_string().contains(expected), "{value:?}: {err}");
+    }
+    assert_eq!(
+        db.doc_collection("events").count_documents(doc! {}).await?,
+        0
+    );
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+/// Text these columns held while they were string columns reads as the typed
+/// value and is not rewritten; text that is no date fails the read.
+#[tokio::test]
+async fn declared_date_and_timestamp_read_stored_text_typed() -> TestResult {
+    let (db, name) = setup().await;
+    let vista = dated_events(&db);
+    let events = db.doc_collection("events");
+
+    let legacy = [
+        (
+            "l1",
+            "2026-12-10",
+            "2026-01-05 10:00:00",
+            "2026-01-05T10:00:00Z",
+        ),
+        (
+            "l2",
+            "2026-12-10",
+            "2026-01-05T10:00",
+            "2026-01-05T10:00:00Z",
+        ),
+        (
+            "l3",
+            "2026-12-10",
+            "2026-01-05T10:00:00Z",
+            "2026-01-05T10:00:00Z",
+        ),
+        (
+            "l4",
+            "2026-12-10",
+            "2026-01-05T10:00:00.5",
+            "2026-01-05T10:00:00.500Z",
+        ),
+        ("l5", "2026-12-10", "2026-01-05", "2026-01-05T00:00:00Z"),
+    ];
+    for (id, due, at, _) in legacy {
+        events
+            .insert_one(doc! { "_id": id, "due": due, "at": at, "note": "legacy" })
+            .await?;
+    }
+    events
+        .insert_one(doc! { "_id": "l6", "due": "", "at": Bson::Null })
+        .await?;
+
+    for (id, due, at, utc) in legacy {
+        let row = vista.get_value(id).await?.expect("row");
+        assert_eq!(row.get("due"), Some(&tag(100, text(due))), "{id}");
+        assert_eq!(row.get("at"), Some(&tag(0, text(utc))), "{id}");
+
+        // Neither the read nor writing the row back as read rewrites it.
+        vista.replace_value(id, &row).await?;
+        let stored = raw(&db, id).await;
+        assert_eq!(stored.get("due"), Some(&Bson::String(due.into())), "{id}");
+        assert_eq!(stored.get("at"), Some(&Bson::String(at.into())), "{id}");
+    }
+    let empty = vista.get_value("l6").await?.expect("l6");
+    assert_eq!(empty.get("due"), Some(&CborValue::Null));
+    assert_eq!(empty.get("at"), Some(&CborValue::Null));
+    assert_eq!(vista.list_values().await?.len(), 6);
+
+    for (id, column, value) in [("b1", "due", "next week"), ("b2", "at", "after lunch")] {
+        events.insert_one(doc! { "_id": id, column: value }).await?;
+        let err = vista
+            .get_value(id)
+            .await
+            .expect_err("text that is no date must fail the read");
+        assert!(err.to_string().contains(column), "{err}");
+        assert!(err.to_string().contains(value), "{err}");
+        assert!(vista.list_values().await.is_err());
+        events.delete_one(doc! { "_id": id }).await?;
+    }
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+/// A condition value is typed as a write is, so text compares against the
+/// stored datetimes; the rows held in memory are judged the same way.
+#[tokio::test]
+async fn declared_date_and_timestamp_conditions_take_plain_text() -> TestResult {
+    let (db, name) = setup().await;
+    let vista = dated_events(&db);
+    for (id, due, at) in [
+        ("r1", "2026-10-31", "2026-10-31 23:59:00"),
+        ("r2", "2026-11-01", "2026-11-01 08:00:00"),
+        ("r3", "2026-11-16", "2026-11-16 09:30:00"),
+    ] {
+        vista.insert_value(id, &dated_row(due, at)).await?;
+    }
+    let all = vista.list_values().await?;
+
+    let dates = |items: &[&str]| CborValue::Array(items.iter().map(|s| text(s)).collect());
+    for (column, op, value, expected) in [
+        ("due", FilterOp::Eq, text("2026-11-01"), &["r2"][..]),
+        ("due", FilterOp::Gt, text("2026-11-01"), &["r3"][..]),
+        ("due", FilterOp::Ne, text("2026-11-01"), &["r1", "r3"][..]),
+        (
+            "due",
+            FilterOp::InSet,
+            dates(&["2026-10-31", "2026-11-16"]),
+            &["r1", "r3"][..],
+        ),
+        ("at", FilterOp::Gt, text("2026-11-01"), &["r2", "r3"][..]),
+        (
+            "at",
+            FilterOp::Lte,
+            text("2026-11-01 08:00"),
+            &["r1", "r2"][..],
+        ),
+        (
+            "at",
+            FilterOp::Eq,
+            text("2026-11-16T09:30:00Z"),
+            &["r3"][..],
+        ),
+    ] {
+        let mut narrowed = vista.clone();
+        narrowed.add_condition(column, op, value.clone())?;
+        let selected = narrowed.list_values().await?;
+        let selected: Vec<_> = selected.keys().map(String::as_str).collect();
+        assert_eq!(selected, expected, "{column} {op:?} {value:?}");
+
+        let condition = vista.comparable_condition(&Condition::new(column, op, value.clone()));
+        let in_memory: Vec<_> = all
+            .iter()
+            .filter(|(_, row)| condition.matches(row, &VistaMetadata::default()))
+            .map(|(id, _)| id.as_str())
+            .collect();
+        assert_eq!(in_memory, expected, "{column} {op:?} {value:?}, in memory");
+    }
+
+    let mut narrowed = vista.clone();
+    let err = narrowed
+        .add_condition("at", FilterOp::Gt, text("soon"))
+        .expect_err("a condition value that is no timestamp must be refused");
+    assert!(err.to_string().contains("timestamp"), "{err}");
 
     teardown(&db, &name).await;
     Ok(())

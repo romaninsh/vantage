@@ -16,10 +16,10 @@ use super::{MongoTableShell, walk_bson_path};
 use crate::id::{MongoId, id_variants};
 use crate::mongodb::MongoDB;
 use crate::types::{AnyMongoType, MongoType};
-use crate::vista::cbor::{bson_to_cbor, cbor_to_bson};
+use crate::vista::cbor::cbor_to_bson;
 
-/// The table's columns whose Rust type is a BSON type the CBOR surface reads
-/// as text. The id column is left out: the id travels apart from the record
+/// The table's columns whose Rust type a write parses values into (see
+/// [`BsonKind`]). The id column is left out: the id travels apart from the record
 /// and is parsed by `parse_id`, as is an `_id` the record itself carries.
 pub(super) fn declared_kinds(
     table: &Table<MongoDB, EmptyEntity>,
@@ -112,15 +112,16 @@ impl MongoTableShell {
                 }
             };
             let old = stored.and_then(|row| walk_bson_path(row, path));
-            let bson_value = match (old, self.declared.get(col_name)) {
-                (Some(old), _) if bson_to_cbor(&old) == *value => old,
+            let kind = self.declared.get(col_name).copied();
+            let bson_value = match (old, kind) {
+                (Some(old), _) if coerce::rendered(kind, &old).as_ref() == Some(value) => old,
                 // A row copied from a read carries its `_id` as hex text; it
                 // is stored the way the id itself is parsed, as an ObjectId.
                 _ if path == ["_id"] => match value {
                     CborValue::Text(text) => self.parse_id(text).to_bson(),
                     other => cbor_to_bson(other),
                 },
-                (old, Some(kind)) => coerce::declared_over(col_name, *kind, old.as_ref(), value)?,
+                (old, Some(kind)) => coerce::declared_over(col_name, kind, old.as_ref(), value)?,
                 (Some(old), None) => coerce::preserve(&old, value),
                 (None, None) => cbor_to_bson(value),
             };

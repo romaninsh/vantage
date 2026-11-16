@@ -156,20 +156,24 @@ where
     /// The SurrealQL SELECT as it stands, with every condition and order
     /// rendered inline. A fetched window's `LIMIT`/`START` is added at fetch
     /// time, so it is absent here; `preview_window` renders one.
+    /// A read that an expression column fails has no query: the note
+    /// carries the error the read would return.
     fn preview(&self) -> Preview {
-        Preview::new().with_query(self.table.select().preview())
+        self.preview_window(0, None)
     }
 
     fn preview_window(&self, offset: usize, limit: Option<usize>) -> Preview {
+        let mut select = match self.table.try_select() {
+            Ok(select) => select,
+            Err(e) => return Preview::new().with_note(format!("the query can't be built: {e}")),
+        };
         // No window asked for: the read keeps the table's own pagination.
-        if offset == 0 && limit.is_none() {
-            return self.preview();
+        if offset > 0 || limit.is_some() {
+            select.set_limit(
+                limit.map(|n| n as i64),
+                (offset > 0).then_some(offset as i64),
+            );
         }
-        let mut select = self.table.select();
-        select.set_limit(
-            limit.map(|n| n as i64),
-            (offset > 0).then_some(offset as i64),
-        );
         Preview::new().with_query(select.preview())
     }
 

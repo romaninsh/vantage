@@ -7,7 +7,7 @@
 //! `ne_bool(true)`) on [`MongoCondition`].
 
 use bson::{Bson, Document, doc};
-use vantage_expressions::{DeferredFn, Expressive};
+use vantage_expressions::Expressive;
 
 use crate::condition::{MongoCondition, merge_documents};
 use crate::types::{AnyMongoType, MongoType};
@@ -45,19 +45,13 @@ fn negate(cond: MongoCondition) -> MongoCondition {
     };
     match immediate {
         Some(doc) => MongoCondition::Doc(negate_doc(doc)),
-        None => MongoCondition::Deferred(DeferredFn::from_fn(move || {
-            let cond = cond.clone();
-            async move {
-                let resolved = cond.resolve().await?;
-                Ok(AnyMongoType::untyped(Bson::Document(negate_doc(resolved))))
-            }
-        })),
+        None => MongoCondition::Not(Box::new(cond)),
     }
 }
 
 /// A single field with an operator document keeps the `$not` form (`$not`
 /// takes only operator expressions); everything else goes through `$nor`.
-fn negate_doc(doc: Document) -> Document {
+pub(crate) fn negate_doc(doc: Document) -> Document {
     if doc.len() == 1 {
         let (key, val) = doc.iter().next().unwrap();
         if !key.starts_with('$') {

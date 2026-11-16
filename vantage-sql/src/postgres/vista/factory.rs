@@ -134,6 +134,9 @@ impl VistaFactory for PostgresVistaFactory {
 
     fn build_from_spec(&self, spec: PostgresVistaSpec) -> Result<Vista> {
         let lowered = lower_spec(&spec, self.db.clone(), &self.env(&spec.name))?;
+        // Only here, on the table the caller asked for: a reference target
+        // or a `base:` table checking its own would build this one again.
+        lowered.table.check_expressions()?;
         Ok(self.wrap(
             lowered.table,
             spec.name,

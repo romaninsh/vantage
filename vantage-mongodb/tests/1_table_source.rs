@@ -603,7 +603,7 @@ async fn related_in_collects_each_source_value_in_both_id_spellings() {
 
     let resolved = db
         .related_in_condition("_id", &orders, "client_id")
-        .resolve()
+        .resolve(&db)
         .await
         .unwrap();
     let list = resolved
@@ -627,7 +627,7 @@ async fn related_in_refuses_a_source_column_stored_under_another_name() {
             .with_column(Column::<AnyMongoType>::new("client_id").with_alias(alias));
         let err = db
             .related_in_condition("_id", &orders, "client_id")
-            .resolve()
+            .resolve(&db)
             .await
             .expect_err("a renamed reference key must be refused");
         assert!(

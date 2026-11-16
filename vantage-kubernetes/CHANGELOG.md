@@ -5,6 +5,8 @@
 - A Kubernetes Vista takes `add_order`: the listing is sorted in memory by every column in turn.
   Requires vantage-vista 2.11.0.
 
+- Requires vantage-table 4.0.0.
+
 ## 0.7.2 — 2026-10-31
 
 - Requires vantage-vista 2.6.0. Inside an `atomic` block the Kubernetes vista writes directly and

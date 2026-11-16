@@ -181,6 +181,26 @@ fn a_date_tag_orders_against_text_and_datetime() {
 }
 
 #[test]
+fn a_time_tag_orders_against_text_and_time() {
+    let time = |s: &str| CborValue::Tag(101, Box::new(t(s)));
+    assert_eq!(cbor_cmp(&time("09:30:00"), &t("09:30:00")), Ordering::Equal);
+    assert_eq!(cbor_cmp(&time("09:30:00"), &t("10:00:00")), Ordering::Less);
+    assert_eq!(
+        cbor_cmp(&time("09:30:00"), &time("09:30:00")),
+        Ordering::Equal
+    );
+    assert_eq!(
+        cbor_cmp(&time("18:05:00"), &time("09:30:00.250")),
+        Ordering::Greater
+    );
+    let meta = VistaMetadata::new();
+    let row = rec(&[("opens", time("09:30:00"))]);
+    assert!(cond("opens", FilterOp::Eq, t("09:30:00")).matches(&row, &meta));
+    assert!(cond("opens", FilterOp::Gt, time("08:15:00")).matches(&row, &meta));
+    assert!(!cond("opens", FilterOp::Gt, t("09:30:00")).matches(&row, &meta));
+}
+
+#[test]
 fn mixed_types_compare_deterministically() {
     let pairs = [
         (t("a"), i(1)),

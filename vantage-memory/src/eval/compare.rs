@@ -34,8 +34,8 @@ fn number(v: &CborValue) -> Option<f64> {
 }
 
 /// Order two non-null values of the same kind; numbers compare across int
-/// and float, and a CBOR datetime (`Tag(0, Text)`) or date (`Tag(100, Text)`)
-/// compares with text as text. `None` for other kind mixes.
+/// and float, and a CBOR datetime (`Tag(0, Text)`), date (`Tag(100, Text)`)
+/// or time of day (`Tag(101, Text)`) compares with text as text. `None` for other kind mixes.
 pub fn cmp_values(a: &CborValue, b: &CborValue) -> Option<Ordering> {
     match (a, b) {
         (CborValue::Integer(x), CborValue::Integer(y)) => Some(i128::from(*x).cmp(&i128::from(*y))),
@@ -48,13 +48,14 @@ pub fn cmp_values(a: &CborValue, b: &CborValue) -> Option<Ordering> {
 }
 
 /// The text of a plain text value or of a CBOR standard datetime
-/// (`Tag(0, Text)`), so a datetime operand orders against, and equals,
-/// dates a source stores as text. RFC 3339 strings with the same offset
-/// sort lexically. Twin: `vantage-vista/src/eval/compare.rs`.
+/// (`Tag(0, Text)`), date (`Tag(100, Text)`) or time of day
+/// (`Tag(101, Text)`), so such an operand orders against, and equals,
+/// dates and times a source stores as text. RFC 3339 strings with the same
+/// offset sort lexically. Twin: `vantage-vista/src/eval/compare.rs`.
 fn text_or_datetime(v: &CborValue) -> Option<&str> {
     match v {
         CborValue::Text(s) => Some(s),
-        CborValue::Tag(0 | 100, inner) => match inner.as_ref() {
+        CborValue::Tag(0 | 100 | 101, inner) => match inner.as_ref() {
             CborValue::Text(s) => Some(s),
             _ => None,
         },
@@ -71,11 +72,13 @@ pub fn values_eq(a: &CborValue, b: &CborValue) -> bool {
     }
 }
 
-/// The text a cell offers to search and `Like`: text, a datetime's or
-/// date's text, or a number's decimal form.
+/// The text a cell offers to search and `Like`: text, a datetime's, date's
+/// or time's text, or a number's decimal form.
 pub fn text_of(v: &CborValue) -> Option<String> {
     match v {
-        CborValue::Text(_) | CborValue::Tag(0 | 100, _) => text_or_datetime(v).map(str::to_string),
+        CborValue::Text(_) | CborValue::Tag(0 | 100 | 101, _) => {
+            text_or_datetime(v).map(str::to_string)
+        }
         CborValue::Integer(i) => Some(i128::from(*i).to_string()),
         CborValue::Float(f) => Some(f.to_string()),
         _ => None,

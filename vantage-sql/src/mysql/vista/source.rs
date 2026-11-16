@@ -64,8 +64,8 @@ impl SqlShellDialect for MysqlDB {
     }
 
     /// The executed form binds the inline values as `?` parameters.
-    fn preview<E: Entity<AnyMysqlType>>(table: &Table<Self, E>) -> String {
-        table.select().preview()
+    fn preview<E: Entity<AnyMysqlType>>(table: &Table<Self, E>) -> Result<String> {
+        Ok(table.try_select()?.preview())
     }
 
     fn compare(

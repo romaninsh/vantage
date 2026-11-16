@@ -284,7 +284,7 @@ impl TableSource for SurrealDB {
     {
         let id_field_name = table.id_field_name();
 
-        let select = table.select();
+        let select = table.try_select()?;
         let result = self.execute(&select.expr()).await?;
 
         let arr = result
@@ -330,7 +330,7 @@ impl TableSource for SurrealDB {
         let narrowed = table
             .clone()
             .with_condition(SurrealOperation::eq(&id_column, id.clone()));
-        let mut select = narrowed.select();
+        let mut select = narrowed.try_select()?;
         select.limit = Some(1);
         let result = match self.execute(&select.expr()).await {
             Ok(result) => result,
@@ -364,7 +364,7 @@ impl TableSource for SurrealDB {
     where
         E: Entity<Self::Value>,
     {
-        let mut select = table.select();
+        let mut select = table.try_select()?;
         select.limit = Some(1);
         let result = self.execute(&select.expr()).await?;
 
@@ -396,7 +396,7 @@ impl TableSource for SurrealDB {
     where
         E: Entity<Self::Value>,
     {
-        let mut select = table.select();
+        let mut select = table.select_empty();
         select.order_by.clear(); // ordering is unnecessary for count
         let count_query = select.as_count();
         let result = self.execute(&count_query.expr()).await?;
@@ -413,9 +413,12 @@ impl TableSource for SurrealDB {
     where
         E: Entity<Self::Value>,
     {
-        let mut select = table.select();
+        let mut select = table.select_empty();
         select.order_by.clear();
-        let sum_query = select.as_sum(column.clone());
+        let sum_query = match table.try_expression_column(column.name())? {
+            Some(value) => select.as_sum(value),
+            None => select.as_sum(column.clone()),
+        };
         self.execute(&sum_query.expr()).await
     }
 
@@ -427,9 +430,12 @@ impl TableSource for SurrealDB {
     where
         E: Entity<Self::Value>,
     {
-        let mut select = table.select();
+        let mut select = table.select_empty();
         select.order_by.clear();
-        let max_query = select.as_max(column.clone());
+        let max_query = match table.try_expression_column(column.name())? {
+            Some(value) => select.as_max(value),
+            None => select.as_max(column.clone()),
+        };
         self.execute(&max_query.expr()).await
     }
 
@@ -441,9 +447,12 @@ impl TableSource for SurrealDB {
     where
         E: Entity<Self::Value>,
     {
-        let mut select = table.select();
+        let mut select = table.select_empty();
         select.order_by.clear();
-        let min_query = select.as_min(column.clone());
+        let min_query = match table.try_expression_column(column.name())? {
+            Some(value) => select.as_min(value),
+            None => select.as_min(column.clone()),
+        };
         self.execute(&min_query.expr()).await
     }
 
@@ -705,6 +714,7 @@ impl TableSource for SurrealDB {
     fn rollup_expression<E>(
         &self,
         parent: &Table<Self, E>,
+        name: &str,
         relation: &str,
         op: RollupOp,
         column: Option<&str>,
@@ -713,7 +723,7 @@ impl TableSource for SurrealDB {
     where
         E: Entity<Self::Value> + 'static,
     {
-        self.render_rollup(parent, relation, op, column, condition)
+        self.render_rollup(parent, name, relation, op, column, condition)
     }
 
     fn try_related_correlated_condition(
@@ -758,19 +768,15 @@ impl TableSource for SurrealDB {
         E: Entity<Self::Value> + 'static,
         Self: ExprDataSource<Self::Value> + Sized,
     {
-        let mut select = table.select();
-        select.order_by.clear();
-        select.fields.clear();
+        // Only this column's callback runs: an inherited rule builds this
+        // subquery while its own table is being built.
+        let select = table
+            .try_select_only(column)
+            .unwrap_or_else(|e| panic!("{e}"))
+            .with_value();
 
-        use crate::select::select_field::SelectField;
-        select
-            .fields
-            .push(SelectField::new(Identifier::new(column.name())));
-
-        let select = select.with_value();
-        let expr = select.expr();
-
-        let deferred_expr = Expression::new("{}", vec![ExpressiveEnum::Deferred(self.defer(expr))]);
-        AssociatedExpression::new(deferred_expr, self)
+        // Inlined, so the handle that runs the outer statement reads these
+        // rows too: inside its transaction when it has one.
+        AssociatedExpression::new(select.expr(), self)
     }
 }

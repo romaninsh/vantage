@@ -9,10 +9,56 @@ use vantage_expressions::Expression;
 use vantage_types::{Entity, Record};
 use vantage_vista::forbidden_column;
 
-use super::Table;
+use super::{EXPRESSION_COLUMN, EXPRESSION_TABLE, ExpressionFn, Table};
 use crate::traits::table_source::TableSource;
 
 impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
+    /// The expression of expression column `name`, from its callback; `None`
+    /// when `name` isn't one. A failing callback's error gains the column
+    /// ([`EXPRESSION_COLUMN`]) and the table ([`EXPRESSION_TABLE`]) as
+    /// context, unless a callback it ran already named its own.
+    pub fn try_expression_column(&self, name: &str) -> Result<Option<Expression<T::Value>>> {
+        let Some(expr_fn) = self.expressions.get(name) else {
+            return Ok(None);
+        };
+        match expr_fn(self.as_entity_erased()) {
+            Ok(expr) => Ok(Some(expr)),
+            Err(mut e) => {
+                if !e.context.contains_key(EXPRESSION_COLUMN) {
+                    e.context
+                        .insert(EXPRESSION_COLUMN.to_string(), name.to_string());
+                    e.context
+                        .insert(EXPRESSION_TABLE.to_string(), self.table_name().to_string());
+                }
+                Err(e)
+            }
+        }
+    }
+
+    /// Run the callback of every expression column a read would include,
+    /// discarding the results, so a column that can't be built fails here
+    /// instead of at the first read. Building a callback's expression may
+    /// build related tables; call this on a finished table, not while
+    /// another is being built.
+    pub fn check_expressions(&self) -> Result<()> {
+        for name in self.expressions.keys() {
+            if self.is_active_column(name) {
+                self.try_expression_column(name)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Whether `name` is projected by [`try_select`](Self::try_select). With
+    /// no active set every column is active; otherwise only the set's members
+    /// are, plus the id column (always projected — consumers key rows by it).
+    pub fn is_active_column(&self, name: &str) -> bool {
+        match &self.active_columns {
+            None => true,
+            Some(set) => set.contains(name) || self.id_field.as_deref() == Some(name),
+        }
+    }
+
     /// Apply lazy expressions to one returned record, in declaration order.
     /// Each callback borrows the record as built so far; the value it
     /// returns is inserted under the expression's name before the next
@@ -163,9 +209,25 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
     /// The closure receives `&Table<T, E>` and returns an `Expression<T::Value>`.
     /// It is evaluated lazily when `select()` builds the query.
     pub fn with_expression(
-        mut self,
+        self,
         name: &str,
         expr_fn: impl Fn(&Table<T, E>) -> Expression<T::Value> + Send + Sync + 'static,
+    ) -> Self
+    where
+        T: 'static,
+        E: 'static,
+    {
+        self.with_try_expression(name, move |table| Ok(expr_fn(table)))
+    }
+
+    /// [`with_expression`](Self::with_expression) whose closure can fail. It
+    /// runs only when a query that includes the column is built; its error
+    /// fails that query ([`Self::try_select`]) and
+    /// [`Self::check_expressions`], never the table's build.
+    pub fn with_try_expression(
+        mut self,
+        name: &str,
+        expr_fn: impl Fn(&Table<T, E>) -> Result<Expression<T::Value>> + Send + Sync + 'static,
     ) -> Self
     where
         T: 'static,
@@ -174,7 +236,7 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
         // Adapt the caller's `Fn(&Table<T, E>)` into the entity-erased
         // `ExpressionFn<T>` we store, so it survives `into_entity`. The closure
         // never touches entity-typed fields, only name-keyed table state.
-        let wrapped: crate::table::base::ExpressionFn<T> =
+        let wrapped: ExpressionFn<T> =
             Arc::new(move |erased: &Table<T, vantage_types::EmptyEntity>| {
                 // SAFETY: layout-identical (E is PhantomData only); shared borrow.
                 let typed: &Table<T, E> = unsafe {

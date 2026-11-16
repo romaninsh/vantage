@@ -20,7 +20,7 @@ pub(crate) struct ReferenceLinks {
     links: Option<HashSet<(String, String)>>,
     /// `(table, field)` → the field's `TYPE` as printed; `None` until checked.
     pub(crate) field_types: Option<HashMap<(String, String), String>>,
-    /// Links already warned about, so a rebuilt table doesn't warn again.
+    /// Links already warned about, so the next query doesn't warn again.
     warned: HashSet<(String, String)>,
     /// `(table, column)` schema mismatches already warned about.
     pub(crate) warned_mismatches: HashSet<(String, String)>,
@@ -31,8 +31,10 @@ impl SurrealDB {
     /// table): which record links are declared `REFERENCE`, and each field's
     /// `TYPE`. Call it after connecting, and again after changing the schema.
     ///
-    /// Roll-up columns built before the check, or over a link without
-    /// `REFERENCE`, use the slower correlated `$parent` form. Field types
+    /// Roll-up columns queried before the check, or over a link without
+    /// `REFERENCE`, use the slower correlated `$parent` form: a roll-up is
+    /// rendered each time a query includes it, so one added before the
+    /// check renders `<~` once the check has run. Field types
     /// feed [`schema_mismatches`](Self::schema_mismatches) only; what a
     /// write stores never depends on them.
     pub async fn check_schema(&self) -> Result<()> {
@@ -90,8 +92,9 @@ impl SurrealDB {
     }
 
     /// Warn, once per link, that a roll-up over `child.field` reads through
-    /// the correlated `$parent` form. `linked` is the table the field's
-    /// records point at, when known.
+    /// the correlated `$parent` form: at the first query that includes the
+    /// column. `linked` is the table the field's records point at, when
+    /// known.
     pub(crate) fn warn_slow_rollup(
         &self,
         child: &str,

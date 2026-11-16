@@ -8,7 +8,9 @@ use vantage_types::{EmptyEntity, Entity, Record};
 use crate::{
     references::Reference,
     table::Table,
-    traits::{column_like::ColumnLike, table_source::TableSource},
+    traits::{
+        column_like::ColumnLike, table_source::TableSource, table_source_spec::TableSourceSpec,
+    },
 };
 
 /// Unbox a target built by a relation's stored factory as `X`.
@@ -156,6 +158,33 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
             reference.build_target_erased(self.data_source() as &dyn Any)?,
             relation,
         )?;
+        self.attach_correlated_condition(relation, reference, &mut target)?;
+        Ok(target)
+    }
+
+    /// [`get_subquery_erased`](Self::get_subquery_erased) over a `target`
+    /// already built by [`get_ref_target_erased`](Self::get_ref_target_erased),
+    /// read under `alias` when one is given
+    /// (`FROM "employee" AS "employee_rollup"`). A relation onto this table's
+    /// own source needs the alias: without it the join compares the inner
+    /// row with itself.
+    pub fn correlate_ref_target(
+        &self,
+        relation: &str,
+        mut target: Table<T, EmptyEntity>,
+        alias: Option<&str>,
+    ) -> Result<Table<T, EmptyEntity>> {
+        if let Some(alias) = alias {
+            target.source = target.source.aliased(alias).ok_or_else(|| {
+                error!(
+                    "this backend can't alias a relation's target",
+                    relation = relation,
+                    table = self.table_name()
+                )
+                .mark_unsupported()
+            })?;
+        }
+        let reference = self.lookup_ref(relation)?;
         self.attach_correlated_condition(relation, reference, &mut target)?;
         Ok(target)
     }

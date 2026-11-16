@@ -17,6 +17,7 @@ use tokio::time::timeout;
 use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet};
 use vantage_sql::mysql::MysqlDB;
 use vantage_table::table::Table;
+use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::contract::{self, TxFixture, TxTables};
 use vantage_vista::{Transaction, Vista};
@@ -73,10 +74,14 @@ async fn pool_of_one() -> MysqlDB {
 
 fn tables(db: MysqlDB, (a, b): (String, String)) -> TxTables {
     let factory = db.vista_factory();
+    // `b` narrowed to the rows whose `a_id` is the id of a row of `a`.
+    let b_of_a = db.related_in_condition("a_id", &table_a(db.clone(), &a, &b), "id");
+    let b_of_a = table_b(db.clone(), &b).with_condition(b_of_a);
     TxTables::new(
         factory.from_table(table_a(db.clone(), &a, &b)).unwrap(),
         factory.from_table(table_b(db, &b)).unwrap(),
     )
+    .with_b_of_a(factory.from_table(b_of_a).unwrap())
 }
 
 fn table_a(db: MysqlDB, a: &str, b: &str) -> Table<MysqlDB, EmptyEntity> {

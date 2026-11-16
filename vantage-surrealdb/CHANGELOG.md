@@ -10,6 +10,14 @@
 - A SurrealDB Vista takes `add_order` (`ORDER BY a, b`): later columns break the ties of the
   first, so a Rhai `.sort("a").sort("b")` sorts by both. Requires vantage-vista 2.11.0.
 
+- Requires vantage-table 4.0.0. Roll-up columns are built when a query is built, and only for
+  the columns it selects; the slow-link warning comes with the first query. A roll-up over the
+  table's own relation that aggregates another column counts correctly; a column rolling up
+  itself is an error.
+- A table narrowed by a related table (`fk IN (parent ids)`, as an inherited access rule does)
+  reads the parent in the same statement, so inside a transaction it sees the transaction's
+  rows. Before, the parent was read first, on the connection that built the condition.
+
 ## 2.3.1 — 2026-11-13
 
 Requires vantage-table 3.8.0.

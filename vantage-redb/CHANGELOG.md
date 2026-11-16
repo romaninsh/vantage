@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.4 — 2026-11-16
+
+- Requires vantage-table 4.0.0.
+
 ## 0.8.3 — 2026-11-13
 
 - Fix (VAN-440): `Display` for an integer value printed `Integer(42)`; it prints `42`.

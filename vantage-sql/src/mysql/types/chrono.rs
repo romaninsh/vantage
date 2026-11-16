@@ -148,6 +148,7 @@ impl MysqlType for DateTime<FixedOffset> {
 fn parse_time(s: &str) -> Option<NaiveTime> {
     NaiveTime::parse_from_str(s, "%H:%M:%S")
         .or_else(|_| NaiveTime::parse_from_str(s, "%H:%M:%S%.f"))
+        .or_else(|_| NaiveTime::parse_from_str(s, "%H:%M"))
         .ok()
 }
 
@@ -156,6 +157,8 @@ fn parse_naive_datetime(s: &str) -> Option<NaiveDateTime> {
         .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f"))
         .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S"))
         .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f"))
+        .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M"))
+        .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M"))
         .ok()
 }
 
