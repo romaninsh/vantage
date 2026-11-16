@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.2 — 2026-11-16
+
+- Drops the unused `thiserror` dependency, and the `anyhow-compat` feature with its `anyhow`
+  dependency: it defined no conversions. Remove it from your feature list if you set it.
+
 ## 1.3.1 — 2026-11-13
 
 - The `error` example returns or discards `report()`'s `ExitCode` explicitly; Rust 1.100 makes the

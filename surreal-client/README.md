@@ -227,8 +227,8 @@ Normally you have one client and one engine. You can clone your client,
 but the engine remains the same. As a result, some queries may block
 other queries.
 
-There is no pool type yet. The `pool` feature only defines `PoolConfig`. To run queries in
-parallel, call `connect()` once per connection; each call opens its own engine:
+There is no connection pool. To run queries in parallel, call `connect()` once per connection;
+each call opens its own engine:
 
 ```rust
 // DSN="ws://root:secret@localhost:8000/bakery/v1"
