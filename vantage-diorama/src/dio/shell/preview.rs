@@ -64,12 +64,15 @@ fn describe(query: &VistaQuery) -> Vec<String> {
     if let Some(text) = &query.search {
         phrases.push(format!("search {text:?}"));
     }
-    if let Some((column, dir)) = &query.order {
-        let dir = match dir {
-            SortDirection::Ascending => "asc",
-            SortDirection::Descending => "desc",
-        };
-        phrases.push(format!("order by {column} {dir}"));
+    let keys: Vec<String> = query
+        .orders()
+        .map(|(column, dir)| match dir {
+            SortDirection::Ascending => format!("{column} asc"),
+            SortDirection::Descending => format!("{column} desc"),
+        })
+        .collect();
+    if !keys.is_empty() {
+        phrases.push(format!("order by {}", keys.join(", ")));
     }
     phrases
 }

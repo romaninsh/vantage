@@ -31,6 +31,7 @@ impl DeriveBuilder {
     /// Order by `column`, in place of the parent's order.
     pub fn with_order(mut self, column: impl Into<String>, dir: SortDirection) -> Self {
         self.query.order = Some((column.into(), dir));
+        self.query.then_by.clear();
         self
     }
 
@@ -50,7 +51,7 @@ impl DeriveBuilder {
             self.query.search = query.search.clone();
         }
         if query.order.is_some() {
-            self.query.order = query.order.clone();
+            self.query.copy_order_from(query);
         }
         self
     }
@@ -89,12 +90,12 @@ impl DeriveBuilder {
         let Plan { narrowed, refused } = inner.plan_on(master, &query)?;
 
         let mut residual = inner.residual.clone();
+        if query.order.is_some() {
+            residual.copy_order_from(&refused);
+        }
         residual.conditions.extend(refused.conditions);
         if query.search.is_some() {
             residual.search = refused.search;
-        }
-        if query.order.is_some() {
-            residual.order = refused.order;
         }
 
         inner

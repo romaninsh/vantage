@@ -5,12 +5,12 @@ use std::sync::Arc;
 
 use ciborium::Value as CborValue;
 use vantage_dataset::ReadableValueSet;
-use vantage_memory::{MemoryCatalog, MemoryStore, MemoryTableShell};
+use vantage_memory::{MemoryStore, MemoryVistaFactory, MemoryVistaSpec};
 use vantage_rhai::rhai::Dynamic;
 use vantage_rhai::{Block, Env, Host, Limits};
 use vantage_types::Record;
 use vantage_vista::rhai::{DataVocab, Terminals, Writes, block_on};
-use vantage_vista::{Column, ColumnFlag, JoinKey, Reference, Vista, VistaMetadata, VistaResolver};
+use vantage_vista::{ColumnSpec, Vista, VistaFactory, VistaMetadata, VistaResolver};
 
 fn row(pairs: &[(&str, CborValue)]) -> Record<CborValue> {
     pairs
@@ -57,45 +57,40 @@ pub fn shop() -> MemoryStore {
     store
 }
 
-fn catalog(store: &MemoryStore) -> MemoryCatalog {
-    let catalog = MemoryCatalog::new(store.clone());
-    catalog.register(
-        "client",
-        VistaMetadata::new()
-            .with_column(Column::new("id", "String").with_flag(ColumnFlag::Id))
-            .with_column(Column::new("name", "String").with_flag(ColumnFlag::Orderable))
-            .with_column(Column::new("vip", "bool"))
-            .with_id_column("id")
-            .with_reference(Reference::has_many(
-                "orders",
-                "order",
-                JoinKey::new("id", "client"),
-            )),
-    );
-    catalog.register(
-        "order",
-        VistaMetadata::new()
-            .with_column(Column::new("id", "String").with_flag(ColumnFlag::Id))
-            .with_column(Column::new("client", "String"))
-            .with_column(Column::new("total", "int").with_flag(ColumnFlag::Orderable))
-            .with_column(Column::new("status", "String"))
-            .with_id_column("id")
-            .with_reference(Reference::has_one(
-                "client",
-                "client",
-                JoinKey::to_target_id("client"),
-            )),
-    );
-    catalog
-}
+const CLIENT: &str = r#"
+name: client
+id_column: id
+columns:
+  id: { type: String, flags: [id] }
+  name: { type: String }
+  vip: { type: bool }
+references:
+  orders: { table: order, kind: has_many, foreign_key: client }
+"#;
+
+const ORDER: &str = r#"
+name: order
+id_column: id
+columns:
+  id: { type: String, flags: [id] }
+  client: { type: String }
+  total: { type: int }
+  status: { type: String }
+references:
+  client: { table: client, kind: has_one, foreign_key: client }
+"#;
 
 /// `table(name)` over the shop: a fresh memory Vista per call. A name the
 /// shop doesn't hold gets a new, empty table.
 pub fn resolver(store: &MemoryStore) -> Arc<dyn VistaResolver> {
-    let catalog = catalog(store);
-    Arc::new(move |name: &str| {
-        catalog.store().table(name);
-        catalog.vista(name)
+    let factory = MemoryVistaFactory::new(store.clone());
+    // Built once up front, so a traversal to either finds its spec.
+    factory.from_yaml(CLIENT).unwrap();
+    factory.from_yaml(ORDER).unwrap();
+    Arc::new(move |name: &str| match name {
+        "client" => factory.from_yaml(CLIENT),
+        "order" => factory.from_yaml(ORDER),
+        other => factory.build_from_spec(MemoryVistaSpec::new(other)),
     })
 }
 
@@ -115,8 +110,8 @@ pub fn read_write(store: &MemoryStore) -> Host {
     )
 }
 
-/// A memory Vista named `name` over `metadata` (id column `id`), in a store
-/// of its own holding `rows`.
+/// A memory Vista named `name` declaring `metadata`'s columns (id column
+/// `id`, a computed column as `lazy:`), in a store of its own holding `rows`.
 pub fn memory_vista(
     name: &str,
     metadata: VistaMetadata,
@@ -126,12 +121,17 @@ pub fn memory_vista(
     for (id, row) in rows {
         store.table(name).insert_as(id, row).unwrap();
     }
-    let shell = MemoryTableShell::new(
-        store.table(name),
-        metadata.with_id_column("id"),
-        MemoryCatalog::new(store.clone()),
-    );
-    Vista::new(name, shell)
+    let mut spec = MemoryVistaSpec::new(name);
+    spec.id_column = Some("id".to_string());
+    for (column_name, column) in &metadata.columns {
+        let mut col = ColumnSpec::new();
+        col.col_type = column.original_type.clone();
+        col.lazy = column.expression().map(str::to_string);
+        spec.columns.insert(column_name.clone(), col);
+    }
+    MemoryVistaFactory::new(store)
+        .build_from_spec(spec)
+        .unwrap()
 }
 
 /// Row `id` of `vista`, which must exist.

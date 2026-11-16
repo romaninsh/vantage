@@ -39,12 +39,12 @@ impl DioInner {
             refused.search = offered.search.take();
         }
         let (narrowed, from_master) = master.with_query(&offered)?;
+        if refused.order.is_none() {
+            refused.copy_order_from(&from_master);
+        }
         refused.conditions.extend(from_master.conditions);
         if refused.search.is_none() {
             refused.search = from_master.search;
-        }
-        if refused.order.is_none() {
-            refused.order = from_master.order;
         }
         Ok(Plan { narrowed, refused })
     }
@@ -72,7 +72,7 @@ impl DioInner {
             refused.search = self.residual.search.clone();
         }
         if query.order.is_none() && refused.order.is_none() {
-            refused.order = self.residual.order.clone();
+            refused.copy_order_from(&self.residual);
         }
         refused
     }
@@ -85,7 +85,7 @@ impl DioInner {
 
     /// Split `query` into what may be offered to the master and the clauses
     /// diorama keeps for itself: conditions on a declared augmented column or
-    /// a dotted path under one, and an order on one. The master has never
+    /// a dotted path under one, and an order with any column on one. The master has never
     /// heard of those columns, and a shell may accept an unknown column only
     /// to fail when it fetches, or filter on a field it doesn't hold and
     /// return the wrong rows. A lift-all augmentation declares no columns, so
@@ -97,12 +97,15 @@ impl DioInner {
             .partition(|c| self.is_declared_augmented(&c.column));
         query.conditions = offered;
         kept.conditions = local;
+        // The order goes as one: a master can't sort by its own columns
+        // and leave an augmented tie-breaker to diorama.
         if query
-            .order
-            .as_ref()
-            .is_some_and(|(column, _)| self.is_declared_augmented(column))
+            .orders()
+            .any(|(column, _)| self.is_declared_augmented(column))
         {
-            kept.order = query.order.take();
+            kept.copy_order_from(&query);
+            query.order = None;
+            query.then_by.clear();
         }
         (query, kept)
     }

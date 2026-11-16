@@ -34,6 +34,20 @@ async fn vista_set_order_ascending_descending_and_clear() -> TestResult {
 }
 
 #[tokio::test]
+async fn vista_add_order_breaks_ties_of_the_first_column() -> TestResult {
+    let db = setup().await;
+    let mut vista = db.vista_factory().from_table(product_table(db.clone()))?;
+
+    // a and c are both not deleted; price descending puts c first.
+    vista.set_order(Some(("is_deleted", SortDirection::Ascending)))?;
+    vista.add_order("price", SortDirection::Descending)?;
+    let rows = vista.list_values().await?;
+    let ids: Vec<&String> = rows.keys().collect();
+    assert_eq!(ids, ["c", "a", "b"]);
+    Ok(())
+}
+
+#[tokio::test]
 async fn vista_set_order_rejects_unknown_column() -> TestResult {
     let db = setup().await;
     let table = product_table(db.clone());

@@ -41,24 +41,22 @@ let due = table("order").where("status", "due");
 ```rust
 # use std::sync::Arc;
 # use ciborium::Value as CborValue;
-# use vantage_memory::{MemoryCatalog, MemoryStore};
+# use vantage_memory::{MemoryStore, MemoryVistaFactory};
 # use vantage_vista::rhai::{Writes, run_script};
-# use vantage_vista::{Column, ColumnFlag, VistaMetadata, VistaResolver};
+# use vantage_vista::{VistaFactory, VistaResolver};
 # const AGENT_SCRIPT: &str = r#"
 # let due = table("order").where("status", "due");
 # #{ count: due.count(), rows: due.sort("total", "desc").list() }
 # "#;
 # fn resolver(store: &MemoryStore) -> Arc<dyn VistaResolver> {
-#     let catalog = MemoryCatalog::new(store.clone());
-#     catalog.register(
-#         "order",
-#         VistaMetadata::new()
-#             .with_column(Column::new("id", "String").with_flag(ColumnFlag::Id))
-#             .with_column(Column::new("total", "int").with_flag(ColumnFlag::Orderable))
-#             .with_column(Column::new("status", "String"))
-#             .with_id_column("id"),
-#     );
-#     Arc::new(catalog)
+#     let factory = MemoryVistaFactory::new(store.clone());
+#     Arc::new(move |name: &str| match name {
+#         "order" => factory.from_yaml(
+#             "name: order\ncolumns:\n  id: { type: String, flags: [id] }\n  \
+#              total: { type: int }\n  status: { type: String }\n",
+#         ),
+#         _ => Err(vantage_core::error!("unknown table").mark_not_found()),
+#     })
 # }
 # #[tokio::main(flavor = "current_thread")]
 # async fn main() -> vantage_core::Result<()> {

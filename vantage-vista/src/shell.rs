@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
-use vantage_core::Result;
+use vantage_core::{Result, error};
 #[cfg(feature = "rhai")]
 use vantage_rhai::rhai;
 use vantage_types::Record;
@@ -159,6 +159,18 @@ pub trait TableShell: CloneTableShell + Send + Sync + 'static {
     /// An unknown column is a normal error, not `Unsupported`.
     fn set_order(&mut self, _order: Option<(&str, SortDirection)>) -> Result<()> {
         unsupported(Capability::Order)
+    }
+
+    /// Break the ties of the current order by `column`. [`Vista`] calls it
+    /// only after `set_order(Some(..))` succeeded. Default: `Unsupported`,
+    /// for a backend that orders by one column only; a caller evaluating a
+    /// residual then sorts the rows itself.
+    fn add_order(&mut self, column: &str, _dir: SortDirection) -> Result<()> {
+        Err(error!(
+            "Shell orders by one column only; tie-breaker refused",
+            column = column
+        )
+        .mark_unsupported())
     }
 
     // ---- Writes -------------------------------------------------------------

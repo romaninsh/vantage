@@ -14,6 +14,7 @@ use crate::{
 };
 
 mod narrow;
+mod order;
 mod read;
 mod value_set;
 

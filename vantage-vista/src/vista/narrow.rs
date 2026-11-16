@@ -8,11 +8,9 @@ use vantage_core::{Result, error};
 use super::Vista;
 use crate::{
     capabilities::{Capability, unsupported},
-    column::ColumnFlag,
     filter::FilterOp,
     page::NativeCondition,
     query::{Condition, VistaQuery},
-    sort::SortDirection,
 };
 
 impl Vista {
@@ -37,11 +35,6 @@ impl Vista {
 
     pub fn with_search(mut self, text: impl Into<String>) -> Result<Self> {
         self.set_search(Some(&text.into()))?;
-        Ok(self)
-    }
-
-    pub fn with_order(mut self, column: &str, dir: SortDirection) -> Result<Self> {
-        self.set_order(Some((column, dir)))?;
         Ok(self)
     }
 
@@ -77,10 +70,8 @@ impl Vista {
         {
             refused.search = Some(text.clone());
         }
-        if let Some((column, dir)) = &query.order
-            && refusal(self.set_order(Some((column, *dir))))?
-        {
-            refused.order = Some((column.clone(), *dir));
+        if self.apply_query_order(query)? {
+            refused.copy_order_from(query);
         }
         Ok((self, refused))
     }
@@ -132,37 +123,6 @@ impl Vista {
         Ok(())
     }
 
-    /// Order by `column`, replacing any earlier order, or clear it with
-    /// `None`. Clearing when no order is applied does nothing.
-    ///
-    /// A computed column, a shell without [`Order`](Capability::Order), and
-    /// a column without [`Orderable`](ColumnFlag::Orderable) are refused, in
-    /// that order. Every undeclared column would be refused for lacking the
-    /// flag, so it is checked first and is a plain error instead.
-    pub fn set_order(&mut self, order: Option<(&str, SortDirection)>) -> Result<()> {
-        let Some((column, dir)) = order else {
-            if self.applied.order.is_some() {
-                self.edit_shell(|shell| shell.set_order(None))?;
-                self.applied.order = None;
-            }
-            return Ok(());
-        };
-        self.require_declared(column, "set_order")?;
-        self.refuse_computed(column, "order")?;
-        if !self.capabilities().has(Capability::Order) {
-            return unsupported(Capability::Order);
-        }
-        if !self
-            .column(column)
-            .is_some_and(|c| c.has_flag(ColumnFlag::Orderable))
-        {
-            return Err(error!("Column is not orderable", column = column).mark_unsupported());
-        }
-        self.edit_shell(|shell| shell.set_order(Some((column, dir))))?;
-        self.applied.order = Some((column.to_string(), dir));
-        Ok(())
-    }
-
     /// Narrow by a driver-native condition; the query records its key.
     pub fn add_native_condition(&mut self, condition: NativeCondition) -> Result<()> {
         let key = condition.key().to_string();
@@ -175,7 +135,7 @@ impl Vista {
     /// of them. A dotted path (`client.name`) into a declared column is
     /// valid: it names a field nested in that column's value. A shell that
     /// declares no columns can't be checked.
-    fn require_declared(&self, column: &str, verb: &'static str) -> Result<()> {
+    pub(super) fn require_declared(&self, column: &str, verb: &'static str) -> Result<()> {
         let root = column.split('.').next().unwrap_or(column);
         if self.columns().is_empty() || self.column(column).is_some() || self.column(root).is_some()
         {
@@ -203,7 +163,7 @@ fn refuse_natives(query: &VistaQuery) -> Result<()> {
 
 /// `Ok(true)` when `result` is a refusal the caller can evaluate locally,
 /// `Ok(false)` when the clause was applied, the error itself otherwise.
-fn refusal(result: Result<()>) -> Result<bool> {
+pub(super) fn refusal(result: Result<()>) -> Result<bool> {
     match result {
         Ok(()) => Ok(false),
         Err(e) if e.is_unsupported() || e.is_unimplemented() => Ok(true),

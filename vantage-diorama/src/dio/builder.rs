@@ -261,7 +261,7 @@ fn full_query(master: &Vista, residual: &VistaQuery) -> VistaQuery {
         query.search = residual.search.clone();
     }
     if residual.order.is_some() {
-        query.order = residual.order.clone();
+        query.copy_order_from(residual);
     }
     query
 }

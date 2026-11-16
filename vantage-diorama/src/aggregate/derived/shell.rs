@@ -117,12 +117,13 @@ impl TableShell for AggregateShell {
         if let Some(text) = &self.query.search {
             clauses.push(format!("search {text:?}"));
         }
-        if let Some((column, dir)) = &self.query.order {
+        for (i, (column, dir)) in self.query.orders().enumerate() {
             let dir = match dir {
                 SortDirection::Ascending => "asc",
                 SortDirection::Descending => "desc",
             };
-            clauses.push(format!("order by {column} {dir}"));
+            let verb = if i == 0 { "order by" } else { "then by" };
+            clauses.push(format!("{verb} {column} {dir}"));
         }
         let mut note = "derived in memory from the source Dio's cached rows — no query, no \
                         request. Preview the source table to see what fetches the rows this \
@@ -171,6 +172,13 @@ impl TableShell for AggregateShell {
             self.known_column(field)?;
         }
         self.query.order = order.map(|(field, dir)| (field.to_string(), dir));
+        self.query.then_by.clear();
+        Ok(())
+    }
+
+    fn add_order(&mut self, column: &str, dir: SortDirection) -> Result<()> {
+        self.known_column(column)?;
+        self.query.then_by.push((column.to_string(), dir));
         Ok(())
     }
 

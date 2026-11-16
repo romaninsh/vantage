@@ -80,14 +80,18 @@ fn an_unknown_operator_is_a_script_error_naming_it() {
 }
 
 #[test]
-fn search_and_sort_keep_the_last_one() {
+fn search_keeps_the_last_one_and_sorts_add_columns() {
     let query = handle(r#"table("t").search("a").search("b").sort("n").sort("a", "desc")"#)
         .query()
         .unwrap();
     assert_eq!(query.search.as_deref(), Some("b"));
     assert_eq!(
         query.order,
-        Some(("a".to_string(), SortDirection::Descending))
+        Some(("n".to_string(), SortDirection::Ascending))
+    );
+    assert_eq!(
+        query.then_by,
+        [("a".to_string(), SortDirection::Descending)]
     );
 }
 

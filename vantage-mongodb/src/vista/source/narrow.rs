@@ -78,10 +78,15 @@ impl MongoTableShell {
             self.table.clear_orders();
             return Ok(());
         };
-        if !self.table.columns().contains_key(field) {
-            return Err(error!("Unknown column for order", field = field));
-        }
+        self.check_order_column(field)?;
         self.table.clear_orders();
+        self.push_order(field, dir)
+    }
+
+    /// A tie-breaker after the orders already set: a later key of the sort
+    /// document.
+    pub(super) fn push_order(&mut self, field: &str, dir: SortDirection) -> Result<()> {
+        self.check_order_column(field)?;
         // `select_from_table` reads the field name from the first key of the
         // OrderBy expression's document; the value is ignored, and the
         // direction comes from `OrderBy::direction`.
@@ -93,6 +98,13 @@ impl MongoTableShell {
                 SortDirection::Descending => TableSortDirection::Descending,
             },
         });
+        Ok(())
+    }
+
+    fn check_order_column(&self, field: &str) -> Result<()> {
+        if !self.table.columns().contains_key(field) {
+            return Err(error!("Unknown column for order", field = field));
+        }
         Ok(())
     }
 

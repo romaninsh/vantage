@@ -37,7 +37,7 @@ echo "Namespace: $NS"
 docker run -d \
     --name $CONTAINER_NAME \
     -p $PORT:8000 \
-    surrealdb/surrealdb:latest \
+    surrealdb/surrealdb:v3.3.5 \
     start --log debug --user $USER --pass $PASS memory
 
 # Wait for SurrealDB to be ready

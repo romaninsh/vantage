@@ -50,6 +50,7 @@ impl Admit {
         }
         let mut residual = inner.without_augmented(&inner.comparable_residual);
         residual.order = None;
+        residual.then_by.clear();
         if !residual.conditions.is_empty() || residual.search.is_some() {
             queries.push(residual);
         }

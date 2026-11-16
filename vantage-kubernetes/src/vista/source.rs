@@ -145,6 +145,16 @@ impl TableShell for KubeTableShell {
             return Err(error!("Unknown column for order", field = field));
         }
         self.refinement.order = order.map(|(field, dir)| (field.to_string(), dir));
+        self.refinement.then_by.clear();
+        Ok(())
+    }
+
+    /// The listing is sorted in memory, by every key in turn.
+    fn add_order(&mut self, field: &str, dir: SortDirection) -> Result<()> {
+        if !self.metadata.columns.contains_key(field) {
+            return Err(error!("Unknown column for order", field = field));
+        }
+        self.refinement.then_by.push((field.to_string(), dir));
         Ok(())
     }
 

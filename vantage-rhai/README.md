@@ -224,6 +224,13 @@ serve every row; baking a specific row into the engine at registration time
 forces an engine per row, which is what the grid used to do per predicate per
 render.
 
+### Dates and the clock
+
+`.vocab(Dates)` gives scripts `date(..)`, `now()`, `today()` and the `add_*` functions over the
+system clock. A test hands `Dates::register_with` a `Clock::manual(start)` and moves it with
+`advance` or `advance_months`; clones share one time and `fork()` copies it to move alone. The
+clock lives on the engine, not in a global, so a test can run beside a live app in one process.
+
 ## Discovery: learning what a script reads
 
 `discover` evaluates once with every resolver read recorded, then freezes the

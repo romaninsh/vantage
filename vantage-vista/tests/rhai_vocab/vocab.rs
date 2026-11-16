@@ -20,6 +20,7 @@ fn denied_writes_throw_the_message() {
         r#"table("t").upsert("r1", #{ a: 1 })"#,
         r#"table("t").patch("r1", #{ a: 1 })"#,
         r#"table("t").delete("r1")"#,
+        r#"table("t").delete_all()"#,
         r#"table("t").import_from(table("t"))"#,
         r#"table("t").record("r1").delete()"#,
     ] {
@@ -27,6 +28,19 @@ fn denied_writes_throw_the_message() {
         assert!(err.contains("writes are off"), "`{script}`: {err}");
     }
     assert_eq!(json(&host, r#"table("t").count()"#), json!(3), "reads work");
+}
+
+/// `delete_all` takes the handle's narrowed set and nothing outside it.
+#[test]
+fn delete_all_deletes_the_narrowed_set() {
+    let host = host(&store(), read_write_terminals());
+    assert!(
+        run(&host, r#"table("t").where("a", 1).delete_all()"#)
+            .unwrap()
+            .is_unit()
+    );
+    assert_eq!(json(&host, r#"table("t").where("a", 1).count()"#), json!(0));
+    assert_eq!(json(&host, r#"table("t").count()"#), json!(1));
 }
 
 /// The `mock` table advertises no `Import`, so an import into it is refused.

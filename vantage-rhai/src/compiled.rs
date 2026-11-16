@@ -66,12 +66,14 @@ pub trait Slot: sealed::Sealed + Sized {
 }
 
 #[doc(hidden)]
+#[derive(Clone)]
 pub enum Pieces {
     One(Arc<AST>),
     Parts(Vec<TPart>),
 }
 
 #[doc(hidden)]
+#[derive(Clone)]
 pub enum TPart {
     Lit(String),
     Hole {
@@ -236,6 +238,20 @@ impl<S: Slot> Compiled<S> {
     /// and the AST that defined it.
     pub fn engine(&self) -> &Engine {
         &self.engine
+    }
+
+    /// The same compiled slot, evaluated on `host`'s engine from now on. The
+    /// ASTs are shared, not recompiled; `host` must register every function
+    /// the slot calls (the same vocabulary over another clock, say).
+    pub fn rebind(&self, host: &Host) -> Self {
+        Self {
+            engine: host.engine().clone(),
+            src: self.src.clone(),
+            pieces: self.pieces.clone(),
+            read_set: self.read_set.clone(),
+            discovered: self.discovered,
+            _kind: PhantomData,
+        }
     }
 
     /// The one compiled AST behind an `Expr` or `Block` (or a template that is

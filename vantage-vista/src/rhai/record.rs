@@ -131,6 +131,13 @@ impl RecordDraft {
         self.inner.lock().unwrap().id.clone()
     }
 
+    /// The table the row belongs to; `None` for a row reached through
+    /// `ref(..)` or over a Vista in hand.
+    pub fn table(&self) -> Option<String> {
+        let guard = self.inner.lock().unwrap();
+        guard.handle.rows_table().map(str::to_string)
+    }
+
     /// The row as a script reads it: the baseline with staged edits on top.
     pub fn values(&self) -> IndexMap<String, CborValue> {
         let guard = self.inner.lock().unwrap();

@@ -72,9 +72,19 @@ impl Step {
     /// `ref` step follows. `limit(n)` and `offset(n)` change no Vista:
     /// terminals read the [`Handle::row_window`](super::Handle::row_window)
     /// through `fetch_window`.
-    pub(super) fn apply(&self, mut vista: Vista, ref_window: RowWindow) -> Result<Vista> {
+    ///
+    /// The first `sort` on a Vista replaces its order; with `sorted` (an
+    /// earlier `sort` already applied to this Vista) it breaks that order's
+    /// ties instead, so chained sorts add columns.
+    pub(super) fn apply(
+        &self,
+        mut vista: Vista,
+        ref_window: RowWindow,
+        sorted: bool,
+    ) -> Result<Vista> {
         match self {
             Step::Where { col, op, value } => vista.add_condition(col, *op, value.clone())?,
+            Step::Sort { col, dir } if sorted => vista.add_order(col, *dir)?,
             Step::Sort { col, dir } => vista.set_order(Some((col, *dir)))?,
             Step::Search(text) => vista.set_search(Some(text))?,
             Step::Limit(_) | Step::Offset(_) => {}
@@ -90,6 +100,16 @@ impl Step {
         match self {
             Step::Ref(_) => RowWindow::default(),
             step => ref_window.fold(step),
+        }
+    }
+
+    /// Whether a `sort` after this step adds a column, given `sorted` before
+    /// it: a `sort` makes it so, a `ref` moves to a Vista with no sort yet.
+    pub(super) fn sorted_after(&self, sorted: bool) -> bool {
+        match self {
+            Step::Sort { .. } => true,
+            Step::Ref(_) => false,
+            _ => sorted,
         }
     }
 

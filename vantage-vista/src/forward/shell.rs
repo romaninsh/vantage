@@ -90,6 +90,9 @@ pub trait ForwardShell: Send + Sync + 'static {
     fn set_order(&mut self, order: Option<(&str, SortDirection)>) -> Result<()> {
         self.inner_mut().set_order(order)
     }
+    fn add_order(&mut self, column: &str, dir: SortDirection) -> Result<()> {
+        self.inner_mut().add_order(column, dir)
+    }
 
     // ---- Writes ------------------------------------------------------------
 

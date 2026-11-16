@@ -18,6 +18,8 @@ use ciborium::Value as CborValue;
 /// - Two datetimes compare by instant: a SurrealDB epoch pair (`Tag(12)`)
 ///   or a CBOR standard datetime (`Tag(0, Text)`, RFC 3339), in any mix and
 ///   any offset.
+/// - A CBOR date (`Tag(100, Text)`, `YYYY-MM-DD`) is midnight UTC of that day
+///   against another datetime, and its text otherwise.
 /// - A CBOR standard datetime against anything else is taken as its text,
 ///   so it orders against, and equals, dates a source stores as text.
 ///   RFC 3339 strings with the same offset sort lexically.
@@ -44,11 +46,11 @@ pub fn cbor_cmp(a: &CborValue, b: &CborValue) -> Ordering {
     }
 }
 
-/// The text inside a CBOR standard datetime (`Tag(0, Text)`), or `value`
-/// itself. Twin: `vantage-memory/src/eval/compare.rs`.
+/// The text inside a CBOR standard datetime (`Tag(0, Text)`) or date
+/// (`Tag(100, Text)`), or `value` itself. Twin: `vantage-memory/src/eval/compare.rs`.
 pub(super) fn datetime_as_text(value: &CborValue) -> &CborValue {
     match value {
-        CborValue::Tag(0, inner) if matches!(inner.as_ref(), CborValue::Text(_)) => inner,
+        CborValue::Tag(0 | 100, inner) if matches!(inner.as_ref(), CborValue::Text(_)) => inner,
         _ => value,
     }
 }
@@ -71,6 +73,10 @@ fn instant(value: &CborValue) -> Option<(i64, u32)> {
         }
         CborValue::Tag(0, inner) => match inner.as_ref() {
             CborValue::Text(text) => rfc3339(text),
+            _ => None,
+        },
+        CborValue::Tag(100, inner) => match inner.as_ref() {
+            CborValue::Text(date) if date.len() == 10 => rfc3339(&format!("{date}T00:00:00Z")),
             _ => None,
         },
         _ => None,

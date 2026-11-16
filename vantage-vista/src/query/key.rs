@@ -30,17 +30,33 @@ pub(super) fn render(query: &VistaQuery) -> String {
     out.push('q');
     out.push_str(&option(query.search.as_deref()));
     out.push('s');
-    let order = query.order.as_ref().map(|(column, dir)| {
-        let dir = match dir {
-            SortDirection::Ascending => "asc",
-            SortDirection::Descending => "desc",
-        };
-        format!("{}{}", part(column), part(dir))
-    });
+    let order = query
+        .order
+        .as_ref()
+        .map(|(column, dir)| sort_key(column, *dir));
     out.push_str(&option(order.as_deref()));
     out.push('n');
     out.push_str(&list(&native));
+    // Tie-breakers come last and only when present, so a query without them
+    // keeps the key it always had.
+    if !query.then_by.is_empty() {
+        let then_by: Vec<String> = query
+            .then_by
+            .iter()
+            .map(|(column, dir)| sort_key(column, *dir))
+            .collect();
+        out.push('t');
+        out.push_str(&list(&then_by));
+    }
     out
+}
+
+fn sort_key(column: &str, dir: SortDirection) -> String {
+    let dir = match dir {
+        SortDirection::Ascending => "asc",
+        SortDirection::Descending => "desc",
+    };
+    format!("{}{}", part(column), part(dir))
 }
 
 fn part(s: &str) -> String {

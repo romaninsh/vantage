@@ -84,12 +84,15 @@ impl MockShell {
                 .collect();
             parts.push(format!("where {}", filters.join(" and ")));
         }
-        if let Some((column, dir)) = &query.order {
-            let dir = match dir {
-                crate::SortDirection::Ascending => "asc",
-                crate::SortDirection::Descending => "desc",
-            };
-            parts.push(format!("order by {column} {dir}"));
+        let keys: Vec<String> = query
+            .orders()
+            .map(|(column, dir)| match dir {
+                crate::SortDirection::Ascending => format!("{column} asc"),
+                crate::SortDirection::Descending => format!("{column} desc"),
+            })
+            .collect();
+        if !keys.is_empty() {
+            parts.push(format!("order by {}", keys.join(", ")));
         }
         if let Some(text) = &query.search {
             parts.push(format!("search {text:?}"));

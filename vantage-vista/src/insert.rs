@@ -72,8 +72,11 @@ impl Vista {
         let mut collected: IndexMap<String, Collected> = IndexMap::new();
 
         for (key, value) in record.iter() {
-            // has-one shorthand: `relation.column = scalar`
+            // has-one shorthand: `relation.column = scalar`, unless the key
+            // is a declared column (a stored read-through like
+            // `investor.name`), which is a plain field
             if let Some((prefix, rest)) = key.split_once('.')
+                && !self.columns().contains_key(key.as_str())
                 && relation_names.contains(prefix)
             {
                 match collected
