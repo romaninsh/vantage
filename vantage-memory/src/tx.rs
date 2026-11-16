@@ -13,7 +13,8 @@
 //! the transaction meanwhile stay; an insert whose id was taken outside
 //! meanwhile fails the commit with nothing applied. Rollback (or a drop)
 //! discards the copies. Callers outside a transaction never wait on the
-//! claim and never see a copy.
+//! claim and never see a copy. An [unclaimed](MemoryTx::unclaimed)
+//! transaction, which lands an outside write whole, takes no claim either.
 //!
 //! Unlike SQL, which fails a commit only for database errors, any failed
 //! operation inside a transaction fails its commit here, including a
@@ -34,7 +35,8 @@ use crate::{MemoryStore, MemoryTable, MemoryTableHandle};
 const FAILED_STATEMENT: &str = "a statement failed inside the transaction; rolled back";
 
 pub(crate) struct MemoryTx {
-    claim: Arc<Mutex<()>>,
+    /// `None` for an [unclaimed](MemoryTx::unclaimed) transaction.
+    claim: Option<Arc<Mutex<()>>>,
     wait: Duration,
     /// Taken while claiming, so the transaction's concurrent first calls
     /// claim once. Never held with `open`, which commit and rollback need.
@@ -80,13 +82,23 @@ impl MemoryTx {
 
     pub(crate) fn new(store: &MemoryStore, owner: &Transaction) -> Self {
         Self {
-            claim: store.claim().clone(),
+            claim: Some(store.claim().clone()),
             wait: store.transaction_wait(),
             claiming: Mutex::default(),
             open: Mutex::default(),
             failed: AtomicBool::new(false),
             closed: AtomicBool::new(false),
             owner: owner.downgrade(),
+        }
+    }
+
+    /// A transaction that never claims the store, for a write made outside
+    /// any transaction that must land whole: it keeps copies and the
+    /// checked replay, but neither waits on nor blocks an open one.
+    pub(crate) fn unclaimed(store: &MemoryStore, owner: &Transaction) -> Self {
+        Self {
+            claim: None,
+            ..Self::new(store, owner)
         }
     }
 
@@ -117,21 +129,40 @@ impl MemoryTx {
             return Err(finished());
         }
         let work = open.copy_of(live);
-        let out = op(&work);
+        self.settle(op(&work))
+    }
+
+    /// The transaction's copy of `live`, for a caller that runs async work
+    /// between its reads and writes; it reports the outcome with [`settle`].
+    ///
+    /// [`settle`]: MemoryTx::settle
+    pub(crate) async fn work_copy(&self, live: &MemoryTableHandle) -> Result<MemoryTableHandle> {
+        self.run(live, |work| Ok(work.clone())).await
+    }
+
+    /// Passes `out` through; an `Err` fails the commit.
+    pub(crate) fn settle<R>(&self, out: Result<R>) -> Result<R> {
         if out.is_err() {
             self.failed.store(true, Ordering::SeqCst);
         }
         out
     }
 
+    pub(crate) fn transaction(&self) -> Option<Transaction> {
+        self.owner.upgrade()
+    }
+
     /// Waits, up to the store's transaction wait, until this transaction
-    /// holds the store.
+    /// holds the store. An unclaimed transaction never waits.
     async fn claimed(&self) -> Result<()> {
         let _claiming = self.claiming.lock().await;
         if self.open.lock().await.claimed.is_some() {
             return Ok(());
         }
-        let Ok(guard) = timeout(self.wait, self.claim.clone().lock_owned()).await else {
+        let Some(claim) = self.claim.clone() else {
+            return Ok(());
+        };
+        let Ok(guard) = timeout(self.wait, claim.lock_owned()).await else {
             self.failed.store(true, Ordering::SeqCst);
             return Err(error!(
                 "the memory store is busy with another transaction",

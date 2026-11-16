@@ -14,9 +14,9 @@ use vantage_faker::{
     BackendShape, DatasetGen, ExtraFields, FakerColumn, FaultSchedule, Latency, LatencyModel,
     Offline, ShapedShell, TableGen,
 };
-use vantage_memory::{MemoryCatalog, MemoryStore, MemoryTableShell};
+use vantage_memory::{MemoryStore, MemoryVistaFactory, MemoryVistaSpec};
 use vantage_vista::{
-    Capability, Column, ColumnFlag, FilterOp, Vista, VistaCapabilities, VistaMetadata,
+    Capability, ColumnFlag, ColumnSpec, FilterOp, Vista, VistaCapabilities, VistaFactory,
 };
 
 fn columns() -> Vec<FakerColumn> {
@@ -29,21 +29,22 @@ fn columns() -> Vec<FakerColumn> {
     ]
 }
 
-/// Mirror of the metadata a real table config would declare: every generated
-/// column is orderable and searchable, and the id column carries the `id`
-/// flag `MemoryTableShell` needs to answer traversal and title queries.
-fn metadata(columns: &[FakerColumn], id_column: &str) -> VistaMetadata {
-    let mut meta = VistaMetadata::new().with_id_column(id_column);
+/// Mirror of the spec a real table config would declare: every generated
+/// column is searchable (and, as every memory column, orderable), and the id
+/// column carries the `id` flag.
+fn spec(name: &str, columns: &[FakerColumn], id_column: &str) -> MemoryVistaSpec {
+    let mut spec = MemoryVistaSpec::new(name);
+    spec.id_column = Some(id_column.to_string());
     for c in columns {
-        let mut col = Column::new(&c.name, &c.ty)
-            .with_flag(ColumnFlag::Orderable)
-            .with_flag(ColumnFlag::Searchable);
+        let mut col = ColumnSpec::new();
+        col.col_type = Some(c.ty.clone());
+        col.flags.push(ColumnFlag::Searchable);
         if c.name == id_column {
-            col = col.with_flag(ColumnFlag::Id);
+            col.flags.push(ColumnFlag::Id);
         }
-        meta = meta.with_column(col);
+        spec.columns.insert(c.name.clone(), col);
     }
-    meta
+    spec
 }
 
 fn caps(list: &[Capability]) -> VistaCapabilities {
@@ -63,19 +64,16 @@ fn shaped(count: usize, shape: BackendShape) -> Vista {
 fn memory_rows(table: TableGen, seed: Option<u64>) -> Vista {
     let store = MemoryStore::new();
     let cols = columns();
-    let meta = metadata(&cols, "id");
+    let spec = spec("shaped", &cols, "id");
 
     DatasetGen::new(seed)
         .table(table.columns(cols))
         .generate(&store)
         .expect("dataset generates");
 
-    let catalog = MemoryCatalog::new(store.clone());
-    catalog.register("shaped", meta.clone());
-    Vista::new(
-        "shaped",
-        MemoryTableShell::new(store.table("shaped"), meta, catalog),
-    )
+    MemoryVistaFactory::new(store)
+        .build_from_spec(spec)
+        .unwrap()
 }
 
 /// [`memory_rows`] wrapped in the shape.
@@ -446,15 +444,10 @@ async fn a_shaped_memory_table_pushes_changes() {
     use futures_util::StreamExt;
     let store = MemoryStore::new();
     let t = store.table("t");
-    let shell = MemoryTableShell::new(
-        t.clone(),
-        VistaMetadata::new()
-            .with_column(Column::new("id", "string").with_flag(ColumnFlag::Id))
-            .with_id_column("id"),
-        MemoryCatalog::new(store.clone()),
-    );
-    let vista =
-        Vista::new("t", shell).map_shell(|inner| ShapedShell::new(inner, BackendShape::default()));
+    let vista = MemoryVistaFactory::new(store.clone())
+        .from_yaml("name: t\ncolumns:\n  id: { type: string, flags: [id] }\n")
+        .unwrap()
+        .map_shell(|inner| ShapedShell::new(inner, BackendShape::default()));
     assert!(vista.capabilities().has(Capability::Subscribe));
     let mut w = vista.watch().await.unwrap();
     t.upsert("a", Default::default());

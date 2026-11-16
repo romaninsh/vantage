@@ -3,7 +3,12 @@
 mod aggregate;
 pub mod convert;
 pub mod operation;
+mod rollup;
 mod table_source;
+
+pub use rollup::{MemoryRollup, MemoryRollupExt};
+
+use std::sync::Arc;
 
 use ciborium::Value as CborValue;
 use vantage_core::{Result, VantageError, error};
@@ -14,9 +19,11 @@ use vantage_expressions::{
 use vantage_table::table::Table;
 use vantage_table::traits::column_like::ColumnLike;
 use vantage_types::{Entity, Record};
+use vantage_vista::Transaction;
 
 use crate::eval::matches_all;
 use crate::store::{MemoryStore, MemoryTableHandle, Row, TableDef};
+use crate::tx::MemoryTx;
 use crate::types::AnyMemoryType;
 use convert::{from_cbor_record, table_query, to_cbor_record};
 
@@ -24,6 +31,9 @@ use convert::{from_cbor_record, table_query, to_cbor_record};
 #[derive(Clone, Default)]
 pub struct MemoryDB {
     store: MemoryStore,
+    tx: Option<Arc<MemoryTx>>,
+    /// Roll-up columns, by table name.
+    rollups: Arc<Vec<(String, MemoryRollup)>>,
 }
 
 impl MemoryDB {
@@ -32,17 +42,82 @@ impl MemoryDB {
     }
 
     pub fn from_store(store: MemoryStore) -> Self {
-        Self { store }
+        Self {
+            store,
+            ..Self::default()
+        }
+    }
+
+    /// A copy whose reads and writes go through `tx`. Nothing is claimed or
+    /// copied until the first read or write.
+    pub fn in_transaction(&self, tx: &Transaction) -> Result<MemoryDB> {
+        let joined = tx.participant(MemoryTx::key(&self.store), || {
+            MemoryTx::new(&self.store, tx)
+        })?;
+        Ok(Self {
+            tx: Some(joined),
+            ..self.clone()
+        })
+    }
+
+    /// A copy bound to `tx` as an [unclaimed](MemoryTx::unclaimed) store
+    /// transaction: its writes land whole at commit, and it neither waits
+    /// on nor blocks a transaction holding the store. `tx` must be fresh.
+    pub(crate) fn in_unclaimed_transaction(&self, tx: &Transaction) -> Result<MemoryDB> {
+        let joined = tx.participant(MemoryTx::key(&self.store), || {
+            MemoryTx::unclaimed(&self.store, tx)
+        })?;
+        Ok(Self {
+            tx: Some(joined),
+            ..self.clone()
+        })
     }
 
     pub fn store(&self) -> &MemoryStore {
         &self.store
     }
 
+    /// The table every read and write of `table` goes to: the store's, or
+    /// the transaction's copy of it when bound.
+    pub(crate) async fn store_table<E: Entity<AnyMemoryType>>(
+        &self,
+        table: &Table<Self, E>,
+    ) -> Result<MemoryTableHandle> {
+        let live = self.settle(self.live_table(table))?;
+        match &self.tx {
+            Some(tx) => tx.work_copy(&live).await,
+            None => Ok(live),
+        }
+    }
+
+    /// Runs the write `op` on the table every write of `table` goes to.
+    /// Inside a transaction it runs under the transaction's lock, so a write
+    /// still in flight when another task commits fails ("transaction
+    /// finished") instead of landing on a copy already replayed.
+    pub(crate) async fn write<E: Entity<AnyMemoryType>, R>(
+        &self,
+        table: &Table<Self, E>,
+        op: impl FnOnce(&MemoryTableHandle) -> Result<R> + Send,
+    ) -> Result<R> {
+        let live = self.settle(self.live_table(table))?;
+        match &self.tx {
+            Some(tx) => tx.run(&live, op).await,
+            None => op(&live),
+        }
+    }
+
+    /// Passes `out` through; inside a transaction an `Err` fails the commit.
+    pub(crate) fn settle<R>(&self, out: Result<R>) -> Result<R> {
+        match &self.tx {
+            Some(tx) => tx.settle(out),
+            None => out,
+        }
+    }
+
     /// The store table behind `table`. A table seen for the first time is
     /// created with the typed table's id column; an existing table whose id
     /// column differs from the typed table's is an error.
-    pub(crate) fn store_table<E: Entity<AnyMemoryType>>(
+    pub(crate) fn live_table<E: Entity<AnyMemoryType>>(
         &self,
         table: &Table<Self, E>,
     ) -> Result<MemoryTableHandle> {
@@ -68,18 +143,23 @@ impl MemoryDB {
         Ok(store)
     }
 
-    /// Rows matching the table's conditions and orders; `windowed` also
-    /// applies its pagination.
+    /// Rows matching the table's conditions and orders, roll-ups filled;
+    /// `windowed` also applies its pagination.
     pub(crate) async fn rows<E: Entity<AnyMemoryType>>(
         &self,
         table: &Table<Self, E>,
         windowed: bool,
     ) -> Result<Vec<(String, Row)>> {
-        let mut q = table_query(table).await?;
-        if !windowed {
-            q = q.window(0, None);
-        }
-        self.store_table(table)?.query(&q)
+        self.settle(
+            async {
+                let mut q = table_query(table).await?;
+                if !windowed {
+                    q = q.window(0, None);
+                }
+                self.query_rows(table, &q).await
+            }
+            .await,
+        )
     }
 
     /// Whether the store row `row` is in `table`'s set.
@@ -105,7 +185,7 @@ impl MemoryDB {
     }
 
     /// `record` as a store row for `id`: the id column set to `id`.
-    fn row_for<E: Entity<AnyMemoryType>>(
+    pub(crate) fn row_for<E: Entity<AnyMemoryType>>(
         &self,
         table: &Table<Self, E>,
         id: &str,
@@ -116,66 +196,43 @@ impl MemoryDB {
         row
     }
 
-    /// The row already stored under `id` when it is in the set; `outside`
-    /// when it is held by a row outside the set.
-    async fn stored_in_set<E: Entity<AnyMemoryType>>(
+    /// Row `id` with its roll-ups filled when it is in the set: a condition
+    /// on a roll-up column reads the computed value, as reads do.
+    pub(crate) async fn fit<E: Entity<AnyMemoryType>>(
+        &self,
+        table: &Table<Self, E>,
+        id: &str,
+        row: Row,
+    ) -> Result<Option<Row>> {
+        let row = self.filled_row(table, id, row).await?;
+        Ok(self.in_set(table, &row).await?.then_some(row))
+    }
+
+    /// Stored row `id` as a read returns it.
+    pub(crate) async fn returned<E: Entity<AnyMemoryType>>(
+        &self,
+        table: &Table<Self, E>,
+        id: &str,
+        stored: Row,
+    ) -> Result<Record<AnyMemoryType>> {
+        let row = self.filled_row(table, id, stored).await?;
+        Ok(from_cbor_record(&row))
+    }
+
+    /// The row already stored under `id`, roll-ups filled, when it is in the
+    /// set; `outside` when it is held by a row outside the set.
+    pub(crate) async fn row_in_set<E: Entity<AnyMemoryType>>(
         &self,
         table: &Table<Self, E>,
         id: &str,
     ) -> Result<Option<Row>> {
-        let Some(existing) = self.store_table(table)?.get(id) else {
+        let Some(existing) = self.store_table(table).await?.get(id) else {
             return Ok(None);
         };
-        match self.in_set(table, &existing).await? {
-            true => Ok(Some(existing)),
-            false => Err(Self::outside(table.table_name(), id)),
+        match self.fit(table, id, existing).await? {
+            Some(row) => Ok(Some(row)),
+            None => Err(Self::outside(table.table_name(), id)),
         }
-    }
-
-    /// Insert `record` as `id` and return the stored row. An id already held
-    /// by a row in the set returns that row; one held outside it is a
-    /// `Conflict`.
-    pub(crate) async fn insert_in_set<E: Entity<AnyMemoryType>>(
-        &self,
-        table: &Table<Self, E>,
-        id: &str,
-        record: &Record<AnyMemoryType>,
-    ) -> Result<Record<AnyMemoryType>> {
-        if let Some(existing) = self.stored_in_set(table, id).await? {
-            return Ok(from_cbor_record(&existing));
-        }
-        let row = self.row_for(table, id, record);
-        if !self.in_set(table, &row).await? {
-            return Err(Self::misfit(table.table_name(), id));
-        }
-        match self.store_table(table)?.insert_as(id, row) {
-            Ok(stored) => Ok(from_cbor_record(&stored)),
-            // Lost a race to another writer: take whatever it stored.
-            Err(e) => match self.stored_in_set(table, id).await? {
-                Some(existing) => Ok(from_cbor_record(&existing)),
-                None => Err(e),
-            },
-        }
-    }
-
-    /// Replace row `id` with `record`, creating it when missing.
-    pub(crate) async fn replace_in_set<E: Entity<AnyMemoryType>>(
-        &self,
-        table: &Table<Self, E>,
-        id: &str,
-        record: &Record<AnyMemoryType>,
-    ) -> Result<Record<AnyMemoryType>> {
-        let existing = self.stored_in_set(table, id).await?;
-        let row = self.row_for(table, id, record);
-        if !self.in_set(table, &row).await? {
-            return Err(Self::misfit(table.table_name(), id));
-        }
-        let store = self.store_table(table)?;
-        let stored = match existing.and_then(|_| store.replace(id, row.clone())) {
-            Some(stored) => stored,
-            None => store.insert_as(id, row)?,
-        };
-        Ok(from_cbor_record(&stored))
     }
 
     /// The typed table's id field, else the store table's id column.

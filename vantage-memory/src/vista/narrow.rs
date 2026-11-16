@@ -1,13 +1,15 @@
 //! Narrowing a `MemoryTableShell`: conditions checked against the declared
-//! columns, and their operands conformed to the column's stored form.
+//! columns, their operands conformed to the column's stored form, then added
+//! to the table.
 
 use ciborium::Value as CborValue;
 use vantage_core::{Result, error};
+use vantage_table::sorting::{OrderBy, SortDirection as TableSort};
 use vantage_vista::{Condition, FilterOp, SortDirection};
 
 use super::MemoryTableShell;
-use crate::MemoryCondition;
 use crate::store::ids::{id_forms, supplied_id};
+use crate::{AnyMemoryType, MemoryCondition};
 
 impl MemoryTableShell {
     /// A condition on `column` is accepted when the shell declares no
@@ -25,7 +27,7 @@ impl MemoryTableShell {
         }
         Err(error!(
             "Unknown column for condition",
-            table = self.table.name(),
+            table = self.handle.name(),
             column = column
         ))
     }
@@ -71,44 +73,80 @@ impl MemoryTableShell {
         }
     }
 
+    /// The table fills and checks an equality condition on writes. A dotted
+    /// path into a map has no flat cell to fill, so it goes in as a
+    /// temporary condition, which the table leaves to the set check; a
+    /// column named with a dot is a flat cell.
     pub(super) fn narrow_by(&mut self, condition: &Condition) -> Result<()> {
         let column = condition.column.as_str();
         self.check_column(column)?;
-        // A dotted path into a map has no flat cell to fill, so writes are
-        // left to the set check; a column named with a dot is a flat cell.
-        let flat = !column.contains('.') || self.metadata.columns.contains_key(column);
-        if condition.op == FilterOp::Eq && flat {
-            let value = self.affinity(column).conform(&condition.value);
-            self.invariants.insert(column.to_string(), value);
-        }
         let stored = self.store_condition(condition);
-        self.query.conditions.push(stored);
+        let flat = !column.contains('.') || self.metadata.columns.contains_key(column);
+        if !flat {
+            self.table.temp_add_condition(stored);
+            return Ok(());
+        }
+        self.table.add_condition(stored);
+        // A widened equality is an `InSet`, which the table doesn't fill; a
+        // roll-up is computed, so nothing is written to it.
+        let rollup = self
+            .table
+            .data_source()
+            .is_rollup(self.table.table_name(), column);
+        if condition.op == FilterOp::Eq && !rollup {
+            let value = self.affinity(column).conform(&condition.value);
+            self.table
+                .add_invariant(column, AnyMemoryType::untyped(value));
+        }
         Ok(())
     }
 
     /// The search reads the metadata's
     /// [`search_columns`](vantage_vista::VistaMetadata::search_columns);
     /// metadata that declares no columns searches every cell.
-    pub(super) fn replace_search(&mut self, text: Option<&str>) {
-        self.query.search = text.map(str::to_string);
-        self.query.search_columns = self
-            .metadata
-            .search_columns()
-            .into_iter()
-            .map(str::to_string)
-            .collect();
+    pub(super) fn replace_search(&mut self, text: Option<&str>) -> Result<()> {
+        let condition = text.map(|text| MemoryCondition::Search {
+            text: text.to_string(),
+            columns: self
+                .metadata
+                .search_columns()
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+        });
+        self.search = self.table.replace_temp_condition(self.search, condition)?;
+        Ok(())
     }
 
     /// The store sorts on any field, so any declared column is an order key.
     pub(super) fn replace_order(&mut self, order: Option<(&str, SortDirection)>) -> Result<()> {
-        match order {
-            Some((column, dir)) => {
-                self.check_column(column)?;
-                self.query.order = vec![(column.to_string(), dir)];
-            }
-            None => self.query.order.clear(),
+        let order = order
+            .map(|(column, dir)| self.order_by(column, dir))
+            .transpose()?;
+        self.table.clear_orders();
+        if let Some(order) = order {
+            self.table.add_order(order);
         }
         Ok(())
+    }
+
+    /// A tie-breaker after the orders already set: the store sorts by every
+    /// key in turn.
+    pub(super) fn push_order(&mut self, column: &str, dir: SortDirection) -> Result<()> {
+        let order = self.order_by(column, dir)?;
+        self.table.add_order(order);
+        Ok(())
+    }
+
+    fn order_by(&self, column: &str, dir: SortDirection) -> Result<OrderBy<MemoryCondition>> {
+        self.check_column(column)?;
+        Ok(OrderBy {
+            expression: MemoryCondition::Column(column.to_string()),
+            direction: match dir {
+                SortDirection::Ascending => TableSort::Ascending,
+                SortDirection::Descending => TableSort::Descending,
+            },
+        })
     }
 }
 

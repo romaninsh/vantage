@@ -4,10 +4,10 @@ use ciborium::Value as CborValue;
 use vantage_dataset::contract::{self, Fixture, OpFixture};
 use vantage_dataset::prelude::*;
 use vantage_memory::typed::operation::MemoryOperation;
-use vantage_memory::{AnyMemoryType, MemoryCatalog, MemoryDB, MemoryStore};
+use vantage_memory::{AnyMemoryType, MemoryDB, MemoryStore, MemoryVistaFactory};
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
-use vantage_vista::{Column, ColumnFlag, FilterOp, Vista, VistaMetadata, VistaResolver};
+use vantage_vista::{FilterOp, Vista};
 
 fn text(s: &str) -> CborValue {
     CborValue::Text(s.into())
@@ -30,15 +30,14 @@ fn seeded() -> MemoryStore {
 }
 
 fn vista(store: &MemoryStore) -> Vista {
-    let md = VistaMetadata::new()
-        .with_column(Column::new("id", "String").with_flag(ColumnFlag::Id))
-        .with_column(Column::new("name", "String"))
-        .with_column(Column::new("parent", "String"))
-        .with_column(Column::new("price", "int"))
-        .with_id_column("id");
-    let catalog = MemoryCatalog::new(store.clone());
-    catalog.register("item", md);
-    catalog.vista("item").unwrap()
+    let table = Table::<MemoryDB, EmptyEntity>::new("item", MemoryDB::from_store(store.clone()))
+        .with_id_column("id")
+        .with_column_of::<String>("name")
+        .with_column_of::<String>("parent")
+        .with_column_of::<i64>("price");
+    MemoryVistaFactory::new(store.clone())
+        .from_table(table)
+        .unwrap()
 }
 
 macro_rules! vista_check {
@@ -146,16 +145,12 @@ async fn typed_insert_return_id_misfit_is_conflict_without_empty_id() {
 /// there, and stores no flat `"origin.country"` cell.
 #[tokio::test]
 async fn vista_dotted_set_confines_inserts() {
-    let catalog = MemoryCatalog::new(MemoryStore::new());
-    catalog.register(
-        "item",
-        VistaMetadata::new()
-            .with_column(Column::new("id", "String").with_flag(ColumnFlag::Id))
-            .with_column(Column::untyped("origin"))
-            .with_id_column("id"),
-    );
-    let set = catalog
-        .vista("item")
+    let store = MemoryStore::new();
+    let table = Table::<MemoryDB, EmptyEntity>::new("item", MemoryDB::from_store(store.clone()))
+        .with_id_column("id")
+        .with_column_of::<AnyMemoryType>("origin");
+    let set = MemoryVistaFactory::new(store.clone())
+        .from_table(table)
         .unwrap()
         .with_condition("origin.country", FilterOp::Eq, text("India"))
         .unwrap();
@@ -172,7 +167,7 @@ async fn vista_dotted_set_confines_inserts() {
     let stored = set.insert_value("i", &origin("India")).await.unwrap();
     assert_eq!(stored["origin"], origin("India")["origin"]);
     assert!(!stored.contains_key("origin.country"), "{stored:?}");
-    let row = catalog.store().table("item").get("i").unwrap();
+    let row = store.table("item").get("i").unwrap();
     assert!(!row.contains_key("origin.country"), "{row:?}");
 }
 

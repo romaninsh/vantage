@@ -50,7 +50,7 @@ fn cell_key(row: &Record<CborValue>, column: &str) -> Option<String> {
 
 /// Bucket order is not kept (removal swaps); callers restore row order by
 /// sorting candidates on their position in the row map.
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct HashIndex {
     by_key: HashMap<String, IndexSet<String>>,
     /// Rows whose cell has no key; always candidates.
@@ -83,6 +83,7 @@ impl HashIndex {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct Indexes {
     columns: HashMap<String, HashIndex>,
 }

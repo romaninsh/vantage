@@ -13,7 +13,7 @@ use vantage_table::table::Table;
 use vantage_table::traits::column_like::ColumnLike;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
-use vantage_vista::FilterOp;
+use vantage_vista::{FilterOp, Transaction};
 
 use super::MemoryDB;
 use super::convert::{from_cbor_record, table_query};
@@ -112,6 +112,17 @@ impl TableSource for MemoryDB {
         }
     }
 
+    fn transaction(&self) -> Option<Transaction> {
+        self.tx.as_ref().and_then(|tx| tx.transaction())
+    }
+
+    fn without_transaction(&self) -> Self {
+        Self {
+            tx: None,
+            ..self.clone()
+        }
+    }
+
     fn can_confine_writes(&self) -> bool {
         true
     }
@@ -160,11 +171,17 @@ impl TableSource for MemoryDB {
     where
         E: Entity<Self::Value>,
     {
-        let Some(row) = self.store_table(table)?.get(id) else {
-            return Ok(None);
-        };
-        let q = table_query(table).await?;
-        Ok(matches_all(&q, &row)?.then(|| from_cbor_record(&row)))
+        self.settle(
+            async {
+                let Some(row) = self.store_table(table).await?.get(id) else {
+                    return Ok(None);
+                };
+                let row = self.filled_row(table, id, row).await?;
+                let q = table_query(table).await?;
+                Ok(matches_all(&q, &row)?.then(|| from_cbor_record(&row)))
+            }
+            .await,
+        )
     }
 
     async fn get_table_some_value<E>(
@@ -174,21 +191,31 @@ impl TableSource for MemoryDB {
     where
         E: Entity<Self::Value>,
     {
-        let mut q = table_query(table).await?;
-        q.limit = Some(1);
-        let rows = self.store_table(table)?.query(&q)?;
-        Ok(rows
-            .into_iter()
-            .next()
-            .map(|(id, row)| (id, from_cbor_record(&row))))
+        self.settle(
+            async {
+                let mut q = table_query(table).await?;
+                q.limit = Some(1);
+                let rows = self.query_rows(table, &q).await?;
+                Ok(rows
+                    .into_iter()
+                    .next()
+                    .map(|(id, row)| (id, from_cbor_record(&row))))
+            }
+            .await,
+        )
     }
 
     async fn get_table_count<E>(&self, table: &Table<Self, E>) -> Result<i64>
     where
         E: Entity<Self::Value>,
     {
-        let q = table_query(table).await?;
-        Ok(self.store_table(table)?.count(&q)? as i64)
+        self.settle(
+            async {
+                let q = table_query(table).await?;
+                Ok(self.count_rows(table, &q).await? as i64)
+            }
+            .await,
+        )
     }
 
     async fn get_table_sum<E>(
@@ -199,7 +226,7 @@ impl TableSource for MemoryDB {
     where
         E: Entity<Self::Value>,
     {
-        self.sum(table, column).await
+        self.settle(self.sum(table, column).await)
     }
 
     async fn get_table_max<E>(
@@ -210,7 +237,7 @@ impl TableSource for MemoryDB {
     where
         E: Entity<Self::Value>,
     {
-        self.extreme(table, column, Ordering::Greater).await
+        self.settle(self.extreme(table, column, Ordering::Greater).await)
     }
 
     async fn get_table_min<E>(
@@ -221,7 +248,7 @@ impl TableSource for MemoryDB {
     where
         E: Entity<Self::Value>,
     {
-        self.extreme(table, column, Ordering::Less).await
+        self.settle(self.extreme(table, column, Ordering::Less).await)
     }
 
     async fn insert_table_value<E>(
@@ -233,7 +260,7 @@ impl TableSource for MemoryDB {
     where
         E: Entity<Self::Value>,
     {
-        self.insert_in_set(table, id, record).await
+        self.settle(self.insert_in_set(table, id, record).await)
     }
 
     async fn replace_table_value<E>(
@@ -245,7 +272,7 @@ impl TableSource for MemoryDB {
     where
         E: Entity<Self::Value>,
     {
-        self.replace_in_set(table, id, record).await
+        self.settle(self.replace_in_set(table, id, record).await)
     }
 
     async fn patch_table_value<E>(
@@ -257,21 +284,21 @@ impl TableSource for MemoryDB {
     where
         E: Entity<Self::Value>,
     {
-        self.patch_in_set(table, id, partial).await
+        self.settle(self.patch_in_set(table, id, partial).await)
     }
 
     async fn delete_table_value<E>(&self, table: &Table<Self, E>, id: &Self::Id) -> Result<()>
     where
         E: Entity<Self::Value>,
     {
-        self.delete_in_set(table, id).await
+        self.settle(self.delete_in_set(table, id).await)
     }
 
     async fn delete_table_all_values<E>(&self, table: &Table<Self, E>) -> Result<()>
     where
         E: Entity<Self::Value>,
     {
-        self.delete_all_in_set(table).await
+        self.settle(self.delete_all_in_set(table).await)
     }
 
     async fn insert_table_return_id_value<E>(
@@ -282,7 +309,7 @@ impl TableSource for MemoryDB {
     where
         E: Entity<Self::Value>,
     {
-        self.insert_new_in_set(table, record).await
+        self.settle(self.insert_new_in_set(table, record).await)
     }
 
     fn related_in_condition<SourceE: Entity<Self::Value> + 'static>(

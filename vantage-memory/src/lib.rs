@@ -4,6 +4,7 @@
 pub mod eval;
 pub mod seed;
 pub mod store;
+mod tx;
 pub mod typed;
 pub mod types;
 mod vista;
@@ -12,16 +13,15 @@ pub use eval::{MemoryCondition, Query};
 pub use store::{
     MemoryChange, MemoryStore, MemoryTable, MemoryTableHandle, Row, TableDef, UpsertOutcome,
 };
-pub use typed::{MemoryDB, operation::MemoryOperation};
+pub use typed::{MemoryDB, MemoryRollup, MemoryRollupExt, operation::MemoryOperation};
 pub use types::{AnyMemoryType, MemoryType, MemoryTypeVariants};
 pub use vista::{
-    MemoryBlock, MemoryCatalog, MemoryTableExtras, MemoryTableShell, MemoryVistaFactory,
-    MemoryVistaSpec,
+    MemoryBlock, MemoryTableExtras, MemoryTableShell, MemoryVistaFactory, MemoryVistaSpec,
 };
 
 pub mod prelude {
     pub use crate::eval::MemoryCondition;
-    pub use crate::typed::MemoryDB;
     pub use crate::typed::operation::MemoryOperation;
+    pub use crate::typed::{MemoryDB, MemoryRollupExt};
     pub use crate::types::{AnyMemoryType, MemoryType, MemoryTypeVariants};
 }

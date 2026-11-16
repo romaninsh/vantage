@@ -11,9 +11,9 @@ use tokio::task::JoinHandle;
 use vantage_dataset::prelude::ReadableValueSet;
 use vantage_diorama::{Cache, Dio, Lens, Loader, LoaderCx, TableScenery};
 use vantage_memory::{
-    MemoryCatalog, MemoryChange, MemoryStore, MemoryTableHandle, MemoryTableShell,
+    MemoryChange, MemoryStore, MemoryTableHandle, MemoryVistaFactory, MemoryVistaSpec,
 };
-use vantage_vista::{SortDirection, Vista, VistaMetadata};
+use vantage_vista::{ColumnSpec, SortDirection, VistaFactory, VistaMetadata};
 
 use crate::sampler::EventTotals;
 
@@ -89,6 +89,19 @@ pub fn lens(cache_dir: &Path) -> Result<Arc<Lens>, String> {
         .map_err(|e| format!("lens: {e}"))
 }
 
+/// The spec declaring `metadata`'s columns, with their types and flags.
+fn spec_of(name: &str, id: &str, metadata: &VistaMetadata) -> MemoryVistaSpec {
+    let mut spec = MemoryVistaSpec::new(name);
+    spec.id_column = Some(metadata.id_column.clone().unwrap_or_else(|| id.to_string()));
+    for (column_name, column) in &metadata.columns {
+        let mut col = ColumnSpec::new();
+        col.col_type = column.original_type.clone();
+        col.flags = column.flags().to_vec();
+        spec.columns.insert(column_name.clone(), col);
+    }
+    spec
+}
+
 /// Count `table`'s changes. With a `lens`, the table also backs a Dio that
 /// watches it.
 pub async fn attach(
@@ -103,10 +116,10 @@ pub async fn attach(
     let lagged = Arc::new(AtomicU64::new(0));
     let (dio, scenery) = match lens {
         Some(lens) => {
-            let name = table.name().to_string();
             let id = table.id_column().to_string();
-            let shell = MemoryTableShell::new(table, metadata, MemoryCatalog::new(store.clone()));
-            let vista = Vista::new(name, shell);
+            let vista = MemoryVistaFactory::new(store.clone())
+                .build_from_spec(spec_of(table.name(), &id, &metadata))
+                .map_err(|e| format!("vista: {e}"))?;
             let dio = lens
                 .dio(vista)
                 .live()

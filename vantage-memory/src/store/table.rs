@@ -72,6 +72,18 @@ impl MemoryTable {
         copy
     }
 
+    /// An independent copy: the same rows and indexes, its own id counter
+    /// from where this one stands, a fresh change channel, no journal.
+    pub(super) fn detached_copy(&self) -> MemoryTable {
+        let mut copy = MemoryTable::new(self.name.clone(), self.def.clone());
+        copy.ids = Arc::new(self.ids.fork());
+        let rows = self.rows.read();
+        let held = copy.rows.get_mut();
+        held.map = rows.map.clone();
+        held.indexes = rows.indexes.clone();
+        copy
+    }
+
     pub fn name(&self) -> &str {
         &self.name
     }

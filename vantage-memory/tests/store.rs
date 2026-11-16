@@ -484,3 +484,76 @@ fn count_matches_the_rows_a_query_returns() {
     assert_eq!(t.count(&q).unwrap(), 2);
     assert_eq!(t.count(&Query::new()).unwrap(), 3);
 }
+
+fn forkable() -> MemoryStore {
+    let store = MemoryStore::new();
+    let t = store.define(
+        "t",
+        TableDef {
+            indexed: vec!["k".into()],
+            id_prefix: Some("T-".into()),
+            ..TableDef::default()
+        },
+    );
+    t.upsert("a", row(&[("k", text("x"))]));
+    t.upsert("b", row(&[("k", text("y"))]));
+    store
+}
+
+#[test]
+fn a_fork_reads_the_rows_it_was_forked_with() {
+    let store = forkable();
+    let fork = store.fork();
+    assert_eq!(fork.table_names(), ["t"]);
+    assert_eq!(fork.table("t").ids(), ["a", "b"]);
+    assert_eq!(fork.table("t").get("a"), store.table("t").get("a"));
+}
+
+#[test]
+fn writes_to_a_fork_do_not_reach_the_source() {
+    let store = forkable();
+    let fork = store.fork();
+    fork.table("t").upsert("c", row(&[("k", text("z"))]));
+    fork.table("t").delete("a");
+    fork.table("t").patch("b", &row(&[("k", text("w"))]));
+    fork.table("u").upsert("n", row(&[]));
+    let source = store.table("t");
+    assert_eq!(source.ids(), ["a", "b"]);
+    assert_eq!(ids_of(&source, &eq("k", text("y"))), ["b"]);
+    assert_eq!(store.table_names(), ["t"]);
+}
+
+#[test]
+fn writes_to_the_source_do_not_reach_a_fork() {
+    let store = forkable();
+    let fork = store.fork();
+    let mut watch = fork.table("t").subscribe();
+    store.table("t").upsert("c", row(&[("k", text("z"))]));
+    store.table("t").delete("a");
+    assert_eq!(fork.table("t").ids(), ["a", "b"]);
+    assert!(drain(&mut watch).is_empty());
+}
+
+#[test]
+fn forks_have_independent_id_counters() {
+    let store = forkable();
+    store.table("t").insert(row(&[])).unwrap();
+    let (one, two) = (store.fork(), store.fork());
+    let id_one = one.table("t").insert(row(&[])).unwrap();
+    let id_two = two.table("t").insert(row(&[])).unwrap();
+    assert_eq!(id_one, "T-2");
+    assert_eq!(id_two, "T-2");
+    assert_eq!(store.table("t").insert(row(&[])).unwrap(), "T-2");
+}
+
+#[test]
+fn a_fork_keeps_indexes() {
+    let store = forkable();
+    store.table("t").add_index("other");
+    let fork = store.fork();
+    let t = fork.table("t");
+    assert!(t.is_indexed("k") && t.is_indexed("other"));
+    assert_eq!(ids_of(&t, &eq("k", text("y"))), ["b"]);
+    t.upsert("c", row(&[("k", text("y"))]));
+    assert_eq!(ids_of(&t, &eq("k", text("y"))), ["b", "c"]);
+}

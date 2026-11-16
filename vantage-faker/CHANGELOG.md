@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.0.0 — 2026-11-14
+
+- **Breaking:** requires vantage-memory 4. The public API exposes vantage-memory types, so a
+  caller on vantage-memory 3 has to move to 4 with it. A sim's `table(name)` is built by
+  `MemoryVistaFactory`.
+- Requires vantage-vista 2.11.0. A shaped faker vista forwards `add_order`, so chained Rhai
+  `.sort()` calls add columns here too (gated by the shape's `Order` capability).
+
 ## 2.0.2 — 2026-10-31
 
 - Requires vantage-vista 2.6.0 and vantage-memory 3.1.0. Inside an `atomic` block the faker vista

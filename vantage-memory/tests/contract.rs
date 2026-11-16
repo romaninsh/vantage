@@ -329,3 +329,60 @@ async fn opposite_order_blocks_on_two_stores_dont_hang() {
         "the rolled-back write landed"
     );
 }
+
+#[tokio::test]
+async fn a_transaction_in_a_fork_commits_only_there() {
+    let source = MemoryStore::new();
+    let tables = tables_on(source.clone());
+    tables
+        .a
+        .insert_value("x", &rec(&[("n", int(0))]))
+        .await
+        .unwrap();
+    let fork = source.fork();
+    let in_fork = tables_on(fork.clone()).a;
+
+    let tx = Transaction::new();
+    tx.wrap(&in_fork)
+        .patch_value("x", &rec(&[("n", int(5))]))
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+
+    let n = |store: &MemoryStore| store.table("a").get("x").and_then(|r| r.get("n").cloned());
+    assert_eq!(n(&fork), Some(int(5)));
+    assert_eq!(n(&source), Some(int(0)));
+}
+
+#[tokio::test]
+async fn a_fork_taken_during_an_open_transaction_sees_only_committed_rows() {
+    let source = MemoryStore::new();
+    let a = tables_on(source.clone()).a;
+    a.insert_value("x", &rec(&[("n", int(0))])).await.unwrap();
+
+    let tx = Transaction::new();
+    tx.wrap(&a)
+        .patch_value("x", &rec(&[("n", int(9))]))
+        .await
+        .unwrap();
+
+    let fork = timeout(Duration::from_secs(2), async { source.fork() })
+        .await
+        .expect("the fork blocked");
+    let n = |store: &MemoryStore| store.table("a").get("x").and_then(|r| r.get("n").cloned());
+    assert_eq!(n(&fork), Some(int(0)));
+
+    let in_fork = tables_on(fork.clone()).a;
+    timeout(
+        Duration::from_secs(2),
+        in_fork.patch_value("x", &rec(&[("n", int(3))])),
+    )
+    .await
+    .expect("a write to the fork blocked")
+    .unwrap();
+    assert_eq!(n(&fork), Some(int(3)));
+
+    tx.commit().await.unwrap();
+    assert_eq!(n(&source), Some(int(9)));
+    assert_eq!(n(&fork), Some(int(3)));
+}

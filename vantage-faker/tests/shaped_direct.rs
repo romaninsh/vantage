@@ -4,9 +4,9 @@
 
 use ciborium::Value as CborValue;
 use vantage_faker::{BackendShape, ShapedShell};
-use vantage_memory::{MemoryCatalog, MemoryStore, MemoryTableShell};
+use vantage_memory::{MemoryStore, MemoryVistaFactory};
 use vantage_types::Record;
-use vantage_vista::{Capability, Column, ColumnFlag, SortDirection, TableShell, VistaMetadata};
+use vantage_vista::{Capability, SortDirection, TableShell, VistaFactory};
 
 /// Three rows behind a shape that lists no capability at all.
 fn bare_shape() -> ShapedShell {
@@ -15,16 +15,18 @@ fn bare_shape() -> ShapedShell {
     for id in ["a", "b", "c"] {
         table.insert_as(id, Record::new()).unwrap();
     }
-    let metadata = VistaMetadata::new()
-        .with_column(Column::new("id", "string").with_flag(ColumnFlag::Id))
-        .with_id_column("id");
-    let inner = MemoryTableShell::new(table, metadata, MemoryCatalog::new(store));
     let shape = BackendShape {
         capabilities: Default::default(),
         seed: Some(1),
         ..BackendShape::default()
     };
-    ShapedShell::new(Box::new(inner), shape)
+    // `map_shell` hands over the bare memory shell; keep the shape built on it.
+    let mut shaped = None;
+    MemoryVistaFactory::new(store)
+        .from_yaml("name: t\ncolumns:\n  id: { type: string, flags: [id] }\n")
+        .unwrap()
+        .map_shell(|inner| shaped.insert(ShapedShell::new(inner, shape)).clone());
+    shaped.unwrap()
 }
 
 fn refused<T>(result: vantage_core::Result<T>, capability: Capability) {

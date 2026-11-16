@@ -3,7 +3,7 @@
 
 use vantage_core::Result;
 
-use crate::eval::{Query, matches_all, sort_rows};
+use crate::eval::{Query, matches_all, sort_rows, window_rows};
 
 use super::{MemoryTable, Row};
 
@@ -12,11 +12,7 @@ impl MemoryTable {
     pub fn query(&self, q: &Query) -> Result<Vec<(String, Row)>> {
         let mut out = self.matching(q)?;
         sort_rows(&mut out, &q.order);
-        let end = q
-            .limit
-            .map_or(out.len(), |l| q.offset.saturating_add(l).min(out.len()));
-        let start = q.offset.min(end);
-        Ok(out.drain(start..end).collect())
+        Ok(window_rows(out, q))
     }
 
     /// How many rows match `q`'s conditions and search (order and window ignored).

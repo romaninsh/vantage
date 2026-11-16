@@ -131,6 +131,41 @@ async fn vista_writes_reach_the_watch() {
 }
 
 #[tokio::test]
+async fn a_child_write_invalidates_a_watched_parent_with_a_rollup() {
+    use vantage_memory::prelude::*;
+    use vantage_memory::{MemoryDB, MemoryRollup};
+    use vantage_table::prelude::*;
+    use vantage_table::table::RollupOp;
+    use vantage_types::EmptyEntity;
+
+    let store = MemoryStore::new();
+    let ledger = store.table("txn");
+    let investors =
+        Table::<MemoryDB, EmptyEntity>::new("investor", MemoryDB::from_store(store.clone()))
+            .with_id_column("id")
+            .with_column_of::<String>("name")
+            .with_memory_rollup(
+                MemoryRollup::new("cash", "txn", "investor", RollupOp::Sum).with_source("amount"),
+            );
+    let v = MemoryVistaFactory::new(store.clone())
+        .from_table(investors)
+        .unwrap();
+    store.table("investor").upsert("v1", status("x"));
+    let mut w = v.watch().await.unwrap();
+
+    let deposit: vantage_types::Record<CborValue> = [
+        ("investor".to_string(), text("v1")),
+        ("amount".to_string(), CborValue::Integer(5.into())),
+    ]
+    .into_iter()
+    .collect();
+    ledger.upsert("t1", deposit);
+    assert!(matches!(next(&mut w).await, VistaChange::Invalidated));
+    store.table("investor").patch("v1", &status("y"));
+    assert!(matches!(next(&mut w).await, VistaChange::Invalidated));
+}
+
+#[tokio::test]
 async fn typed_writes_reach_the_watch() {
     use vantage_memory::MemoryDB;
     use vantage_memory::prelude::*;
