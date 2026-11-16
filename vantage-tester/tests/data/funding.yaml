@@ -1,0 +1,52 @@
+# tests/scenarios/funding.yaml
+fixtures: acme-part-funded
+vars:
+  acme:             { record: loan, id: "loan:acme" }
+  carol:            { record: investor, id: "investor:carol" }
+  dave:             { record: investor, id: "investor:dave" }
+  acme_active_bids: { vista: bid, where: { loan: $acme, status: active } }
+
+scenarios:
+  funded:
+    session: { app: portal, investor_id: $carol, owner: carol }
+    clock: 2026-11-14T09:00:00Z
+    steps:
+      - step: Carol places the bid that fills the loan
+        do: { action: place_bid, args: { loan: $acme, amount: 2000, rate: 7 } }
+        assert:
+          - result.bid != ()
+          - acme_active_bids.count() == 2
+        vars:
+          carol_bid: { record: bid, from: result.bid }
+        what_if: [no-cash, too-small, too-late]
+      - step: Admin closes the auction two days later
+        clock: +2d
+        as: desktop
+        before: |
+          set(acme, #{ bid_total: 10000, funded_pct: 100 })
+        do: { record: $acme, action: close_auction }
+        assert:
+          - acme.status == "repaying"
+        what_if: [revoked]
+
+  no-cash:
+    steps:
+      - step: Carol tries to place a bid, but has not enough funds
+        before: |
+          set("txn", "txn:drain", #{ investor: carol.id, kind: "withdrawal", amount: -4900 })
+        fails: "Not enough cash"
+
+  too-small:
+    steps:
+      - step: Carol places a bid that leaves the loan short
+        do: { action: place_bid, args: { loan: $acme, amount: 500, rate: 7 } }
+      - step: Admin tries to close a loan that is not fully funded
+        as: desktop
+        do: { record: $acme, action: close_auction }
+        fails: "below the"
+
+  too-late:
+    steps:
+      - step: Carol bids after the auction window has ended
+        clock: +8d
+        fails: "auction has ended"
