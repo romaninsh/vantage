@@ -112,6 +112,12 @@ impl TableShell for DioShell {
 
     fn set_order(&mut self, order: Option<(&str, SortDirection)>) -> Result<()> {
         self.query.order = order.map(|(field, dir)| (field.to_string(), dir));
+        self.query.then_by.clear();
+        Ok(())
+    }
+
+    fn add_order(&mut self, column: &str, dir: SortDirection) -> Result<()> {
+        self.query.then_by.push((column.to_string(), dir));
         Ok(())
     }
 
@@ -235,16 +241,17 @@ impl DioShell {
                 kept.push((id, row));
             }
         }
-        let dio_order = if from_master {
-            &self.dio.residual.order
+        let dio = if from_master {
+            &self.dio.residual
         } else {
-            &self.dio.query.order
+            &self.dio.query
         };
-        match (&local.order, dio_order) {
-            (None, Some((column, dir))) => VistaQuery::new()
-                .with_order(column, *dir)
-                .sort_rows(&mut kept, &self.metadata),
-            _ => local.sort_rows(&mut kept, &self.metadata),
+        if local.order.is_none() && dio.order.is_some() {
+            let mut by_dio = VistaQuery::new();
+            by_dio.copy_order_from(dio);
+            by_dio.sort_rows(&mut kept, &self.metadata);
+        } else {
+            local.sort_rows(&mut kept, &self.metadata);
         }
         Ok(kept.into_iter().collect())
     }

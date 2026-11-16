@@ -5,11 +5,11 @@ use std::sync::Arc;
 
 use ciborium::Value as CborValue;
 use serde_json::json;
-use vantage_memory::{MemoryCatalog, MemoryStore};
+use vantage_memory::{MemoryStore, MemoryVistaFactory};
 use vantage_rhai::Host;
 use vantage_types::Record;
 use vantage_vista::rhai::preview_script;
-use vantage_vista::{Column, ColumnFlag, JoinKey, Reference, VistaMetadata, VistaResolver};
+use vantage_vista::{VistaFactory, VistaResolver};
 
 use super::support::{host_with, json, read_write, read_write_terminals, run, store};
 
@@ -35,33 +35,36 @@ fn shop() -> Arc<dyn VistaResolver> {
             .insert_as(id, text_row(&[("client", client)]))
             .unwrap();
     }
-    let catalog = MemoryCatalog::new(store);
-    catalog.register(
-        "client",
-        VistaMetadata::new()
-            .with_column(Column::new("id", "String").with_flag(ColumnFlag::Id))
-            .with_column(Column::new("name", "String").with_flag(ColumnFlag::Orderable))
-            .with_id_column("id")
-            .with_reference(Reference::has_many(
-                "orders",
-                "order",
-                JoinKey::new("id", "client"),
-            )),
-    );
-    catalog.register(
-        "order",
-        VistaMetadata::new()
-            .with_column(Column::new("id", "String").with_flag(ColumnFlag::Id))
-            .with_column(Column::new("client", "String"))
-            .with_id_column("id")
-            .with_reference(Reference::has_one(
-                "client",
-                "client",
-                JoinKey::to_target_id("client"),
-            )),
-    );
-    Arc::new(catalog)
+    let factory = MemoryVistaFactory::new(store);
+    // Built once up front, so a traversal to either finds its spec.
+    factory.from_yaml(CLIENT).unwrap();
+    factory.from_yaml(ORDER).unwrap();
+    Arc::new(move |name: &str| match name {
+        "client" => factory.from_yaml(CLIENT),
+        "order" => factory.from_yaml(ORDER),
+        other => Err(vantage_core::error!("no such table", table = other).mark_not_found()),
+    })
 }
+
+const CLIENT: &str = r#"
+name: client
+id_column: id
+columns:
+  id: { type: String, flags: [id] }
+  name: { type: String }
+references:
+  orders: { table: order, kind: has_many, foreign_key: client }
+"#;
+
+const ORDER: &str = r#"
+name: order
+id_column: id
+columns:
+  id: { type: String, flags: [id] }
+  client: { type: String }
+references:
+  client: { table: client, kind: has_one, foreign_key: client }
+"#;
 
 fn shop_host(resolver: Arc<dyn VistaResolver>) -> Host {
     host_with(resolver, read_write_terminals())

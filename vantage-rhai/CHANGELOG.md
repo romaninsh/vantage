@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.6.0 — 2026-11-14
+
+- `Clock`: the time `now()` and `today()` read. `Clock::system()` is the wall clock;
+  `Clock::manual(start)` stays put until `advance(by)` or `advance_months(n)` moves it. Clones
+  share one time, and `fork()` makes a manual clock that moves alone. A clock travels with the
+  engine it is registered on, so a test with its own clock can run beside a live app in one
+  process.
+- `Dates::register_with(engine, clock)` registers the date vocabulary over `clock`;
+  `.vocab(Dates)` keeps the system clock.
+- `Compiled::rebind(&host)`: the same compiled slot, evaluated on another host's engine (the same
+  vocabulary over another clock), without recompiling.
+
 ## 1.5.0 — 2026-11-11
 
 - `Dates`, a `Vocab` that gives scripts one date and datetime vocabulary. A host opts in with

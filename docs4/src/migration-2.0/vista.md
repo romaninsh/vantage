@@ -103,9 +103,11 @@ let red = teams().with_condition("name", FilterOp::Eq, "red")?;
 
 ## Search and order are set, not added
 
-`add_search` / `clear_search` and `add_order` / `clear_order` become `set_search(Option)` and
-`set_order(Option)`: `None` clears. A Vista holds one search and one order, so "add" described
-something the shells never did.
+`add_search` / `clear_search` and `clear_order` become `set_search(Option)` and
+`set_order(Option)`: `None` clears. A Vista holds one search and one primary order, so "add"
+described something the shells never did. `add_order` is back since vantage-vista 2.11 with a
+narrower meaning: it appends a tie-breaker column after the order set by `set_order`, and a shell
+that orders by one column refuses it as `Unsupported`.
 
 ```rust,compile_fail,E0599
 # use vantage_types::Record;
@@ -120,7 +122,7 @@ something the shells never did.
 # #[tokio::main(flavor = "current_thread")]
 # async fn main() -> vantage_core::Result<()> {
 let mut vista = teams();
-vista.add_order("name", SortDirection::Ascending)?;
+vista.add_search("red")?;
 # Ok(())
 # }
 ```

@@ -76,6 +76,15 @@ impl Handle {
         }
     }
 
+    /// The table this handle's rows belong to: its named base, unless a
+    /// `ref(..)` step leads to another table.
+    pub(crate) fn rows_table(&self) -> Option<&str> {
+        if self.steps.iter().any(|step| matches!(step, Step::Ref(_))) {
+            return None;
+        }
+        self.table_name()
+    }
+
     /// A new handle with `step` appended; `self` is left as it was.
     pub(crate) fn push(&self, step: Step) -> Handle {
         let mut steps = Vec::with_capacity(self.steps.len() + 1);
@@ -93,11 +102,13 @@ impl Handle {
     pub fn resolve(&self, resolver: Option<&dyn VistaResolver>) -> Result<Vista> {
         let mut vista = self.resolve_base(resolver)?;
         let mut ref_window = RowWindow::default();
+        let mut sorted = false;
         for step in self.steps.iter() {
             vista = step
-                .apply(vista, ref_window)
+                .apply(vista, ref_window, sorted)
                 .with_context(|| error!("Step can't be applied", step = step))?;
             ref_window = step.ref_window_after(ref_window);
+            sorted = step.sorted_after(sorted);
         }
         Ok(vista)
     }
@@ -120,7 +131,7 @@ impl Handle {
                 continue;
             }
             vista = step
-                .apply(vista, RowWindow::default())
+                .apply(vista, RowWindow::default(), false)
                 .with_context(|| error!("Step can't be applied", step = step))?;
         }
         Ok(vista)

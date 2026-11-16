@@ -87,6 +87,7 @@ pub fn vantage_vista::mocks::MockShell::default() -> Self
 impl vantage_vista::TableShell for vantage_vista::mocks::MockShell
 pub fn vantage_vista::mocks::MockShell::add_condition(&mut self, &vantage_vista::Condition) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::mocks::MockShell::add_native_condition(&mut self, vantage_vista::NativeCondition) -> vantage_core::util::error::Result<()>
+pub fn vantage_vista::mocks::MockShell::add_order(&mut self, &str, vantage_vista::SortDirection) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::mocks::MockShell::capabilities(&self) -> &vantage_vista::VistaCapabilities
 pub fn vantage_vista::mocks::MockShell::comparable_condition(&self, &vantage_vista::Condition) -> vantage_vista::Condition
 pub fn vantage_vista::mocks::MockShell::count<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<i64>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
@@ -259,14 +260,16 @@ pub struct vantage_vista::prelude::Vista
 impl vantage_vista::Vista
 pub fn vantage_vista::Vista::add_condition(&mut self, &str, vantage_vista::FilterOp, impl core::convert::Into<ciborium::value::Value>) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::Vista::add_native_condition(&mut self, vantage_vista::NativeCondition) -> vantage_core::util::error::Result<()>
-pub fn vantage_vista::Vista::set_order(&mut self, core::option::Option<(&str, vantage_vista::SortDirection)>) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::Vista::set_search(&mut self, core::option::Option<&str>) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::Vista::with_condition(self, &str, vantage_vista::FilterOp, impl core::convert::Into<ciborium::value::Value>) -> vantage_core::util::error::Result<Self>
 pub fn vantage_vista::Vista::with_id(self, impl core::convert::Into<ciborium::value::Value>) -> vantage_core::util::error::Result<Self>
 pub fn vantage_vista::Vista::with_native_condition(self, vantage_vista::NativeCondition) -> vantage_core::util::error::Result<Self>
-pub fn vantage_vista::Vista::with_order(self, &str, vantage_vista::SortDirection) -> vantage_core::util::error::Result<Self>
 pub fn vantage_vista::Vista::with_query(self, &vantage_vista::VistaQuery) -> vantage_core::util::error::Result<(Self, vantage_vista::VistaQuery)>
 pub fn vantage_vista::Vista::with_search(self, impl core::convert::Into<alloc::string::String>) -> vantage_core::util::error::Result<Self>
+impl vantage_vista::Vista
+pub fn vantage_vista::Vista::add_order(&mut self, &str, vantage_vista::SortDirection) -> vantage_core::util::error::Result<()>
+pub fn vantage_vista::Vista::set_order(&mut self, core::option::Option<(&str, vantage_vista::SortDirection)>) -> vantage_core::util::error::Result<()>
+pub fn vantage_vista::Vista::with_order(self, &str, vantage_vista::SortDirection) -> vantage_core::util::error::Result<Self>
 impl vantage_vista::Vista
 pub fn vantage_vista::Vista::capabilities(&self) -> &vantage_vista::VistaCapabilities
 pub fn vantage_vista::Vista::column(&self, &str) -> core::option::Option<&vantage_vista::Column>
@@ -332,15 +335,19 @@ pub vantage_vista::prelude::VistaQuery::conditions: alloc::vec::Vec<vantage_vist
 pub vantage_vista::prelude::VistaQuery::native: alloc::vec::Vec<alloc::string::String>
 pub vantage_vista::prelude::VistaQuery::order: core::option::Option<(alloc::string::String, vantage_vista::SortDirection)>
 pub vantage_vista::prelude::VistaQuery::search: core::option::Option<alloc::string::String>
+pub vantage_vista::prelude::VistaQuery::then_by: alloc::vec::Vec<(alloc::string::String, vantage_vista::SortDirection)>
 impl vantage_vista::VistaQuery
 pub fn vantage_vista::VistaQuery::cmp_rows(&self, (&str, &vantage_types::record::Record<ciborium::value::Value>), (&str, &vantage_types::record::Record<ciborium::value::Value>), &vantage_vista::VistaMetadata) -> core::cmp::Ordering
 pub fn vantage_vista::VistaQuery::is_locally_evaluable(&self) -> bool
 pub fn vantage_vista::VistaQuery::matches(&self, &vantage_types::record::Record<ciborium::value::Value>, &vantage_vista::VistaMetadata) -> vantage_core::util::error::Result<bool>
 pub fn vantage_vista::VistaQuery::sort_rows(&self, &mut [(alloc::string::String, vantage_types::record::Record<ciborium::value::Value>)], &vantage_vista::VistaMetadata)
 impl vantage_vista::VistaQuery
+pub fn vantage_vista::VistaQuery::copy_order_from(&mut self, &vantage_vista::VistaQuery)
 pub fn vantage_vista::VistaQuery::is_empty(&self) -> bool
 pub fn vantage_vista::VistaQuery::key(&self) -> alloc::string::String
 pub fn vantage_vista::VistaQuery::new() -> Self
+pub fn vantage_vista::VistaQuery::orders(&self) -> impl core::iter::traits::iterator::Iterator<Item = (&str, vantage_vista::SortDirection)>
+pub fn vantage_vista::VistaQuery::then_order(self, impl core::convert::Into<alloc::string::String>, vantage_vista::SortDirection) -> Self
 pub fn vantage_vista::VistaQuery::with_condition(self, vantage_vista::Condition) -> Self
 pub fn vantage_vista::VistaQuery::with_order(self, impl core::convert::Into<alloc::string::String>, vantage_vista::SortDirection) -> Self
 pub fn vantage_vista::VistaQuery::with_search(self, impl core::convert::Into<alloc::string::String>) -> Self
@@ -588,6 +595,7 @@ pub fn vantage_vista::rhai::RecordDraft::from_row(vantage_vista::rhai::Handle, v
 pub fn vantage_vista::rhai::RecordDraft::id(&self) -> core::option::Option<alloc::string::String>
 pub fn vantage_vista::rhai::RecordDraft::load(vantage_vista::rhai::Handle, vantage_vista::rhai::Writes, &str) -> vantage_core::util::error::Result<Self>
 pub fn vantage_vista::rhai::RecordDraft::new_row(vantage_vista::rhai::Handle, vantage_vista::rhai::Writes) -> Self
+pub fn vantage_vista::rhai::RecordDraft::table(&self) -> core::option::Option<alloc::string::String>
 pub fn vantage_vista::rhai::RecordDraft::values(&self) -> indexmap::map::IndexMap<alloc::string::String, ciborium::value::Value>
 impl core::clone::Clone for vantage_vista::rhai::RecordDraft
 pub fn vantage_vista::rhai::RecordDraft::clone(&self) -> Self
@@ -1366,14 +1374,16 @@ pub struct vantage_vista::Vista
 impl vantage_vista::Vista
 pub fn vantage_vista::Vista::add_condition(&mut self, &str, vantage_vista::FilterOp, impl core::convert::Into<ciborium::value::Value>) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::Vista::add_native_condition(&mut self, vantage_vista::NativeCondition) -> vantage_core::util::error::Result<()>
-pub fn vantage_vista::Vista::set_order(&mut self, core::option::Option<(&str, vantage_vista::SortDirection)>) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::Vista::set_search(&mut self, core::option::Option<&str>) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::Vista::with_condition(self, &str, vantage_vista::FilterOp, impl core::convert::Into<ciborium::value::Value>) -> vantage_core::util::error::Result<Self>
 pub fn vantage_vista::Vista::with_id(self, impl core::convert::Into<ciborium::value::Value>) -> vantage_core::util::error::Result<Self>
 pub fn vantage_vista::Vista::with_native_condition(self, vantage_vista::NativeCondition) -> vantage_core::util::error::Result<Self>
-pub fn vantage_vista::Vista::with_order(self, &str, vantage_vista::SortDirection) -> vantage_core::util::error::Result<Self>
 pub fn vantage_vista::Vista::with_query(self, &vantage_vista::VistaQuery) -> vantage_core::util::error::Result<(Self, vantage_vista::VistaQuery)>
 pub fn vantage_vista::Vista::with_search(self, impl core::convert::Into<alloc::string::String>) -> vantage_core::util::error::Result<Self>
+impl vantage_vista::Vista
+pub fn vantage_vista::Vista::add_order(&mut self, &str, vantage_vista::SortDirection) -> vantage_core::util::error::Result<()>
+pub fn vantage_vista::Vista::set_order(&mut self, core::option::Option<(&str, vantage_vista::SortDirection)>) -> vantage_core::util::error::Result<()>
+pub fn vantage_vista::Vista::with_order(self, &str, vantage_vista::SortDirection) -> vantage_core::util::error::Result<Self>
 impl vantage_vista::Vista
 pub fn vantage_vista::Vista::capabilities(&self) -> &vantage_vista::VistaCapabilities
 pub fn vantage_vista::Vista::column(&self, &str) -> core::option::Option<&vantage_vista::Column>
@@ -1500,15 +1510,19 @@ pub vantage_vista::VistaQuery::conditions: alloc::vec::Vec<vantage_vista::Condit
 pub vantage_vista::VistaQuery::native: alloc::vec::Vec<alloc::string::String>
 pub vantage_vista::VistaQuery::order: core::option::Option<(alloc::string::String, vantage_vista::SortDirection)>
 pub vantage_vista::VistaQuery::search: core::option::Option<alloc::string::String>
+pub vantage_vista::VistaQuery::then_by: alloc::vec::Vec<(alloc::string::String, vantage_vista::SortDirection)>
 impl vantage_vista::VistaQuery
 pub fn vantage_vista::VistaQuery::cmp_rows(&self, (&str, &vantage_types::record::Record<ciborium::value::Value>), (&str, &vantage_types::record::Record<ciborium::value::Value>), &vantage_vista::VistaMetadata) -> core::cmp::Ordering
 pub fn vantage_vista::VistaQuery::is_locally_evaluable(&self) -> bool
 pub fn vantage_vista::VistaQuery::matches(&self, &vantage_types::record::Record<ciborium::value::Value>, &vantage_vista::VistaMetadata) -> vantage_core::util::error::Result<bool>
 pub fn vantage_vista::VistaQuery::sort_rows(&self, &mut [(alloc::string::String, vantage_types::record::Record<ciborium::value::Value>)], &vantage_vista::VistaMetadata)
 impl vantage_vista::VistaQuery
+pub fn vantage_vista::VistaQuery::copy_order_from(&mut self, &vantage_vista::VistaQuery)
 pub fn vantage_vista::VistaQuery::is_empty(&self) -> bool
 pub fn vantage_vista::VistaQuery::key(&self) -> alloc::string::String
 pub fn vantage_vista::VistaQuery::new() -> Self
+pub fn vantage_vista::VistaQuery::orders(&self) -> impl core::iter::traits::iterator::Iterator<Item = (&str, vantage_vista::SortDirection)>
+pub fn vantage_vista::VistaQuery::then_order(self, impl core::convert::Into<alloc::string::String>, vantage_vista::SortDirection) -> Self
 pub fn vantage_vista::VistaQuery::with_condition(self, vantage_vista::Condition) -> Self
 pub fn vantage_vista::VistaQuery::with_order(self, impl core::convert::Into<alloc::string::String>, vantage_vista::SortDirection) -> Self
 pub fn vantage_vista::VistaQuery::with_search(self, impl core::convert::Into<alloc::string::String>) -> Self
@@ -1576,6 +1590,7 @@ pub fn F::resolve(&self, &str) -> core::option::Option<S>
 pub trait vantage_vista::TableShell: vantage_vista::CloneTableShell + core::marker::Send + core::marker::Sync + 'static
 pub fn vantage_vista::TableShell::add_condition(&mut self, &vantage_vista::Condition) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::TableShell::add_native_condition(&mut self, vantage_vista::NativeCondition) -> vantage_core::util::error::Result<()>
+pub fn vantage_vista::TableShell::add_order(&mut self, &str, vantage_vista::SortDirection) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::TableShell::capabilities(&self) -> &vantage_vista::VistaCapabilities
 pub fn vantage_vista::TableShell::comparable_condition(&self, &vantage_vista::Condition) -> vantage_vista::Condition
 pub fn vantage_vista::TableShell::count<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<i64>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
@@ -1604,6 +1619,7 @@ pub fn vantage_vista::TableShell::watch<'life0, 'async_trait>(&'life0 self) -> c
 impl vantage_vista::TableShell for vantage_vista::mocks::MockShell
 pub fn vantage_vista::mocks::MockShell::add_condition(&mut self, &vantage_vista::Condition) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::mocks::MockShell::add_native_condition(&mut self, vantage_vista::NativeCondition) -> vantage_core::util::error::Result<()>
+pub fn vantage_vista::mocks::MockShell::add_order(&mut self, &str, vantage_vista::SortDirection) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::mocks::MockShell::capabilities(&self) -> &vantage_vista::VistaCapabilities
 pub fn vantage_vista::mocks::MockShell::comparable_condition(&self, &vantage_vista::Condition) -> vantage_vista::Condition
 pub fn vantage_vista::mocks::MockShell::count<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<i64>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
@@ -1632,6 +1648,7 @@ pub fn vantage_vista::mocks::MockShell::watch<'life0, 'async_trait>(&'life0 self
 impl<T: vantage_vista::forward::shell::ForwardShell + core::clone::Clone> vantage_vista::TableShell for T
 pub fn T::add_condition(&mut self, &vantage_vista::Condition) -> vantage_core::util::error::Result<()>
 pub fn T::add_native_condition(&mut self, vantage_vista::NativeCondition) -> vantage_core::util::error::Result<()>
+pub fn T::add_order(&mut self, &str, vantage_vista::SortDirection) -> vantage_core::util::error::Result<()>
 pub fn T::capabilities(&self) -> &vantage_vista::VistaCapabilities
 pub fn T::comparable_condition(&self, &vantage_vista::Condition) -> vantage_vista::Condition
 pub fn T::count<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<i64>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait

@@ -75,6 +75,9 @@ impl<T: ForwardShell + Clone> TableShell for T {
     fn set_order(&mut self, order: Option<(&str, SortDirection)>) -> Result<()> {
         ForwardShell::set_order(self, order)
     }
+    fn add_order(&mut self, column: &str, dir: SortDirection) -> Result<()> {
+        ForwardShell::add_order(self, column, dir)
+    }
 
     async fn insert(&self, id: Option<&str>, record: &Rec) -> Result<(String, Rec)> {
         ForwardShell::insert(self, id, record).await

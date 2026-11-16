@@ -1,5 +1,41 @@
 # Changelog
 
+## 2.11.0 — 2026-11-14
+
+### Behaviour change
+
+- With the `rhai` feature, chained `.sort()` now adds columns; previously the last call won.
+  `table("bid").sort("rate", "desc").sort("placed_at")` ranks by rate and breaks ties by time.
+  The first `sort` still replaces the Vista's own order, and a `sort` after `ref(..)` starts a
+  new order. `Handle::query()` folds the same way.
+
+### Added
+
+- With the `rhai` feature, `table(..).delete_all()` deletes every row in the handle's set
+  (`table("claim").where("status", "draft").delete_all()`). It needs `Delete` and is refused when
+  `DeleteAll` is denied alone, as a policy's bulk-delete rule does.
+- Multi-column order. `VistaQuery::then_by` holds the tie-breaker columns after `order`, with
+  `then_order`, `orders()` and `copy_order_from`; `with_order` replaces both. `Vista::add_order`
+  appends a tie-breaker (with no order applied it acts as `set_order`), and `set_order` clears
+  them. `TableShell::add_order(column, dir)` defaults to `Unsupported`, so a shell that orders by
+  one column refuses it, and `Vista::with_query` hands the whole order back in the residual for
+  the caller to sort. `ForwardShell`, the blanket impl, transaction shells and `MockShell`
+  forward or record it. `eval` sorts by every column in turn, and `VistaQuery::key` covers the
+  tie-breakers (a query without them keeps its key).
+
+### Other
+
+- With the `rhai` feature, `RecordDraft::table()`: the table the row belongs to, `None` for a row
+  reached through `ref(..)` or over a Vista in hand. vantage-actions reads it to bind `row` when a
+  script calls a table-bound action with a record of that table.
+- Fix, on every backend: a nested insert took a declared dotted column (such as a read-through
+  `investor.name`) for has-one child data, creating a parent row or failing with "relation given
+  both a record link and child data". A key the Vista declares as a column is now a plain field;
+  the `relation.column` shorthand applies only to undeclared keys.
+- `cbor_cmp` and in-memory conditions take a CBOR date (`Tag(100, Text)`) as its text against
+  text, and as midnight UTC against a datetime. Before, a date compared by its debug text, so a
+  date column sorted and filtered apart from the store that holds it.
+
 ## 2.10.0 — 2026-11-11
 
 - `TableShell::comparable_condition(&Condition) -> Condition` (default: identity) and

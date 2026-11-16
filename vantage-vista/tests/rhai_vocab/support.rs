@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
 use ciborium::Value as CborValue;
-use vantage_memory::{MemoryCatalog, MemoryStore, MemoryTableShell};
+use vantage_memory::{MemoryStore, MemoryVistaFactory};
 use vantage_rhai::rhai::Dynamic;
 use vantage_rhai::{Block, Env, Host, Limits};
 use vantage_types::Record;
 use vantage_vista::mocks::MockShell;
 use vantage_vista::rhai::{DataVocab, Terminals, Writes};
 use vantage_vista::{
-    Column, ColumnFlag, IdGenerator, ShortId, Vista, VistaMetadata, VistaResolver,
+    Column, ColumnFlag, IdGenerator, ShortId, Vista, VistaFactory, VistaMetadata, VistaResolver,
 };
 
 pub fn rec(pairs: &[(&str, i64)]) -> Record<CborValue> {
@@ -33,7 +33,7 @@ pub fn store() -> MemoryStore {
 /// already holds `r1 {a:7}`, `auto` and `intid` empty mocks with a numeric id
 /// column, flagged `auto` on `auto`.
 pub fn resolver(store: &MemoryStore) -> Arc<dyn VistaResolver> {
-    let store = store.clone();
+    let factory = MemoryVistaFactory::new(store.clone());
     let mock = MockShell::new()
         .with_metadata(
             VistaMetadata::new()
@@ -53,15 +53,10 @@ pub fn resolver(store: &MemoryStore) -> Arc<dyn VistaResolver> {
             let metadata = VistaMetadata::new().with_column(id).with_id_column("id");
             return Ok(Vista::new(name, MockShell::new().with_metadata(metadata)));
         }
-        let metadata = VistaMetadata::new()
-            .with_column(Column::new("id", "String").with_flag(ColumnFlag::Id))
-            .with_column(Column::new("a", "int"))
-            .with_column(Column::new("n", "int").with_flag(ColumnFlag::Orderable))
-            .with_column(Column::new("tag", "String"))
-            .with_id_column("id");
-        let catalog = MemoryCatalog::new(store.clone());
-        let shell = MemoryTableShell::new(store.table(name), metadata, catalog);
-        let vista = Vista::new(name, shell);
+        let vista = factory.from_yaml(&format!(
+            "name: {name}\nid_column: id\ncolumns:\n  id: {{ type: String, flags: [id] }}\n  \
+             a: {{ type: int }}\n  n: {{ type: int }}\n  tag: {{ type: String }}\n"
+        ))?;
         if name == "short" {
             return Ok(vista.with_id_generator(IdGenerator::short(10, ShortId::BASE58)?));
         }

@@ -195,8 +195,8 @@ use std::time::Duration;
 use vantage_dataset::prelude::ReadableValueSet;
 use vantage_diorama::{Cache, Lens, Loader};
 use vantage_faker::{BackendShape, DatasetGen, FakerColumn, Latency, LatencyModel, ShapedShell, TableGen};
-use vantage_memory::{MemoryCatalog, MemoryStore, MemoryTableShell};
-use vantage_vista::{Capability, Column, ColumnFlag, Vista, VistaMetadata};
+use vantage_memory::{MemoryStore, MemoryVistaFactory};
+use vantage_vista::{Capability, VistaFactory};
 
 // The rows: 200,000 people from seed 103. Faker fills the `id` column itself.
 let store = MemoryStore::new();
@@ -210,15 +210,16 @@ let people = TableGen::new("people")
 DatasetGen::new(Some(103)).table(people).generate(&store)?;
 
 // The table file: columns and flags.
-let column = |name: &str, ty: &str| Column::new(name, ty).with_flag(ColumnFlag::Orderable);
-let metadata = VistaMetadata::new()
-    .with_column(Column::new("id", "string").with_flag(ColumnFlag::Id))
-    .with_column(column("name", "string").with_flag(ColumnFlag::Title).with_flag(ColumnFlag::Searchable))
-    .with_column(column("surname", "string").with_flag(ColumnFlag::Title).with_flag(ColumnFlag::Searchable))
-    .with_column(column("email", "string"))
-    .with_column(column("city", "string"))
-    .with_column(column("balance", "decimal"))
-    .with_id_column("id");
+let table = r#"
+name: people
+columns:
+  id: { type: string, flags: [id] }
+  name: { type: string, flags: [title, searchable] }
+  surname: { type: string, flags: [title, searchable] }
+  email: { type: string }
+  city: { type: string }
+  balance: { type: decimal }
+"#;
 
 // The `shape:` block. `count` has no capability in Rust: every Vista counts.
 let shape = BackendShape {
@@ -233,8 +234,9 @@ let shape = BackendShape {
     seed: Some(103),
     ..BackendShape::default()
 };
-let shell = MemoryTableShell::new(store.table("people"), metadata, MemoryCatalog::new(store.clone()));
-let vista = Vista::new("people", shell).map_shell(|inner| ShapedShell::new(inner, shape));
+let vista = MemoryVistaFactory::new(store.clone())
+    .from_yaml(table)?
+    .map_shell(|inner| ShapedShell::new(inner, shape));
 
 // From here, this is the normal reactive stack. Nothing is faker-specific.
 // Page a master that serves windows; copy one that doesn't.

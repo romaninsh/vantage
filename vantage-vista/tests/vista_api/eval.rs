@@ -155,6 +155,32 @@ fn a_datetime_is_taken_as_its_text() {
 }
 
 #[test]
+fn a_date_tag_orders_against_text_and_datetime() {
+    let date = |s: &str| CborValue::Tag(100, Box::new(t(s)));
+    let at = |s: &str| CborValue::Tag(0, Box::new(t(s)));
+    assert_eq!(
+        cbor_cmp(&date("2026-01-01"), &t("2026-01-01")),
+        Ordering::Equal
+    );
+    assert_eq!(
+        cbor_cmp(&date("2026-01-01"), &t("2026-01-02")),
+        Ordering::Less
+    );
+    assert_eq!(
+        cbor_cmp(&date("2026-01-01"), &at("2026-01-01T00:00:00Z")),
+        Ordering::Equal
+    );
+    assert_eq!(
+        cbor_cmp(&date("2026-01-01"), &at("2026-01-01T01:00:00+02:00")),
+        Ordering::Greater
+    );
+    let meta = VistaMetadata::new();
+    let row = rec(&[("due", date("2026-01-01"))]);
+    assert!(cond("due", FilterOp::Eq, t("2026-01-01")).matches(&row, &meta));
+    assert!(cond("due", FilterOp::Lt, at("2026-01-01T12:00:00Z")).matches(&row, &meta));
+}
+
+#[test]
 fn mixed_types_compare_deterministically() {
     let pairs = [
         (t("a"), i(1)),

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.4.0 — 2026-11-14
+
+- A SurrealDB Vista takes `add_order` (`ORDER BY a, b`): later columns break the ties of the
+  first, so a Rhai `.sort("a").sort("b")` sorts by both. Requires vantage-vista 2.11.0.
+
 ## 2.3.1 — 2026-11-13
 
 Requires vantage-table 3.8.0.

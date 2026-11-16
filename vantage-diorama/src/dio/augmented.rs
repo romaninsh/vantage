@@ -63,9 +63,7 @@ impl DioInner {
         {
             return Some(AugmentedClause::Filter(&condition.column));
         }
-        if let Some((column, _)) = &query.order
-            && self.may_be_augmented(column)
-        {
+        if let Some((column, _)) = query.orders().find(|(c, _)| self.may_be_augmented(c)) {
             return Some(AugmentedClause::Order(column));
         }
         query.search.as_ref().map(|_| AugmentedClause::Search)

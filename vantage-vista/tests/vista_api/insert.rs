@@ -177,6 +177,36 @@ async fn a_link_and_child_data_for_one_relation_is_an_error_before_any_write() {
     assert_eq!(shop.inventory.list_values().await.unwrap().len(), 0);
 }
 
+/// A bid that stores its investor's name in the read-through column
+/// `investor.name`, as a memory table does.
+#[tokio::test]
+async fn a_read_through_column_does_not_create_a_parent() {
+    let investors = MockShell::new().with_metadata(id_metadata(&["name"]));
+    let bid_meta = id_metadata(&["investor", "investor.name"]).with_reference(Reference::has_one(
+        "investor",
+        "investor",
+        JoinKey::to_target_id("investor"),
+    ));
+    let bids = MockShell::new()
+        .with_metadata(bid_meta)
+        .with_ref_target("investor", investors.clone());
+    let (bids, investors) = (Vista::new("bid", bids), Vista::new("investor", investors));
+
+    for (id, record) in [
+        (
+            "b1",
+            rec(&[("investor", t("bob")), ("investor.name", t("Bob"))]),
+        ),
+        ("b2", rec(&[("investor.name", t("Carol"))])),
+    ] {
+        bids.insert_value(id.to_string(), &record).await.unwrap();
+    }
+    assert_eq!(investors.list_values().await.unwrap().len(), 0);
+    let b1 = bids.get_value("b1").await.unwrap().unwrap();
+    assert_eq!(b1.get("investor"), Some(&t("bob")));
+    assert_eq!(b1.get("investor.name"), Some(&t("Bob")));
+}
+
 #[tokio::test]
 async fn a_child_of_the_wrong_shape_for_its_relation_is_an_error() {
     let shop = shop();

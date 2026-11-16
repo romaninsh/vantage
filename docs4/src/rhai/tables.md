@@ -36,9 +36,12 @@ keep a base handle in a variable and branch from it as often as you like.
 | `offset(n)` | the rows after the first `n` in sort order, as SQL's `OFFSET`; `n` can't be negative |
 | `ref(relation)` | the related rows of every row in the set |
 
-Conditions add up: every `where` narrows further. Sorting keeps one column. A later `sort`
-replaces an earlier one, as `Vista::set_order` does. Several `limit` steps keep the smallest, and
-several `offset` steps add up, so a later step never widens the set.
+Conditions add up: every `where` narrows further. Sorts add up too: the first `sort` is the order
+(replacing the table's own, as `Vista::set_order` does), and each later one breaks the ties left
+by those before it, as `Vista::add_order` does. `sort("rate", "desc").sort("placed_at")` ranks by
+rate, and rows with the same rate by time. A backend that orders by one column only refuses the
+second `sort`. Several `limit` steps keep the smallest, and several `offset` steps add up, so a
+later step never widens the set.
 
 `offset` and `limit` combine as in SQL, whatever order you call them in: `offset(20).limit(10)`
 and `limit(10).offset(20)` are both rows 20 to 29. The offset is skipped first and the limit counts

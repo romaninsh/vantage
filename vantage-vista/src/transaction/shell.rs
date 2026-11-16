@@ -160,6 +160,9 @@ impl TableShell for TxShell {
     fn set_order(&mut self, order: Option<(&str, SortDirection)>) -> Result<()> {
         self.ready_mut()?.set_order(order)
     }
+    fn add_order(&mut self, column: &str, dir: SortDirection) -> Result<()> {
+        self.ready_mut()?.add_order(column, dir)
+    }
 
     async fn insert(&self, id: Option<&str>, record: &Rec) -> Result<(String, Rec)> {
         let out = self.ready()?.insert(id, record).await?;

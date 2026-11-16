@@ -221,6 +221,10 @@ where
         self.apply_order(order)
     }
 
+    fn add_order(&mut self, column: &str, dir: SortDirection) -> Result<()> {
+        self.push_order(column, dir)
+    }
+
     async fn insert(
         &self,
         id: Option<&str>,

@@ -9,8 +9,9 @@ use crate::query::{Condition, VistaQuery};
 
 impl Handle {
     /// The handle's `where`, `search` and `sort` steps folded into one
-    /// [`VistaQuery`]: conditions in the order they were added, and the last
-    /// `search` and the last `sort`, as resolving the handle would apply them.
+    /// [`VistaQuery`]: conditions in the order they were added, the last
+    /// `search`, and every `sort` in turn (the first is the order, later
+    /// ones break its ties), as resolving the handle would apply them.
     ///
     /// Steps with no query form are an incorrect-usage error naming the verb:
     /// `ref` moves to another table, `limit` and `offset` pick rows by
@@ -27,7 +28,7 @@ impl Handle {
                     query = query.with_condition(Condition::new(col.as_str(), *op, value.clone()));
                 }
                 Step::Search(text) => query = query.with_search(text.as_str()),
-                Step::Sort { col, dir } => query = query.with_order(col.as_str(), *dir),
+                Step::Sort { col, dir } => query = query.then_order(col.as_str(), *dir),
                 Step::Limit(_) => return Err(no_query_form("limit")),
                 Step::Offset(_) => return Err(no_query_form("offset")),
                 Step::Ref(_) => return Err(no_query_form("ref")),

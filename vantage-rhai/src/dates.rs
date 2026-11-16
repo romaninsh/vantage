@@ -5,8 +5,9 @@
 //! `type: date` column and a datetime field. Reads arrive as text; `date(x)`
 //! turns that text back into a value and comparisons accept it directly.
 
+mod clock;
+
 use std::fmt::Write as _;
-use std::time::SystemTime;
 
 use chrono::{
     DateTime, Datelike, Months, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, Timelike, Utc,
@@ -15,20 +16,32 @@ use rhai::{Dynamic, Engine, EvalAltResult, ImmutableString};
 
 use crate::host::Vocab;
 
+pub use clock::Clock;
+
 type Instant = DateTime<Utc>;
 type Fallible<T> = Result<T, Box<EvalAltResult>>;
 
-/// The date vocabulary; register it on any host with `.vocab(Dates)`.
+/// The date vocabulary; register it on any host with `.vocab(Dates)`, which
+/// reads the system clock, or with [`Dates::register_with`] and a clock of
+/// your own.
 pub struct Dates;
 
 impl Vocab for Dates {
     fn register(&self, engine: &mut Engine) {
+        Self::register_with(engine, Clock::system());
+    }
+}
+
+impl Dates {
+    /// The vocabulary with `now()` and `today()` reading `clock`.
+    pub fn register_with(engine: &mut Engine, clock: Clock) {
         engine.register_type_with_name::<Instant>("DateTime");
         engine.register_fn("to_string", |dt: &mut Instant| dt.to_rfc3339());
         engine.register_fn("to_debug", |dt: &mut Instant| dt.to_rfc3339());
 
-        engine.register_fn("now", now);
-        engine.register_fn("today", || start_of_day(&now()));
+        let today = clock.clone();
+        engine.register_fn("now", move || clock.now());
+        engine.register_fn("today", move || start_of_day(&today.now()));
         engine.register_fn("date", |value: Dynamic| instant("date", value));
         engine.register_fn("date", from_parts);
         engine.register_fn("days_between", |a: Dynamic, b: Dynamic| {
@@ -84,10 +97,6 @@ impl Vocab for Dates {
 
         register_comparisons(engine);
     }
-}
-
-fn now() -> Instant {
-    Instant::from(SystemTime::now())
 }
 
 fn start_of_day(dt: &Instant) -> Instant {

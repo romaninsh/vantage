@@ -35,7 +35,7 @@ pub mod template;
 
 pub use atomic::register_atomic_syntax;
 pub use compiled::{Compiled, Env, Slot};
-pub use dates::Dates;
+pub use dates::{Clock, Dates};
 pub use error::{Located, Result, RhaiError};
 pub use host::{AST_CACHE_BOUND, Host, HostBuilder, Mode, Vocab, background_host, ui_host};
 pub use json::{from_json, to_json};

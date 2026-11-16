@@ -8,9 +8,10 @@
 //! - a cell is read by [`cell_get`], for conditions and order alike: a flat
 //!   key, or a dotted path into nested maps;
 //! - values compare by [`cbor_cmp`]: integers and floats numerically, a
-//!   datetime (`Tag(0, Text)`) as its text, and `3 == 3.0` for equality and
+//!   datetime (`Tag(0, Text)`) or date (`Tag(100, Text)`) as its text, and `3 == 3.0` for equality and
 //!   set membership;
-//! - a sort puts absent and null cells last in either direction, and breaks
+//! - a sort goes by the order column, then each tie-breaker column, puts
+//!   absent and null cells last in either direction, and breaks remaining
 //!   ties on id;
 //! - search is a case-insensitive substring of the text of a column
 //!   [`VistaMetadata::search_columns`] names (every cell when the metadata
@@ -136,7 +137,8 @@ impl VistaQuery {
     }
 
     /// The order [`sort_rows`](Self::sort_rows) sorts by: the order column,
-    /// absent and null cells last in either direction, then ascending id.
+    /// then each `then_by` column, absent and null cells last in either
+    /// direction, then ascending id.
     /// Without an order only the id decides, so `Equal` means the same id.
     /// Placing one row by a binary search over rows `sort_rows` sorted puts
     /// it where a fresh sort would.
@@ -149,19 +151,23 @@ impl VistaQuery {
         fn cell<'a>(row: &'a Rec, column: &str, metadata: &VistaMetadata) -> Option<&'a CborValue> {
             cell_get(row, column, metadata).filter(|v| !v.is_null())
         }
-        let ordering = match &self.order {
-            None => Ordering::Equal,
-            Some((column, dir)) => match (cell(a, column, metadata), cell(b, column, metadata)) {
-                (None, None) => Ordering::Equal,
-                (None, Some(_)) => Ordering::Greater,
-                (Some(_), None) => Ordering::Less,
-                (Some(l), Some(r)) => match dir {
-                    SortDirection::Ascending => cbor_cmp(l, r),
-                    SortDirection::Descending => cbor_cmp(r, l),
-                },
+        let by = |column: &str, dir: SortDirection| match (
+            cell(a, column, metadata),
+            cell(b, column, metadata),
+        ) {
+            (None, None) => Ordering::Equal,
+            (None, Some(_)) => Ordering::Greater,
+            (Some(_), None) => Ordering::Less,
+            (Some(l), Some(r)) => match dir {
+                SortDirection::Ascending => cbor_cmp(l, r),
+                SortDirection::Descending => cbor_cmp(r, l),
             },
         };
-        ordering.then_with(|| a_id.cmp(b_id))
+        self.orders()
+            .map(|(column, dir)| by(column, dir))
+            .find(|o| o.is_ne())
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| a_id.cmp(b_id))
     }
 
     /// Whether [`matches`](Self::matches) can evaluate this query: it holds

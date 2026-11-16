@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.7.0 — 2026-11-14
+
+- Multi-column order through a Dio. A facade Vista takes `add_order`, and the tie-breakers
+  (`VistaQuery::then_by`) travel with the order everywhere it goes: offered to the master, handed
+  back in the residual when the master refuses any part of it, sorted locally, kept by a derived
+  Dio, and shown in previews. An order with an augmented column anywhere in it stays with
+  diorama as a whole. A derived aggregate's Vista takes `add_order` too. A table scenery's own
+  sort (`set_order`, the header click) is still one column, and a scenery that inherits the
+  Dio's order takes only its first column. Requires vantage-vista 2.11.0.
+
 ## 1.6.1 — 2026-11-13
 
 - Fix (VAN-451): a paged sugared view kept its sugar columns out of the rows its window loads

@@ -26,7 +26,8 @@ impl Condition {
 }
 
 /// Every clause applied through a [`Vista`](crate::Vista): its conditions,
-/// search and order, plus the keys of its driver-native conditions
+/// search and order (`order` first, ties broken by each `then_by` in turn),
+/// plus the keys of its driver-native conditions
 /// ([`NativeCondition::key`](crate::NativeCondition::key)). A native
 /// condition itself is opaque, so only its key is recorded, and a
 /// `VistaQuery` that holds native keys can't be re-applied to another Vista.
@@ -36,6 +37,9 @@ pub struct VistaQuery {
     pub conditions: Vec<Condition>,
     pub search: Option<String>,
     pub order: Option<(String, SortDirection)>,
+    /// Columns that break ties left by `order`, in turn. Empty when `order`
+    /// is `None`.
+    pub then_by: Vec<(String, SortDirection)>,
     pub native: Vec<String>,
 }
 
@@ -54,9 +58,36 @@ impl VistaQuery {
         self
     }
 
+    /// Order by `column`, replacing the whole order (tie-breakers included).
     pub fn with_order(mut self, column: impl Into<String>, dir: SortDirection) -> Self {
         self.order = Some((column.into(), dir));
+        self.then_by.clear();
         self
+    }
+
+    /// Break the ties of the current order by `column`; with no order yet,
+    /// order by it.
+    pub fn then_order(mut self, column: impl Into<String>, dir: SortDirection) -> Self {
+        match self.order {
+            None => self.order = Some((column.into(), dir)),
+            Some(_) => self.then_by.push((column.into(), dir)),
+        }
+        self
+    }
+
+    /// The whole order: the primary column, then each tie-breaker.
+    pub fn orders(&self) -> impl Iterator<Item = (&str, SortDirection)> {
+        self.order
+            .iter()
+            .chain(&self.then_by)
+            .map(|(column, dir)| (column.as_str(), *dir))
+    }
+
+    /// The whole order of `other` (tie-breakers included) in place of this
+    /// one's.
+    pub fn copy_order_from(&mut self, other: &VistaQuery) {
+        self.order = other.order.clone();
+        self.then_by = other.then_by.clone();
     }
 
     /// No clause of any kind, order included.

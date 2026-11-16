@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.3.0 — 2026-11-14
+
+- A MongoDB Vista takes `add_order` (a later key of the sort document): later columns break the
+  ties of the first, so a Rhai `.sort("a").sort("b")` sorts by both. Requires vantage-vista
+  2.11.0.
+
 ## 3.2.1 — 2026-11-13
 
 Requires vantage-table 3.8.0.

@@ -1,5 +1,5 @@
 //! Write terminals on the `Table` handle: `insert`, `upsert`, `patch`,
-//! `delete`, and `import_from` (see [`super::import`]).
+//! `delete`, `delete_all`, and `import_from` (see [`super::import`]).
 //!
 //! Writes go to the whole narrowed handle and stay inside its set (see the
 //! book's Writes chapter); a handle with `limit` refuses writes.
@@ -68,6 +68,13 @@ pub(crate) fn register_writes(
             delete_row(&w.target(h)?, id_string(id)?)
         },
     );
+
+    // Every row in the handle's set. `DeleteAll` can be denied on its own
+    // (a policy's `no-bulk-delete`), apart from `Delete`.
+    let w = gate.clone();
+    engine.register_fn("delete_all", move |h: &mut Handle| -> RhaiResult<()> {
+        run(WritableValueSet::delete_all(&w.target(h)?))
+    });
 
     let w = gate.clone();
     engine.register_fn(

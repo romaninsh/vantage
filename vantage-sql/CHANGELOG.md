@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.3 — 2026-11-14
+
+- A SQL Vista takes `add_order` (`ORDER BY a, b`): later columns break the ties of the first, so a
+  Rhai `.sort("a").sort("b")` sorts by both. Requires vantage-vista 2.11.0.
+
 ## 0.12.2 — 2026-11-13
 
 - Test only: the YAML column-flags test also covers a derived spec that picks an `auto` id column.

@@ -18,10 +18,10 @@ every row costs one parse:
 ```rust
 # use std::sync::Arc;
 # use ciborium::Value as CborValue;
-# use vantage_memory::{MemoryCatalog, MemoryStore};
+# use vantage_memory::{MemoryStore, MemoryVistaFactory};
 # use vantage_rhai::{Block, Env, Host, Limits};
 # use vantage_vista::rhai::{DataVocab, Terminals, Writes};
-# use vantage_vista::{Column, ColumnFlag, VistaMetadata, VistaResolver};
+# use vantage_vista::{VistaFactory, VistaResolver};
 # fn shop() -> MemoryStore {
 #     let store = MemoryStore::new();
 #     for (id, status) in [("o1", "paid"), ("o2", "due"), ("o3", "paid"), ("o4", "due")] {
@@ -33,15 +33,13 @@ every row costs one parse:
 #     store
 # }
 # fn resolver(store: &MemoryStore) -> Arc<dyn VistaResolver> {
-#     let catalog = MemoryCatalog::new(store.clone());
-#     catalog.register(
-#         "order",
-#         VistaMetadata::new()
-#             .with_column(Column::new("id", "String").with_flag(ColumnFlag::Id))
-#             .with_column(Column::new("status", "String"))
-#             .with_id_column("id"),
-#     );
-#     Arc::new(catalog)
+#     let factory = MemoryVistaFactory::new(store.clone());
+#     Arc::new(move |name: &str| match name {
+#         "order" => factory.from_yaml(
+#             "name: order\ncolumns:\n  id: { type: String, flags: [id] }\n  status: { type: String }\n",
+#         ),
+#         _ => Err(vantage_core::error!("unknown table").mark_not_found()),
+#     })
 # }
 # let store = shop();
 let terminals = Terminals::ReadWrite {
@@ -81,11 +79,13 @@ The three pieces:
 
 ```rust
 # use std::sync::Arc;
-# use vantage_memory::{MemoryCatalog, MemoryStore};
-# use vantage_vista::VistaResolver;
+# use vantage_memory::{MemoryStore, MemoryVistaFactory};
+# use vantage_vista::{VistaFactory, VistaResolver};
 # use vantage_vista::rhai::{DataVocab, Terminals};
 # let terminals = Terminals::Describe;
-# let resolver: Arc<dyn VistaResolver> = Arc::new(MemoryCatalog::new(MemoryStore::new()));
+# let factory = MemoryVistaFactory::new(MemoryStore::new());
+# let resolver: Arc<dyn VistaResolver> =
+#     Arc::new(move |name: &str| factory.build_from_spec(vantage_memory::MemoryVistaSpec::new(name)));
 let vocab = DataVocab::new(terminals).with_resolver(resolver);
 ```
 
@@ -120,24 +120,21 @@ a not-found error. This is the resolver the guide's tests use, over an in-memory
 <!-- tested: rhai_guide::hosts::build_a_host -->
 ```rust
 # use std::sync::Arc;
-# use vantage_memory::{MemoryCatalog, MemoryStore};
-# use vantage_vista::VistaResolver;
-# fn catalog(store: &MemoryStore) -> MemoryCatalog {
-#     MemoryCatalog::new(store.clone())
+# use vantage_memory::{MemoryStore, MemoryVistaFactory, MemoryVistaSpec};
+# use vantage_vista::{VistaFactory, VistaResolver};
+# fn spec(name: &str) -> MemoryVistaSpec {
+#     MemoryVistaSpec::new(name)
 # }
 fn resolver(store: &MemoryStore) -> Arc<dyn VistaResolver> {
-    let catalog = catalog(store);
-    Arc::new(move |name: &str| {
-        catalog.store().table(name);
-        catalog.vista(name)
-    })
+    let factory = MemoryVistaFactory::new(store.clone());
+    Arc::new(move |name: &str| factory.build_from_spec(spec(name)))
 }
 # let store = MemoryStore::new();
 # assert_eq!(resolver(&store).vista("order").unwrap().name(), "order");
 ```
 
-`catalog` is a `MemoryCatalog` holding each table's metadata. Creating the store table first means
-a name the shop doesn't hold gets a new, empty table instead of a not-found error.
+`spec(name)` returns each table's YAML spec. Building it defines the store table, so a name the
+shop doesn't hold gets a new, empty table instead of a not-found error.
 
 The resolver is where an application puts its policy, because `vantage-vista` only calls it. Some
 examples from the codebase:
@@ -172,9 +169,9 @@ evaluates scripts on a blocking thread:
 ```rust
 # use std::sync::Arc;
 # use ciborium::Value as CborValue;
-# use vantage_memory::{MemoryCatalog, MemoryStore};
+# use vantage_memory::{MemoryStore, MemoryVistaFactory, MemoryVistaSpec};
 # use vantage_rhai::{Block, Env, Host, Limits};
-# use vantage_vista::VistaResolver;
+# use vantage_vista::{VistaFactory, VistaResolver};
 # use vantage_vista::rhai::{DataVocab, Terminals, Writes};
 # #[tokio::main(flavor = "current_thread")]
 # async fn main() -> vantage_core::Result<()> {
@@ -185,7 +182,9 @@ evaluates scripts on a blocking thread:
 #         .collect();
 #     store.table("order").insert_as(id, row)?;
 # }
-# let resolver: Arc<dyn VistaResolver> = Arc::new(MemoryCatalog::new(store));
+# let factory = MemoryVistaFactory::new(store);
+# let resolver: Arc<dyn VistaResolver> =
+#     Arc::new(move |name: &str| factory.build_from_spec(MemoryVistaSpec::new(name)));
 let rows = tokio::task::spawn_blocking(move || {
     let terminals = Terminals::ReadWrite {
         limit: Some(2),

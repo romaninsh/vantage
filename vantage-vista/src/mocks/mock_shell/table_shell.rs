@@ -118,6 +118,13 @@ impl TableShell for MockShell {
     fn set_order(&mut self, order: Option<(&str, SortDirection)>) -> Result<()> {
         self.require(Capability::Order)?;
         self.query.order = order.map(|(column, dir)| (column.to_string(), dir));
+        self.query.then_by.clear();
+        Ok(())
+    }
+
+    fn add_order(&mut self, column: &str, dir: SortDirection) -> Result<()> {
+        self.require(Capability::Order)?;
+        self.query.then_by.push((column.to_string(), dir));
         Ok(())
     }
 

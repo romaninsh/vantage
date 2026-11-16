@@ -169,10 +169,14 @@ where
             self.table.clear_orders();
             return Ok(());
         };
-        if !self.table.columns().contains_key(field) {
-            return Err(error!("Unknown column for order", field = field));
-        }
+        self.check_order_column(field)?;
         self.table.clear_orders();
+        self.push_order(field, dir)
+    }
+
+    /// A tie-breaker after the orders already set: `ORDER BY a, b`.
+    pub(super) fn push_order(&mut self, field: &str, dir: SortDirection) -> Result<()> {
+        self.check_order_column(field)?;
         let direction = match dir {
             SortDirection::Ascending => TableSortDirection::Ascending,
             SortDirection::Descending => TableSortDirection::Descending,
@@ -181,6 +185,13 @@ where
             expression: surreal_expr!("{}", (Identifier::new(field))),
             direction,
         });
+        Ok(())
+    }
+
+    fn check_order_column(&self, field: &str) -> Result<()> {
+        if !self.table.columns().contains_key(field) {
+            return Err(error!("Unknown column for order", field = field));
+        }
         Ok(())
     }
 

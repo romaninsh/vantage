@@ -5,10 +5,12 @@ use vantage_core::Result;
 use vantage_vista::mocks::MockShell;
 use vantage_vista::rhai::{Terminals, Writes};
 use vantage_vista::{
-    Page, TableShell, Vista, VistaCapabilities, VistaResolver, forward_table_shell,
+    Page, SortDirection, TableShell, Vista, VistaCapabilities, VistaResolver, forward_table_shell,
 };
 
-use super::support::{host, host_with, json, read_write, read_write_terminals, rec, run, store};
+use super::support::{
+    host, host_with, json, read_write, read_write_terminals, rec, resolver, run, store,
+};
 
 fn capped(limit: usize) -> vantage_rhai::Host {
     host(
@@ -59,6 +61,25 @@ fn get_missing_is_unit() {
 fn first_follows_sort() {
     let row = json(&read_write(&store()), r#"table("t").sort("n").first()"#);
     assert_eq!(row["id"], json!("r2"));
+}
+
+fn ids(rows: serde_json::Value) -> Vec<String> {
+    let rows = rows.as_array().unwrap().iter();
+    rows.map(|row| row["id"].as_str().unwrap().to_string())
+        .collect()
+}
+
+#[test]
+fn a_single_sort_still_replaces_the_default_order() {
+    let base = resolver(&store());
+    let ordered: Arc<dyn VistaResolver> =
+        Arc::new(move |name: &str| base.vista(name)?.with_order("a", SortDirection::Ascending));
+    let host = host_with(ordered, read_write_terminals());
+    assert_eq!(ids(json(&host, r#"table("t").list()"#)), ["r1", "r3", "r2"]);
+    assert_eq!(
+        ids(json(&host, r#"table("t").sort("n").list()"#)),
+        ["r2", "r3", "r1"]
+    );
 }
 
 /// The `(offset, limit)` of every window the shell was asked for.
