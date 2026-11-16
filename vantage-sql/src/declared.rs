@@ -44,6 +44,7 @@ pub(crate) use sql_declared_types;
 
 /// YAML types SQL has no column for. Refused at load rather than quietly
 /// stored as text.
+#[cfg(feature = "vista")]
 pub(crate) const UNSUPPORTED: &[&str] = &["duration"];
 
 /// The vista factory's `column_for_type`: YAML type alias → typed `Column`,

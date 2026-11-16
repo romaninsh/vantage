@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.4 — 2026-11-16
+
+- No dead-code warnings when built without `mysql` and `vista`: the executor helpers only the
+  MySQL import uses are compiled with those features.
+
 ## 0.12.3 — 2026-11-14
 
 - A SQL Vista takes `add_order` (`ORDER BY a, b`): later columns break the ties of the first, so a

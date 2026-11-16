@@ -6081,7 +6081,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-sql"
-version = "0.12.3"
+version = "0.12.4"
 dependencies = [
  "async-stream",
  "async-trait",
