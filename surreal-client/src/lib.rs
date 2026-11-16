@@ -11,8 +11,6 @@ pub mod error;
 pub mod live;
 pub mod mocks;
 pub mod params;
-#[cfg(feature = "pool")]
-pub mod pool;
 pub mod record;
 pub mod session;
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.1 — 2026-11-16
+
+- Drops the unused `thiserror` dependency.
+
 ## 1.2.0 — 2026-11-11
 
 - `contract::check_round_trip(set, id)` (feature `contract`): reads a stored row and writes it

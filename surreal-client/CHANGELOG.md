@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.2 — 2026-11-16
+
+- Drops the unused `bincode`, `mobc` and `rust_decimal` dependencies, and the `pool` and
+  `decimal` features that only enabled them: `pool` defined a `PoolConfig` nothing read, and
+  `decimal` compiled nothing. Remove them from your feature list if you set them.
+
 ## 1.2.1 — 2026-11-13
 
 - Fix (VAN-448): `record_range` rendered its bounds wrong. An exclusive start went out as `>start`

@@ -293,7 +293,6 @@ version = "0.1.0"
 dependencies = [
  "bson",
  "ciborium",
- "clap",
  "indexmap 2.14.0",
  "serde_json",
  "surreal-client",
@@ -334,15 +333,6 @@ name = "base64"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
-
-[[package]]
-name = "bincode"
-version = "1.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1f45e9417d87227c7a56d22e471c6206462cba514c7590c09aff4cf6d1ddcad"
-dependencies = [
- "serde",
-]
 
 [[package]]
 name = "bit-set"
@@ -2828,16 +2818,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "metrics"
-version = "0.24.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d5312e9ba3771cfa961b585728215e3d972c950a3eed9252aa093d6301277e8"
-dependencies = [
- "ahash",
- "portable-atomic",
-]
-
-[[package]]
 name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2891,25 +2871,6 @@ dependencies = [
  "log",
  "wasi",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "mobc"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ee4c321f7581ff6d3b02c1fd05dc0b1f17c05f23c8532d1af9413890ab5fab5"
-dependencies = [
- "async-trait",
- "futures-channel",
- "futures-core",
- "futures-timer",
- "futures-util",
- "log",
- "metrics",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -4798,21 +4759,18 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "surreal-client"
-version = "1.2.1"
+version = "1.2.2"
 dependencies = [
  "async-trait",
  "base64",
- "bincode",
  "chrono",
  "ciborium",
  "futures",
  "futures-util",
  "hex",
  "indexmap 2.14.0",
- "mobc",
  "paste",
  "reqwest",
- "rust_decimal",
  "rustls",
  "serde",
  "serde_json",
@@ -5818,14 +5776,12 @@ dependencies = [
 
 [[package]]
 name = "vantage-core"
-version = "1.3.1"
+version = "1.3.2"
 dependencies = [
- "anyhow",
  "atty",
  "indexmap 2.14.0",
  "owo-colors",
  "serde",
- "thiserror 1.0.69",
  "tokio",
  "tracing",
 ]
@@ -5853,7 +5809,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-dataset"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -5864,7 +5820,6 @@ dependencies = [
  "paste",
  "serde",
  "serde_json",
- "thiserror 2.0.18",
  "tokio",
  "uuid",
  "vantage-core",
@@ -5941,7 +5896,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-expressions"
-version = "1.3.0"
+version = "1.3.1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -5951,7 +5906,6 @@ dependencies = [
  "tokio",
  "tokio-test",
  "vantage-core",
- "vantage-dataset",
 ]
 
 [[package]]
@@ -6183,7 +6137,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-types"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "chrono",
  "ciborium",

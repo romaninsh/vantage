@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.1 — 2026-11-16
+
+- Drops the unused `vantage-dataset` dependency.
+
 ## 1.3.0 — 2026-11-07
 
 - `Selectable::as_avg`, next to `as_sum`, `as_min` and `as_max`. The default renders SQL's

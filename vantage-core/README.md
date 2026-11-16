@@ -42,8 +42,6 @@ fn fetch_client_data(client_id: i32) -> Result<String, VantageError> {
 ## Features
 
 - `colored-errors` (default): colored output when an error chain is printed.
-- `anyhow-compat`: adds the optional `anyhow` dependency. The crate defines no conversions for it
-  yet.
 
 ## Integration
 

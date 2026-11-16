@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.1 — 2026-11-16
+
+- `paste` and `vantage-core` are no longer dependencies of the library: the
+  `vantage_type_system!` expansion names them, so a crate that invokes it already depends on
+  both.
+
 ## 1.1.0 — 2026-11-11
 
 - `vantage_type_system!` generates a lenient `coerce_<x>(value) -> Option<Self>` next to every

@@ -1,27 +1,20 @@
 
 [package]
 name = "surreal-client"
-version = "1.2.1"
+version = "1.2.2"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "CBOR-based SurrealDB client for the Vantage data framework"
 repository = "https://github.com/romaninsh/vantage"
 
-[features]
-pool = ["mobc"]
-decimal = ["rust_decimal"]
-
 [dependencies]
 async-trait = "0.1.89"
 base64 = "0.22"
-bincode = "1.3"
 chrono = { version = "0.4", features = ["serde"] }
 ciborium = "0.2"
 futures-util = "0.3.32"
 hex = "0.4"
-mobc = { version = "0.9", optional = true }
 reqwest = "0.12.28"
-rust_decimal = { version = "1.42", optional = true }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 thiserror = "2.0.18"
