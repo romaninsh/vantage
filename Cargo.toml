@@ -7,6 +7,7 @@ members = [
     "surreal-client",
     "vantage-dataset",
     "vantage-table",
+    "vantage-tester",
     "vantage-csv",
     "vantage-types", "learn-1", "learn-2", "learn-3", "learn-4", "learn-5", "learn-6", "learn-7",
     "learn-8",
