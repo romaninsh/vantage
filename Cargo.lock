@@ -2807,12 +2807,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "md5"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae960838283323069879657ca3de837e9f7bbb4c7bf6ea7f1b290d5e9476d2e0"
-
-[[package]]
 name = "memchr"
 version = "2.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6117,7 +6111,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-surrealdb"
-version = "2.4.0"
+version = "2.4.1"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -6128,12 +6122,10 @@ dependencies = [
  "futures",
  "hex",
  "indexmap 2.14.0",
- "md5",
  "paste",
  "rust_decimal",
  "serde",
  "serde_json",
- "serde_path_to_error",
  "serde_yaml_ng",
  "surreal-client",
  "thiserror 2.0.18",
