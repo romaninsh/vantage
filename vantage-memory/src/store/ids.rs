@@ -18,6 +18,14 @@ impl IdGen {
         }
     }
 
+    /// A counter of its own that starts where this one stands.
+    pub fn fork(&self) -> Self {
+        Self {
+            next: AtomicU64::new(self.next.load(Ordering::Relaxed)),
+            prefix: self.prefix.clone(),
+        }
+    }
+
     /// The next id for which `taken` is false.
     pub fn next(&self, taken: impl Fn(&str) -> bool) -> String {
         loop {

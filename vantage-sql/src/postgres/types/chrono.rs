@@ -153,6 +153,7 @@ impl PostgresType for DateTime<FixedOffset> {
 fn parse_time(s: &str) -> Option<NaiveTime> {
     NaiveTime::parse_from_str(s, "%H:%M:%S")
         .or_else(|_| NaiveTime::parse_from_str(s, "%H:%M:%S%.f"))
+        .or_else(|_| NaiveTime::parse_from_str(s, "%H:%M"))
         .ok()
 }
 
@@ -163,6 +164,8 @@ fn parse_naive_datetime(s: &str) -> Option<NaiveDateTime> {
         .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f"))
         .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S"))
         .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f"))
+        .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M"))
+        .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M"))
         .ok()
         // Fallback: TIMESTAMPTZ format like "2025-01-10 12:00:00+00" — strip tz
         .or_else(|| parse_offset_datetime(s).map(|dt| dt.naive_utc()))

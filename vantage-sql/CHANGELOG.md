@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.12.4 — 2026-11-16
+
+- No dead-code warnings when built without `mysql` and `vista`: the executor helpers only the
+  MySQL import uses are compiled with those features.
+- Requires vantage-table 4.0.0. Roll-up columns are built when a query is built, and only for
+  the columns it selects; a roll-up over the table's own relation aliases the child
+  (`"employee" AS "employee_rollup"`), so it aggregates another column correctly. Counts, sums
+  and related-value subqueries select only the column they need.
+- SQLite reads columns declared `date`, `time`, `datetime` and `timestamp` as typed values
+  (`Tag(100)`, `Tag(101)`, `Tag(0)`), the mirror of what a write takes, as Postgres and MySQL
+  do. Legacy text forms in the database read typed too; text that is no such value fails the
+  read with the column and value named. Nothing is rewritten on read.
+- Time and timestamp columns on SQLite, Postgres and MySQL take minute precision (`09:30`,
+  `2026-12-10 09:30`).
+- A condition on a temporal column takes its value through the write coercion, so
+  `at > "2026-11-01 00:00:00"` compares instants, not text, and a value that is no date is the
+  write's error. `SqlTableShell::comparable_condition` gives the same typed value, so in-memory
+  matching agrees with the database.
+
 ## 0.12.3 — 2026-11-14
 
 - A SQL Vista takes `add_order` (`ORDER BY a, b`): later columns break the ties of the first, so a

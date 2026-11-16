@@ -1,4 +1,5 @@
 use indexmap::IndexMap;
+use vantage_core::Result;
 use vantage_expressions::{Expression, Expressive, traits::datasource::ExprDataSource};
 use vantage_types::Entity;
 
@@ -221,16 +222,40 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// If `name` matches a registered expression (from `with_expression`), evaluates
     /// and returns it. Otherwise returns the column as an expression. Returns `None`
     /// if the name doesn't match either.
-    pub fn get_column_expr(&self, name: &str) -> Option<vantage_expressions::Expression<T::Value>>
+    ///
+    /// Panics if the expression callback fails; use
+    /// [`try_get_column_expr`](Self::try_get_column_expr).
+    pub fn get_column_expr(&self, name: &str) -> Option<Expression<T::Value>>
     where
-        T::Column<T::AnyType>: vantage_expressions::Expressive<T::Value>,
+        T::Column<T::AnyType>: Expressive<T::Value>,
     {
-        if let Some(expr_fn) = self.expressions.get(name) {
-            Some(expr_fn(self.as_entity_erased()))
-        } else {
-            use vantage_expressions::Expressive;
-            self.columns.get(name).map(|c| c.expr())
-        }
+        self.try_get_column_expr(name)
+            .unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// [`get_column_expr`](Self::get_column_expr) returning the error of a
+    /// failed expression callback.
+    pub fn try_get_column_expr(&self, name: &str) -> Result<Option<Expression<T::Value>>>
+    where
+        T::Column<T::AnyType>: Expressive<T::Value>,
+    {
+        Ok(match self.try_expression_column(name)? {
+            Some(expr) => Some(expr),
+            None => self.columns.get(name).map(|c| c.expr()),
+        })
+    }
+
+    /// The expression an aggregate or a one-column subquery reads for
+    /// `column`: its callback's when it is an expression column of this
+    /// table, the column itself otherwise.
+    pub fn try_column_expr_of<Type>(&self, column: &T::Column<Type>) -> Result<Expression<T::Value>>
+    where
+        Type: ColumnType,
+        T::Column<Type>: Expressive<T::Value>,
+    {
+        Ok(self
+            .try_expression_column(column.name())?
+            .unwrap_or_else(|| column.expr()))
     }
 }
 

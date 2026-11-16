@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.4.1 — 2026-11-16
+
+- Drops the unused `md5` and `serde_path_to_error` dependencies. The `decimal` feature no longer
+  enables surreal-client's `decimal`, which compiled nothing.
+- Requires vantage-table 4.0.0. Roll-up columns are built when a query is built, and only for
+  the columns it selects; the slow-link warning comes with the first query. A roll-up over the
+  table's own relation that aggregates another column counts correctly; a column rolling up
+  itself is an error.
+- A table narrowed by a related table (`fk IN (parent ids)`, as an inherited access rule does)
+  reads the parent in the same statement, so inside a transaction it sees the transaction's
+  rows. Before, the parent was read first, on the connection that built the condition.
+
 ## 2.4.0 — 2026-11-14
 
 - A SurrealDB Vista takes `add_order` (`ORDER BY a, b`): later columns break the ties of the

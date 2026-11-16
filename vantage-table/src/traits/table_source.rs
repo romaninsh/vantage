@@ -517,18 +517,24 @@ pub trait TableSource: DataSource + Clone + 'static {
         )
     }
 
-    /// The expression of a roll-up column: `op` over `column` of the rows
-    /// `relation` (a has_many) gives for each `parent` row, narrowed by
-    /// `condition`. [`Table::with_rollup`] calls it.
+    /// The expression of roll-up column `name`: `op` over `column` of the
+    /// rows `relation` (a has_many) gives for each `parent` row, narrowed by
+    /// `condition`. The callback [`Table::with_rollup`] stores calls it each
+    /// time a query that includes the column is built, so this is where the
+    /// relation's target is built and checked ([`Table::rollup_target`]).
     ///
     /// The default is a correlated subquery built from
-    /// [`Table::get_subquery_erased`] and [`Table::aggregate_query`]:
+    /// [`Table::correlate_ref_target`] and [`Table::aggregate_query`]:
     /// `(SELECT SUM("net") FROM "line" WHERE "line"."invoice" = "invoice"."id")`.
+    /// Over the parent's own table the child is read under an alias:
+    /// `(SELECT COUNT(*) FROM "employee" AS "employee_rollup" WHERE
+    /// "employee_rollup"."manager_id" = "employee"."id")`.
     /// A backend overrides it to render something better, or to refuse with an
     /// error.
     fn rollup_expression<E>(
         &self,
         parent: &Table<Self, E>,
+        name: &str,
         relation: &str,
         op: RollupOp,
         column: Option<&str>,
@@ -547,18 +553,12 @@ pub trait TableSource: DataSource + Clone + 'static {
         Self::Value: From<String>,
         Self::Column<Self::AnyType>: Expressive<Self::Value>,
     {
-        let mut child = parent.get_subquery_erased(relation)?;
-        // The subquery's table isn't aliased, so over the parent's own table
-        // `child.fk = parent.id` reads the inner row on both sides and counts
-        // the wrong rows.
-        if child.table_name() == parent.table_name() {
-            return Err(vantage_core::error!(
-                "roll-ups over a self-referencing relation aren't supported yet",
-                relation = relation,
-                table = parent.table_name()
-            )
-            .mark_unsupported());
-        }
+        let target = parent.rollup_target(name, relation, column)?;
+        // Unaliased, `child.fk = parent.id` over the parent's own table reads
+        // the inner row on both sides and counts the wrong rows.
+        let alias = (target.table_name() == parent.table_name())
+            .then(|| format!("{}_rollup", parent.table_name()));
+        let mut child = parent.correlate_ref_target(relation, target, alias.as_deref())?;
         if let Some(condition) = condition {
             child.add_condition(condition);
         }

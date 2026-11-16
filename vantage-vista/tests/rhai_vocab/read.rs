@@ -70,6 +70,16 @@ fn ids(rows: serde_json::Value) -> Vec<String> {
 }
 
 #[test]
+fn chained_sorts_add_columns() {
+    // r1 and r3 share a = 1; n breaks the tie.
+    let rows = json(
+        &read_write(&store()),
+        r#"table("t").sort("a").sort("n").list()"#,
+    );
+    assert_eq!(ids(rows), ["r3", "r1", "r2"]);
+}
+
+#[test]
 fn a_single_sort_still_replaces_the_default_order() {
     let base = resolver(&store());
     let ordered: Arc<dyn VistaResolver> =

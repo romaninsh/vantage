@@ -8,10 +8,15 @@ use crate::mongodb::impls::joins::{join_alias_of, table_joins};
 impl MongoTableShell {
     /// Collection, filter, projection, sort and limit, spelled the way
     /// `MongoSelect::preview` spells them: a `find`, or an `aggregate` over a
-    /// pipeline view or joined columns. Filters are summarised by count.
+    /// pipeline view or joined columns. Filters are summarised by count. A
+    /// read that an expression column fails has no query: the note carries
+    /// the error the read would return.
     pub(super) fn render_preview(&self) -> Preview {
         let source = self.table.data_source();
-        let mut select = self.table.select();
+        let mut select = match self.table.try_select() {
+            Ok(select) => select,
+            Err(e) => return Preview::new().with_note(format!("the query can't be built: {e}")),
+        };
         select.collection = Some(
             source
                 .read_collection_name(self.table.table_name())

@@ -89,6 +89,11 @@ forward_table_shell!(ShapedShell, inner, {
         self.inner.set_order(order)
     }
 
+    fn add_order(&mut self, column: &str, dir: SortDirection) -> Result<()> {
+        self.gate(Capability::Order)?;
+        self.inner.add_order(column, dir)
+    }
+
     async fn insert(&self, id: Option<&str>, record: &Rec) -> Result<(String, Rec)> {
         self.gate(Capability::Insert)?;
         self.inner.insert(id, record).await

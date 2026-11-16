@@ -7,8 +7,10 @@ use ciborium::Value as CborValue;
 use tokio::time::{sleep, timeout};
 use vantage_core::{Result, error};
 use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet, WritableValueSet};
-use vantage_memory::{MemoryStore, MemoryVistaFactory};
-use vantage_types::Record;
+use vantage_memory::{MemoryDB, MemoryStore, MemoryVistaFactory};
+use vantage_table::table::Table;
+use vantage_table::traits::table_source::TableSource;
+use vantage_types::{EmptyEntity, Record};
 use vantage_vista::contract::{TxFixture, TxTables};
 use vantage_vista::{FilterOp, Transaction, Vista, VistaFactory, contract};
 
@@ -113,10 +115,24 @@ fn rec(pairs: &[(&str, CborValue)]) -> Record<CborValue> {
 /// so `a` is narrowed to `n >= 0`: an insert with a negative `n` doesn't
 /// belong to the set and fails, as the check constraint does on SQL.
 fn tables_on(store: MemoryStore) -> TxTables {
-    let f = MemoryVistaFactory::new(store);
+    let f = MemoryVistaFactory::new(store.clone());
     let a = f.from_yaml(TX_A).unwrap();
     let a = a.with_condition("n", FilterOp::Gte, int(0)).unwrap();
-    TxTables::new(a, f.from_yaml(TX_B).unwrap())
+    let b_of_a = f.from_table(b_of_a(MemoryDB::from_store(store))).unwrap();
+    TxTables::new(a, f.from_yaml(TX_B).unwrap()).with_b_of_a(b_of_a)
+}
+
+/// `b` narrowed to the rows whose `a_id` is the id of a row of `a`.
+fn b_of_a(db: MemoryDB) -> Table<MemoryDB, EmptyEntity> {
+    let a = Table::<MemoryDB, EmptyEntity>::new("a", db.clone())
+        .with_id_column("id")
+        .with_column_of::<i64>("n");
+    let condition = db.related_in_condition("a_id", &a, "id");
+    Table::<MemoryDB, EmptyEntity>::new("b", db)
+        .with_id_column("id")
+        .with_column_of::<String>("a_id")
+        .with_column_of::<i64>("n")
+        .with_condition(condition)
 }
 
 struct StoreTx;
@@ -328,4 +344,47 @@ async fn opposite_order_blocks_on_two_stores_dont_hang() {
         x.get_value("x").await.unwrap().is_none(),
         "the rolled-back write landed"
     );
+}
+
+#[tokio::test]
+async fn a_fork_sees_only_committed_rows_and_its_transactions_commit_only_there() {
+    let source = MemoryStore::new();
+    let a = tables_on(source.clone()).a;
+    a.insert_value("x", &rec(&[("n", int(0))])).await.unwrap();
+
+    let tx = Transaction::new();
+    tx.wrap(&a)
+        .patch_value("x", &rec(&[("n", int(9))]))
+        .await
+        .unwrap();
+
+    let fork = timeout(Duration::from_secs(2), async { source.fork() })
+        .await
+        .expect("the fork blocked");
+    let n = |store: &MemoryStore| store.table("a").get("x").and_then(|r| r.get("n").cloned());
+    assert_eq!(n(&fork), Some(int(0)));
+
+    let in_fork = tables_on(fork.clone()).a;
+    timeout(
+        Duration::from_secs(2),
+        in_fork.patch_value("x", &rec(&[("n", int(3))])),
+    )
+    .await
+    .expect("a write to the fork blocked")
+    .unwrap();
+    assert_eq!(n(&fork), Some(int(3)));
+
+    tx.commit().await.unwrap();
+    assert_eq!(n(&source), Some(int(9)));
+    assert_eq!(n(&fork), Some(int(3)));
+
+    let in_fork_tx = Transaction::new();
+    in_fork_tx
+        .wrap(&in_fork)
+        .patch_value("x", &rec(&[("n", int(5))]))
+        .await
+        .unwrap();
+    in_fork_tx.commit().await.unwrap();
+    assert_eq!(n(&fork), Some(int(5)));
+    assert_eq!(n(&source), Some(int(9)));
 }

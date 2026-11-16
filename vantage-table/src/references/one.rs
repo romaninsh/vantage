@@ -202,7 +202,7 @@ where
 
     /// The built target's table name, which a spec's driver block may set
     /// apart from the spec name; the metadata name when the build fails.
-    /// Built once per relation, and [`bare`](crate::table::inject::bare): only
+    /// Built once per relation, and bare (no build injectors): only
     /// the name is read.
     fn has_one_target(&self, column: &str, data_source: &dyn Any) -> Option<String> {
         // A join on another target column doesn't hold the target's links.

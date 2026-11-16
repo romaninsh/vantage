@@ -1,5 +1,34 @@
 # Changelog
 
+## 4.0.0 — 2026-11-16
+
+Roll-up columns are query-time callbacks: `with_rollup` stores an ordinary expression callback
+that runs when a query is built and only when the column is active. Building a table no longer
+builds its related tables.
+
+Breaking:
+
+- `ExpressionFn<T>` returns `Result<Expression>`. `with_expression` keeps its signature;
+  `with_try_expression` takes a fallible closure.
+- `TableSource::rollup_expression` takes the roll-up's own column name.
+- `SelectSource` gains `Aliased { name, alias }`.
+- `with_rollup` errors at build only for an unknown relation, a relation that is not has-many or
+  has several keys, and an op missing its column. An unknown or computed child column, a
+  paginated target and a backend refusal come from `try_select` and `check_expressions`.
+
+Added:
+
+- `try_select`, `try_get_column_expr`, `try_expression_column`, `try_column_expr_of`,
+  `try_select_only`: the fallible forms. `select()` and `get_column_expr()` panic with the named
+  error when a callback fails.
+- `check_expressions()` runs each active expression callback once; factories call it on the
+  finished root table so a bad roll-up fails the load.
+- A failed callback's error carries `EXPRESSION_COLUMN` and `EXPRESSION_TABLE`.
+- A roll-up over the table's own relation aggregates a different column correctly: the child is
+  aliased `<table>_rollup` inside the subquery. A column rolling up itself is the error
+  "a roll-up column can't aggregate itself".
+- `rollup_target`, `correlate_ref_target`, `is_active_column`, `TableSourceSpec::aliased`.
+
 ## 3.8.1 — 2026-11-13
 
 - A derived spec whose `id_column` names a different column takes `auto` from that column's own

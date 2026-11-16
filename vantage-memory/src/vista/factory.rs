@@ -1,18 +1,23 @@
-//! `MemoryVistaFactory`: builds memory vistas from YAML specs.
+//! `MemoryVistaFactory`: typed-table and YAML entry points, plus the
+//! `VistaFactory` impl.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use vantage_core::{Result, error};
-use vantage_table::table::spec::spec_references;
-use vantage_vista::{Column, ColumnFlag, NoExtras, Vista, VistaFactory, VistaMetadata, VistaSpec};
+use vantage_core::Result;
+use vantage_table::table::{BuildEnv, Orderable, Table, TableInjector, VistaMetadataOptions};
+use vantage_types::{EmptyEntity, Entity};
+use vantage_vista::{
+    ColumnFlag, NoExtras, SpecResolver, Vista, VistaFactory, VistaMetadata, VistaSpec,
+};
 
-use super::affinity::conform_record;
-use super::{MemoryCatalog, MemoryTableShell};
-use crate::{MemoryStore, TableDef, seed};
-
-/// The id column a spec gets when it names none.
-const DEFAULT_ID_COLUMN: &str = "id";
+use super::MemoryTableShell;
+use super::affinity::declared_types;
+use super::spec_table::{build_memory_table, metadata_from_spec};
+use crate::{AnyMemoryType, MemoryDB, MemoryStore, MemoryTableHandle};
 
 /// Table-level YAML block: `memory: { indexed: [..], seed: <file> }`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -33,22 +38,137 @@ pub struct MemoryBlock {
 
 pub type MemoryVistaSpec = VistaSpec<MemoryTableExtras, NoExtras, NoExtras>;
 
-/// Builds memory vistas from YAML specs, registering each one's metadata in
-/// its [`MemoryCatalog`] so traversals between them see declared columns.
+pub(super) type Resolver = Arc<dyn SpecResolver<MemoryVistaSpec>>;
+
+/// Builds memory vistas over typed tables. A reference target is rebuilt
+/// from its spec when traversed: the attached resolver's (a miss is an
+/// error), or without a resolver the spec of a table this factory built,
+/// else, for a table the store already holds, one declaring only its id
+/// column.
 pub struct MemoryVistaFactory {
-    catalog: MemoryCatalog,
+    store: MemoryStore,
+    resolver: Option<Resolver>,
+    injector: Option<TableInjector<MemoryDB>>,
+    built: Arc<RwLock<HashMap<String, MemoryVistaSpec>>>,
 }
 
 impl MemoryVistaFactory {
     pub fn new(store: MemoryStore) -> Self {
         Self {
-            catalog: MemoryCatalog::new(store),
+            store,
+            resolver: None,
+            injector: None,
+            built: Arc::default(),
         }
     }
 
     pub fn store(&self) -> &MemoryStore {
-        self.catalog.store()
+        &self.store
     }
+
+    /// Attach a build injector, run on every table built from a spec: the
+    /// root, and each reference target when traversed. A table handed to
+    /// [`from_table`](Self::from_table) is the caller's and is wrapped as it
+    /// is.
+    pub fn with_injector(mut self, injector: TableInjector<MemoryDB>) -> Self {
+        self.injector = Some(injector);
+        self
+    }
+
+    /// Attach a spec resolver, which finds a spec by table name so a
+    /// reference rebuilds its target from the live spec.
+    pub fn with_resolver(mut self, resolver: Resolver) -> Self {
+        self.resolver = Some(resolver);
+        self
+    }
+
+    /// Wrap a typed table as a Vista, with metadata read off the table. A
+    /// table without an id field takes the store table's id column.
+    pub fn from_table<E>(&self, table: Table<MemoryDB, E>) -> Result<Vista>
+    where
+        E: Entity<AnyMemoryType> + 'static,
+    {
+        table_vista(table.into_entity::<EmptyEntity>(), self.specs())
+    }
+
+    /// Build the table `spec` describes, run through the injector. Building
+    /// defines the store table, with the spec's indexes, and seeds it when
+    /// empty. A reference to `spec.name` is then rebuilt from `spec` when
+    /// no resolver is attached.
+    pub fn table_from_spec(&self, spec: &MemoryVistaSpec) -> Result<Table<MemoryDB, EmptyEntity>> {
+        let env = BuildEnv::root(&spec.name, Some(self.specs()), self.injector.clone());
+        let table = build_memory_table(spec, MemoryDB::from_store(self.store.clone()), &env)?;
+        self.built.write().insert(spec.name.clone(), spec.clone());
+        Ok(table)
+    }
+
+    /// An attached resolver's answer is final. Without one, a spec this
+    /// factory built, else one declaring only the id column of a table the
+    /// store holds.
+    fn specs(&self) -> Resolver {
+        if let Some(resolver) = &self.resolver {
+            return resolver.clone();
+        }
+        let built = self.built.clone();
+        let store = self.store.clone();
+        Arc::new(move |name: &str| {
+            built.read().get(name).cloned().or_else(|| {
+                let table = store.existing_table(name)?;
+                let mut spec = MemoryVistaSpec::new(name);
+                spec.id_column = Some(table.id_column().to_string());
+                Some(spec)
+            })
+        })
+    }
+}
+
+/// The Vista over a table built from `spec`: the spec's metadata, so
+/// declared types reach the Vista as written, with the denials the injector
+/// gave the table and the columns it made computed (roll-ups) flagged
+/// `Calculated`.
+pub(super) fn spec_vista(
+    table: Table<MemoryDB, EmptyEntity>,
+    spec: &MemoryVistaSpec,
+    specs: Resolver,
+) -> Result<Vista> {
+    let mut metadata = metadata_from_spec(spec)?.with_denials(table.denials().clone());
+    for column in metadata.columns.values_mut() {
+        if table.is_calculated_column(&column.name) {
+            *column = column.clone().with_flag(ColumnFlag::Calculated);
+        }
+    }
+    let handle = table.data_source().live_table(&table)?;
+    Ok(wrap(table, handle, metadata, specs))
+}
+
+/// The Vista over `table`, with metadata read off it.
+pub(super) fn table_vista(table: Table<MemoryDB, EmptyEntity>, specs: Resolver) -> Result<Vista> {
+    let metadata = declared_types(table.vista_metadata(VistaMetadataOptions {
+        orderable: Orderable::All,
+        column_flags: true,
+        id_flag: true,
+        references: true,
+        contained: true,
+        ..VistaMetadataOptions::default()
+    }));
+    let handle = table.data_source().live_table(&table)?;
+    Ok(wrap(table, handle, metadata, specs))
+}
+
+/// The shell over `table`. Metadata without an id column takes the store
+/// table's.
+fn wrap(
+    table: Table<MemoryDB, EmptyEntity>,
+    handle: MemoryTableHandle,
+    metadata: VistaMetadata,
+    specs: Resolver,
+) -> Vista {
+    let metadata = match metadata.id_column {
+        Some(_) => metadata,
+        None => metadata.with_id_column(handle.id_column().to_string()),
+    };
+    let name = table.table_name().to_string();
+    Vista::new(name, MemoryTableShell::new(table, handle, metadata, specs))
 }
 
 impl VistaFactory for MemoryVistaFactory {
@@ -57,82 +177,10 @@ impl VistaFactory for MemoryVistaFactory {
     type ReferenceExtras = NoExtras;
 
     fn build_from_spec(&self, spec: MemoryVistaSpec) -> Result<Vista> {
-        if !spec.contained.is_empty() {
-            return Err(error!(
-                "Contained relations are not supported by vantage-memory",
-                vista = spec.name
-            ));
-        }
-        let metadata = metadata_from_spec(&spec)?;
-        let id_column = spec.resolve_id_column(DEFAULT_ID_COLUMN);
-        let block = spec.driver.memory;
-        let table = self.store().define(
-            &spec.name,
-            TableDef {
-                id_column: id_column.clone(),
-                indexed: block.indexed.clone(),
-                id_prefix: None,
-            },
-        );
-        // The table may predate the spec, keeping its original definition.
-        if table.id_column() != id_column {
-            return Err(error!(
-                "Table already exists with another id column",
-                table = spec.name,
-                existing = table.id_column(),
-                requested = id_column
-            ));
-        }
-        for column in &block.indexed {
-            table.add_index(column);
-        }
-        // Seed only an empty table, so rebuilding the vista neither reverts
-        // edits made since nor duplicates rows without an id. Seeded cells
-        // take their declared type's form, as written cells do.
-        if let Some(path) = &block.seed
-            && table.is_empty()
-        {
-            seed::load_file_with(&table, path, |row| {
-                conform_record(&metadata, &id_column, row)
-            })?;
-        }
-        self.catalog.register(spec.name.clone(), metadata.clone());
-        let shell = MemoryTableShell::new(table, metadata, self.catalog.clone());
-        Ok(Vista::new(spec.name, shell))
+        let table = self.table_from_spec(&spec)?;
+        // Only here, on the table the caller asked for: a reference target
+        // checking its own would build this one again.
+        table.data_source().check_rollups(&table)?;
+        spec_vista(table, &spec, self.specs())
     }
-}
-
-/// Every stored column is orderable: the store sorts on any field. A column
-/// without `type:` is untyped, so its cells are stored as given. A `lazy:`
-/// column is computed by the Vista.
-fn metadata_from_spec(spec: &MemoryVistaSpec) -> Result<VistaMetadata> {
-    let id = spec.resolve_id_column(DEFAULT_ID_COLUMN);
-    let mut metadata = VistaMetadata::new().with_id_column(id.clone());
-    for (name, col) in &spec.columns {
-        if col.expr.is_some() {
-            return Err(error!(
-                "Server-side `expr:` columns are not supported by vantage-memory",
-                column = name
-            ));
-        }
-        let column = match col.lazy_column(name)? {
-            Some(computed) => computed,
-            None => {
-                let column = match &col.col_type {
-                    Some(ty) => Column::new(name, ty),
-                    None => Column::untyped(name),
-                };
-                col.flags
-                    .iter()
-                    .cloned()
-                    .chain([ColumnFlag::Orderable])
-                    .fold(column, Column::with_flag)
-            }
-        };
-        metadata = metadata.with_column(column);
-    }
-    for reference in spec_references(spec, &id)? {
-        metadata = metadata.with_reference(reference);
-    }
-    Ok(metadata)
 }

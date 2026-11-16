@@ -1,15 +1,15 @@
 # vantage-memory
 
 An in-memory [Vantage](https://github.com/romaninsh/vantage) datasource: a typed `TableSource`
-(`MemoryDB`) and a Vista `TableShell` (`MemoryTableShell`, built by `MemoryVistaFactory` or
-`MemoryCatalog`), both reading and writing through one store, with native change events.
+(`MemoryDB`) and a Vista `TableShell` (`MemoryTableShell`, built by `MemoryVistaFactory` over a
+typed table), both reading and writing through one store, with native change events.
 
 It is not a mock. `MockShell`, `MockTableSource` and `ImDataSource` keep their existing role in
 tests elsewhere in the workspace; this crate is real storage that happens to live in the process —
 data lives as long as the process runs, and it is meant as a production backend for things like
 faker's simulated data and browsable dev/demo tables.
 
-Every type is reached from the crate root (`vantage_memory::MemoryCatalog`, not a `vista::` path).
+Every type is reached from the crate root (`vantage_memory::MemoryVistaFactory`, not a `vista::` path).
 `vantage_memory::prelude` holds only what the typed layer needs.
 
 ## Quick use
@@ -137,31 +137,32 @@ let page = cheap.fetch_window(0, 20).await?;   // page.total is always set
 
 `vista` itself is unchanged by either. Every stored column is orderable; a `lazy:` column is not.
 
-### A catalog, without YAML
+### A typed table, without YAML
 
-`MemoryCatalog` is the store plus the metadata registered for each table. It implements
-`VistaResolver`, so `catalog.vista(name)` gives a fresh Vista over the store table:
+A memory Vista wraps a `Table<MemoryDB>`, so the table's hooks and conditions apply to it:
 
 ```rust
-use vantage_memory::{MemoryCatalog, MemoryStore};
-use vantage_vista::{Column, ColumnFlag, VistaMetadata, VistaResolver};
+use vantage_memory::{AnyMemoryType, MemoryDB, MemoryStore, MemoryVistaFactory};
+use vantage_table::table::Table;
+use vantage_types::EmptyEntity;
 
-let catalog = MemoryCatalog::new(MemoryStore::new());
-catalog.register(
-    "item",
-    VistaMetadata::new()
-        .with_column(Column::new("id", "string").with_flag(ColumnFlag::Id))
-        .with_column(Column::new("name", "string"))
-        .with_column(Column::untyped("origin"))
-        .with_id_column("id"),
-);
-let items = catalog.vista("item")?;
+let store = MemoryStore::new();
+let table = Table::<MemoryDB, EmptyEntity>::new("item", MemoryDB::from_store(store.clone()))
+    .with_id_column("id")
+    .with_column_of::<String>("name")
+    .with_column_of::<AnyMemoryType>("origin");
+let items = MemoryVistaFactory::new(store).from_table(table)?;
 ```
 
-A registered name whose table isn't in the store yet gets a new, empty one. A store table with no
-registration gets only its id column. Any other name is not-found, and creates no table.
-`MemoryVistaFactory` registers every vista it builds in its own catalog, which is how a reference
-traversal (`vista.get_ref("product", Some(&row))`) gets the target's declared columns.
+`with_injector` runs a build injector on every table the factory builds from a spec, reference
+targets included. A reference traversal (`vista.get_ref("product", Some(&row))`) rebuilds its
+target from its spec, and the target's columns and types are that spec's. With `with_resolver`
+attached, the resolver's spec is used, and a target it doesn't know is an error. Without one, the
+spec of a vista the same factory built is used, else an id-only spec for a table already in the
+store.
+
+`import_values` is all-or-nothing, inside a transaction or not: nothing lands unless every new
+record is inserted.
 
 ### Live changes
 
@@ -188,6 +189,22 @@ let dio = lens.dio(vista).live().build().await?;
 
 The subscription is made before the Dio's initial copy, so a write that lands during the copy is
 not lost.
+
+A vista whose table has roll-ups reports every write to it, or to a table its roll-ups read, as
+`Invalidated`: one changed row can't say which computed values moved.
+
+### Forking the store
+
+`MemoryStore::fork` copies every table, with its indexes and id counters, into a store that shares
+nothing with the original. Run one future in each copy from the same starting state:
+
+```rust
+let what_if = store.fork();
+let vista = MemoryVistaFactory::new(what_if.clone()).from_yaml(ORDER)?;
+vista.delete_all().await?; // `store` still holds its orders
+```
+
+Fork while nothing writes: tables are copied one at a time.
 
 ## Semantics
 

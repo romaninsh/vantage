@@ -16,9 +16,22 @@ mod computed;
 mod relations;
 
 /// An expression closure stored on a table, against the entity-erased table so
-/// it survives [`Table::into_entity`]. See [`Table::with_expression`].
-pub type ExpressionFn<T> =
-    Arc<dyn Fn(&Table<T, EmptyEntity>) -> Expression<<T as TableSource>::Value> + Send + Sync>;
+/// it survives [`Table::into_entity`]. It runs when a query that includes the
+/// column is built ([`Table::try_select`]), never when the table is; an error
+/// fails that query. See [`Table::with_expression`] and
+/// [`Table::with_try_expression`].
+pub type ExpressionFn<T> = Arc<
+    dyn Fn(&Table<T, EmptyEntity>) -> vantage_core::Result<Expression<<T as TableSource>::Value>>
+        + Send
+        + Sync,
+>;
+
+/// Context key a failed expression callback's error gains: the column whose
+/// callback failed.
+pub const EXPRESSION_COLUMN: &str = "expression_column";
+/// Context key a failed expression callback's error gains: the table the
+/// column is on.
+pub const EXPRESSION_TABLE: &str = "expression_table";
 
 /// A lazy-expression callback stored on a table: runs on each returned record
 /// and sees the columns earlier callbacks produced. See

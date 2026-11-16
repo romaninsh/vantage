@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.1 — 2026-11-16
+
+- Requires vantage-table 4.0.0.
+
 ## 1.7.0 — 2026-11-14
 
 - Multi-column order through a Dio. A facade Vista takes `add_order`, and the tie-breakers

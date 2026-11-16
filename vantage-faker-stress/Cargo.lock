@@ -1470,7 +1470,7 @@ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "vantage-core"
-version = "1.1.0"
+version = "1.3.1"
 dependencies = [
  "atty",
  "indexmap",
@@ -1483,7 +1483,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-dataset"
-version = "1.1.2"
+version = "1.2.0"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -1502,7 +1502,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama"
-version = "0.15.0"
+version = "1.7.0"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -1513,7 +1513,6 @@ dependencies = [
  "serde",
  "tokio",
  "tracing",
- "uuid",
  "vantage-core",
  "vantage-dataset",
  "vantage-table",
@@ -1523,7 +1522,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-expressions"
-version = "1.2.0"
+version = "1.3.0"
 dependencies = [
  "async-trait",
  "serde",
@@ -1535,7 +1534,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-faker"
-version = "2.0.0"
+version = "3.0.0"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -1578,15 +1577,17 @@ dependencies = [
 
 [[package]]
 name = "vantage-memory"
-version = "2.0.0"
+version = "4.0.0"
 dependencies = [
  "async-stream",
  "async-trait",
  "ciborium",
  "futures-core",
+ "futures-util",
  "indexmap",
  "parking_lot",
  "paste",
+ "rust_decimal",
  "serde",
  "serde_json",
  "serde_yaml_ng",
@@ -1601,8 +1602,9 @@ dependencies = [
 
 [[package]]
 name = "vantage-rhai"
-version = "1.1.0"
+version = "1.6.0"
 dependencies = [
+ "chrono",
  "rhai",
  "serde",
  "serde_json",
@@ -1611,7 +1613,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "2.0.0"
+version = "3.8.1"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1624,7 +1626,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
- "uuid",
  "vantage-core",
  "vantage-dataset",
  "vantage-expressions",
@@ -1634,7 +1635,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-types"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "chrono",
  "ciborium",
@@ -1657,19 +1658,21 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "2.0.0"
+version = "2.11.0"
 dependencies = [
  "async-stream",
  "async-trait",
  "chrono",
  "ciborium",
  "futures-core",
+ "getrandom 0.4.3",
  "indexmap",
  "serde",
  "serde_json",
  "serde_yaml_ng",
  "thiserror 2.0.21",
  "tokio",
+ "tracing",
  "uuid",
  "vantage-core",
  "vantage-dataset",

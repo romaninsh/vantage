@@ -1,5 +1,56 @@
 # Changelog
 
+## 4.0.0 — 2026-11-14
+
+Requires vantage-table 4.0.0 and vantage-vista 2.11.0.
+
+- **Typed tables.** A memory Vista is now built over `Table<MemoryDB>`, so table hooks and build
+  injectors apply. `MemoryTableShell::new` and `MemoryCatalog` are gone; build through
+  `MemoryVistaFactory`: `from_table` wraps a typed table, `table_from_spec` builds the typed
+  table a spec describes, and `with_injector` and `with_resolver` attach a build injector and a
+  spec resolver.
+- `MemoryDB::in_transaction(&Transaction)`: a `MemoryDB` whose reads and writes go through the
+  transaction, so a typed table joins it. A write still in flight when another task commits the
+  transaction fails with "transaction finished" instead of landing on the replayed copy.
+- **Rollups.** A `MemoryDB` table computes roll-up columns from its child rows on read, including
+  an open transaction's writes: `MemoryRollup::new(column, target, foreign_key, op)` (with
+  `with_source` and `with_conditions`; the struct is `#[non_exhaustive]`), added with
+  `MemoryRollupExt::with_memory_rollup`. Reads, conditions and orders see the computed value,
+  never one stored in the column, and writes return the computed value. Insert, patch and
+  import check a row's membership with its roll-ups filled; an equality condition on a roll-up
+  column is not written into inserted rows.
+- A watch on a Vista whose table has roll-ups reports every write to the table, or to a table its
+  roll-ups read, as `VistaChange::Invalidated`. Only tables the store holds when the watch starts
+  are heard.
+- Roll-up `sum`, `min`, `max` and `avg` (and `MemoryDB`'s sum, max and min) take decimal cells
+  (`Tag(10)` text) alongside integers and floats. A decimal makes a sum or average a decimal,
+  a float makes it a float, and so does a decimal sum past `Decimal`'s range; min and max
+  compare across all three.
+- A Vista built from a spec flags a column its injector made computed (a roll-up) `Calculated`.
+- A reference to a missing table is an error, no longer not-found. With a resolver attached, a
+  target it has no spec for is an error too.
+- `import` writes nothing unless every record is written, hooks included.
+- A memory Vista advertises `WritesReachHooks`.
+- A Vista stores a declared `date` column date-only (`Tag(100)`, as fixtures load it) from any
+  write: date text, or a datetime at midnight UTC such as `today()` or `add_months` returns, which
+  is also what SurrealDB keeps a date as. A datetime with a time of day is stored as given. Dates
+  order and compare as their text, and quicksearch and `Like` match it.
+- `MemoryStore::fork`: an independent copy of the data (rows, indexes, id counters), with its own
+  change channel and transaction claim, for running alternative futures from one state.
+- A memory Vista takes `add_order`: later columns break the ties of the first, so a Rhai
+  `.sort("a").sort("b")` sorts by both.
+
+- Requires vantage-table 4.0.0. Roll-ups are planned on the `MemoryDB` doing the read and only
+  for the columns a read selects, filters or sorts on: `MemoryRollupExt::with_lazy_memory_rollup`
+  and `MemoryDB::check_rollups`. A roll-up column a read did not fill is left out of its rows. A
+  roll-up over the table's own relation aggregates another column correctly; a column rolling
+  up itself is an error.
+- A condition over a related table (`MemoryCondition::DeferredIn`) reads that table through the
+  `MemoryDB` resolving it, so inside a transaction it sees the transaction's rows. It holds a
+  `RelatedRead` closure; `MemoryCondition::resolve`, `Query::resolve` and `table_query` take the
+  `MemoryDB`.
+- `Tag(101)` (time) compares as its text, like dates and datetimes.
+
 ## 3.1.1 — 2026-11-13
 
 - Fix (VAN-432): an index keyed an integer above 2^53 apart from the float a scan calls equal to

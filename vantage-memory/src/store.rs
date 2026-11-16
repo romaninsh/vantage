@@ -81,6 +81,38 @@ impl MemoryStore {
         self
     }
 
+    /// An independent store holding the same data: rows and indexes are
+    /// copied, each table's id counter continues from where the source's
+    /// stands, and nothing else is shared. Writes, ids and transactions on
+    /// one side never reach the other, and watchers of the source hear
+    /// nothing from the fork.
+    ///
+    /// Tables are copied one at a time, so a concurrent writer can make the
+    /// fork inconsistent across tables; fork when the store is quiet.
+    ///
+    /// ```
+    /// # use vantage_memory::MemoryStore;
+    /// # use vantage_types::Record;
+    /// let store = MemoryStore::new();
+    /// store.table("t").insert(Record::new()).unwrap();
+    /// let fork = store.fork();
+    /// fork.table("t").insert(Record::new()).unwrap();
+    /// assert_eq!((store.table("t").len(), fork.table("t").len()), (1, 2));
+    /// ```
+    pub fn fork(&self) -> MemoryStore {
+        let tables = self
+            .tables
+            .read()
+            .iter()
+            .map(|(name, t)| (name.clone(), Arc::new(t.detached_copy())))
+            .collect();
+        MemoryStore {
+            tables: Arc::new(RwLock::new(tables)),
+            claim: Arc::default(),
+            transaction_wait: self.transaction_wait,
+        }
+    }
+
     pub(crate) fn claim(&self) -> &Arc<Mutex<()>> {
         &self.claim
     }

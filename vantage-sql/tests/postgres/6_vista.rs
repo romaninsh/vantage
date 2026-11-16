@@ -14,7 +14,7 @@ use vantage_dataset::prelude::*;
 use vantage_sql::postgres::PostgresDB;
 use vantage_sql::postgres::vista::PostgresVistaSpec;
 use vantage_table::table::Table;
-use vantage_types::EmptyEntity;
+use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{Capability, VistaFactory};
 
 #[path = "6_vista/contained.rs"]
@@ -146,6 +146,29 @@ async fn typed_events(suffix: &str) -> (PostgresDB, String) {
 }
 
 vista_tests!(PostgresVistaSpec, "postgres");
+
+/// `HH:MM` is a time of day, and minute-precision naive text a timestamp
+/// (UTC assumed), as on SQLite.
+#[tokio::test]
+async fn vista_time_and_timestamp_take_minute_precision() -> TestResult {
+    let (db, name) = typed_events("minutes").await;
+    let vista = db.vista_factory().from_yaml(&format!(
+        "name: {name}\ncolumns:\n  id: {{ type: string, flags: [id] }}\n  \
+         at: {{ type: timestamp }}\n  starts: {{ type: time }}\npostgres:\n  table: {name}\n"
+    ))?;
+    let tagged = |tag: u64, s: &str| CborValue::Tag(tag, Box::new(CborValue::Text(s.into())));
+    for (id, at) in [("t", "2026-12-10T09:30"), ("space", "2026-12-10 09:30")] {
+        let row: Record<CborValue> = [("at", at), ("starts", "09:30")]
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), CborValue::Text(v.into())))
+            .collect();
+        vista.insert_value(id, &row).await?;
+        let stored = vista.get_value(id).await?.expect("inserted");
+        assert_eq!(stored["starts"], tagged(101, "09:30:00"), "{id}");
+        assert_eq!(stored["at"], tagged(0, "2026-12-10 09:30:00+00"), "{id}");
+    }
+    Ok(())
+}
 
 #[tokio::test]
 async fn vista_lists_typed_postgres_as_cbor() -> TestResult {

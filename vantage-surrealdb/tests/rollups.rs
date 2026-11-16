@@ -206,21 +206,37 @@ async fn rollup_over_a_query_sourced_child_keeps_its_query() {
     );
 }
 
+/// The error a roll-up gives when its column is read, from each way in: the
+/// check a factory runs on a finished table, the select, and the read.
+async fn query_time_error(table: &Table<SurrealDB, EmptyEntity>) -> String {
+    let checked = table.check_expressions().unwrap_err();
+    let selected = table.try_select().unwrap_err();
+    let read = table.list_values().await.unwrap_err();
+    assert_eq!(checked.message(), selected.message());
+    assert_eq!(checked.message(), read.message());
+    read.message().to_string()
+}
+
 /// A computed child column would aggregate the stored field of the same name,
-/// not the expression: refused.
+/// not the expression: refused when the column is read.
 #[tokio::test]
 async fn rollup_over_a_computed_child_column_is_refused() {
     let db = seeded(true).await;
     fn doubled_lines(db: SurrealDB) -> Table<SurrealDB, EmptyEntity> {
         line_table(db).with_expression("net", |_| surreal_expr!("net * 2"))
     }
-    let built = Table::<SurrealDB, EmptyEntity>::new("invoice", db)
+    let table = Table::<SurrealDB, EmptyEntity>::new("invoice", db)
         .with_many("lines", "invoice", doubled_lines)
-        .with_rollup("total", "lines", RollupOp::Sum, Some("net"), None);
-    assert!(built.is_err());
+        .with_rollup("total", "lines", RollupOp::Sum, Some("net"), None)
+        .unwrap();
+    assert_eq!(
+        query_time_error(&table).await,
+        "a roll-up can't aggregate a computed column"
+    );
 }
 
-/// A has_many target with a window has no clear set to aggregate: refused.
+/// A has_many target with a window has no clear set to aggregate: refused
+/// when the column is read.
 #[tokio::test]
 async fn rollup_over_a_paginated_child_is_refused() {
     let db = seeded(true).await;
@@ -229,10 +245,57 @@ async fn rollup_over_a_paginated_child_is_refused() {
         lines.set_pagination(Some(Pagination::new(2, 1)));
         lines
     }
-    let built = Table::<SurrealDB, EmptyEntity>::new("invoice", db)
+    let table = Table::<SurrealDB, EmptyEntity>::new("invoice", db)
         .with_many("lines", "invoice", first_line)
-        .with_rollup("lines", "lines", RollupOp::Count, None, None);
-    assert!(built.is_err());
+        .with_rollup("lines", "lines", RollupOp::Count, None, None)
+        .unwrap();
+    assert_eq!(
+        query_time_error(&table).await,
+        "a roll-up's relation target can't have pagination"
+    );
+}
+
+/// `node.with_many("children", "parent", node)`: `$parent` names the outer
+/// row, so the subquery over the node's own table needs no alias. A column
+/// aggregating itself is the named error, not an endless build.
+#[tokio::test]
+async fn a_self_referencing_rollup_counts_each_rows_children() {
+    let db = seeded(true).await;
+    for statement in [
+        "DEFINE TABLE node SCHEMALESS",
+        "CREATE node:root SET weight = 1",
+        "CREATE node:a SET parent = node:root, weight = 2",
+        "CREATE node:b SET parent = node:root, weight = 3",
+        "CREATE node:c SET parent = node:a, weight = 4",
+    ] {
+        db.execute(&surreal_expr!(statement)).await.unwrap();
+    }
+    fn node(db: SurrealDB) -> Table<SurrealDB, EmptyEntity> {
+        Table::new("node", db)
+            .with_id_column("id")
+            .with_column_of::<i64>("weight")
+            .with_many("children", "parent", node)
+    }
+    let nodes = node(db.clone())
+        .with_rollup("carried", "children", RollupOp::Sum, Some("weight"), None)
+        .unwrap();
+    let rows = nodes.list_values().await.unwrap();
+    let carried: serde_json::Map<String, JsonValue> = rows
+        .into_iter()
+        .map(|(id, row)| (id.to_string(), JsonValue::from(row["carried"].clone())))
+        .collect();
+    assert_eq!(
+        JsonValue::Object(carried),
+        json!({"node:root": 5, "node:a": 4, "node:b": 0, "node:c": 0})
+    );
+
+    let itself = node(db)
+        .with_rollup("weight", "children", RollupOp::Sum, Some("weight"), None)
+        .unwrap();
+    assert_eq!(
+        query_time_error(&itself).await,
+        "a roll-up column can't aggregate itself"
+    );
 }
 
 /// Invoices and lines both keyed by a `doc`, not linked by the invoice id:
@@ -292,11 +355,12 @@ async fn rollup_over_a_keyed_relation_joins_on_its_keys() {
     let keys = "[{ from: doc, to: doc }]";
     for reference in [true, false] {
         let db = seeded_by_doc(reference).await;
-        let (table, warnings) = warnings_during(|| {
-            keyed_invoices(&db, keys)
-                .with_rollup("vat", "lines", RollupOp::Sum, Some("vat"), None)
-                .unwrap()
-        });
+        let table = keyed_invoices(&db, keys)
+            .with_rollup("vat", "lines", RollupOp::Sum, Some("vat"), None)
+            .unwrap();
+        // The roll-up is rendered, and the slow form warned about, when the
+        // query is built.
+        let (select, warnings) = warnings_during(|| table.try_select().unwrap().preview());
         let rows = table.list_values().await.unwrap();
         let mut sums: Vec<(String, JsonValue)> = rows
             .into_iter()
@@ -318,7 +382,6 @@ async fn rollup_over_a_keyed_relation_joins_on_its_keys() {
             ],
             "reference={reference}"
         );
-        let select = table.select().preview();
         if reference {
             assert_eq!(warnings, "");
             assert!(
@@ -358,13 +421,15 @@ async fn rollup_over_a_multi_key_relation_is_refused() {
 async fn rollups_over_a_plain_link_use_parent_and_warn() {
     let db = seeded(false).await;
     for only_live in [false, true] {
-        let (table, warnings) = warnings_during(|| invoices(db.clone(), only_live));
+        let (table, built) = warnings_during(|| invoices(db.clone(), only_live));
+        assert_eq!(built, "", "adding a roll-up renders nothing");
+        let (_, warnings) = warnings_during(|| table.try_select().unwrap());
         assert_eq!(
             rollups(&table).await,
             expected(only_live),
             "only_live={only_live}"
         );
-        // Once per link: the first build warns, the second doesn't.
+        // Once per link: the first table's first query warns, no later one.
         assert_eq!(
             warnings.contains("`DEFINE FIELD invoice ON line TYPE record<invoice> REFERENCE;`"),
             !only_live,

@@ -178,6 +178,34 @@ fn a_date_tag_orders_against_text_and_datetime() {
     let row = rec(&[("due", date("2026-01-01"))]);
     assert!(cond("due", FilterOp::Eq, t("2026-01-01")).matches(&row, &meta));
     assert!(cond("due", FilterOp::Lt, at("2026-01-01T12:00:00Z")).matches(&row, &meta));
+
+    // Equality follows the instant, as ordering does.
+    let midnight = at("2026-01-01T00:00:00Z");
+    assert!(cond("due", FilterOp::Eq, midnight.clone()).matches(&row, &meta));
+    assert!(!cond("due", FilterOp::Ne, midnight.clone()).matches(&row, &meta));
+    assert!(cond("due", FilterOp::InSet, CborValue::Array(vec![midnight])).matches(&row, &meta));
+    let stamped = rec(&[("at", at("2026-01-01T02:00:00+02:00"))]);
+    assert!(cond("at", FilterOp::Eq, at("2026-01-01T00:00:00Z")).matches(&stamped, &meta));
+}
+
+#[test]
+fn a_time_tag_orders_against_text_and_time() {
+    let time = |s: &str| CborValue::Tag(101, Box::new(t(s)));
+    assert_eq!(cbor_cmp(&time("09:30:00"), &t("09:30:00")), Ordering::Equal);
+    assert_eq!(cbor_cmp(&time("09:30:00"), &t("10:00:00")), Ordering::Less);
+    assert_eq!(
+        cbor_cmp(&time("09:30:00"), &time("09:30:00")),
+        Ordering::Equal
+    );
+    assert_eq!(
+        cbor_cmp(&time("18:05:00"), &time("09:30:00.250")),
+        Ordering::Greater
+    );
+    let meta = VistaMetadata::new();
+    let row = rec(&[("opens", time("09:30:00"))]);
+    assert!(cond("opens", FilterOp::Eq, t("09:30:00")).matches(&row, &meta));
+    assert!(cond("opens", FilterOp::Gt, time("08:15:00")).matches(&row, &meta));
+    assert!(!cond("opens", FilterOp::Gt, t("09:30:00")).matches(&row, &meta));
 }
 
 #[test]

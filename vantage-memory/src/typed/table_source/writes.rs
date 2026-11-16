@@ -1,31 +1,91 @@
-//! Patch, delete and id-assigning insert, each confined to the table's set.
+//! Insert, replace, patch and delete, each confined to the table's set. The
+//! checks read first; the mutation itself goes through [`MemoryDB::write`].
 
 use vantage_core::{Result, error};
 use vantage_table::table::Table;
 use vantage_types::{Entity, Record};
 
-use crate::typed::MemoryDB;
+use crate::store::Row;
 use crate::typed::convert::{from_cbor_record, to_cbor_record};
+use crate::typed::{Fill, MemoryDB};
 use crate::types::AnyMemoryType;
 
 impl MemoryDB {
+    /// Insert `record` as `id` and return the stored row. An id already held
+    /// by a row in the set returns that row; one held outside it is a
+    /// `Conflict`.
+    pub(super) async fn insert_in_set<E: Entity<AnyMemoryType>>(
+        &self,
+        table: &Table<Self, E>,
+        id: &str,
+        record: &Record<AnyMemoryType>,
+    ) -> Result<Record<AnyMemoryType>> {
+        if let Some(existing) = self.row_in_set(table, id).await? {
+            return Ok(from_cbor_record(&existing));
+        }
+        let row = self.row_for(table, id, record);
+        if self.fit(table, id, Row::new(row.clone())).await?.is_none() {
+            return Err(Self::misfit(table.table_name(), id));
+        }
+        // The store's refusal stays inner: losing the race below is no failure.
+        match self
+            .write(table, |store| Ok(store.insert_as(id, row)))
+            .await?
+        {
+            Ok(stored) => self.returned(table, id, stored).await,
+            // Lost a race to another writer: take whatever it stored.
+            Err(e) => match self.row_in_set(table, id).await? {
+                Some(existing) => Ok(from_cbor_record(&existing)),
+                None => Err(e),
+            },
+        }
+    }
+
+    /// Replace row `id` with `record`, creating it when missing.
+    pub(super) async fn replace_in_set<E: Entity<AnyMemoryType>>(
+        &self,
+        table: &Table<Self, E>,
+        id: &str,
+        record: &Record<AnyMemoryType>,
+    ) -> Result<Record<AnyMemoryType>> {
+        let existing = self.row_in_set(table, id).await?;
+        let row = self.row_for(table, id, record);
+        if self.fit(table, id, Row::new(row.clone())).await?.is_none() {
+            return Err(Self::misfit(table.table_name(), id));
+        }
+        let stored = self
+            .write(table, |store| {
+                match existing.and_then(|_| store.replace(id, row.clone())) {
+                    Some(stored) => Ok(stored),
+                    None => store.insert_as(id, row),
+                }
+            })
+            .await?;
+        self.returned(table, id, stored).await
+    }
+
     pub(super) async fn patch_in_set<E: Entity<AnyMemoryType>>(
         &self,
         table: &Table<Self, E>,
         id: &str,
         partial: &Record<AnyMemoryType>,
     ) -> Result<Record<AnyMemoryType>> {
-        let not_found =
-            || error!("Row not found", table = table.table_name(), id = id).mark_not_found();
-        let store = self.store_table(table)?;
-        let existing = store.get(id).ok_or_else(not_found)?;
-        if !self.in_set(table, &existing).await? {
-            return Err(not_found());
-        }
+        let name = table.table_name().to_string();
+        let not_found = move || error!("Row not found", table = name, id = id).mark_not_found();
+        let existing = self
+            .store_table(table)
+            .await?
+            .get(id)
+            .ok_or_else(&not_found)?;
+        // The filled row, so `merged` carries the computed roll-ups.
+        let existing = self
+            .fit(table, id, existing)
+            .await?
+            .ok_or_else(&not_found)?;
         let id_column = self.id_column(table);
         let mut merged = (*existing).clone();
         for (k, v) in to_cbor_record(partial) {
-            if k != id_column {
+            if k != id_column && !self.is_rollup(table.table_name(), &k) {
                 merged.insert(k, v);
             }
         }
@@ -37,11 +97,14 @@ impl MemoryDB {
             )
             .mark_conflict());
         }
-        if !store.patch(id, &to_cbor_record(partial)) {
-            return Err(not_found());
-        }
-        let row = store.get(id).ok_or_else(not_found)?;
-        Ok(from_cbor_record(&row))
+        let partial = to_cbor_record(partial);
+        let row = self
+            .write(table, |store| match store.patch(id, &partial) {
+                true => store.get(id).ok_or_else(&not_found),
+                false => Err(not_found()),
+            })
+            .await?;
+        self.returned(table, id, row).await
     }
 
     pub(super) async fn delete_in_set<E: Entity<AnyMemoryType>>(
@@ -49,11 +112,11 @@ impl MemoryDB {
         table: &Table<Self, E>,
         id: &str,
     ) -> Result<()> {
-        let store = self.store_table(table)?;
-        if let Some(row) = store.get(id)
-            && self.in_set(table, &row).await?
-        {
-            store.delete(id);
+        let Some(row) = self.store_table(table).await?.get(id) else {
+            return Ok(());
+        };
+        if self.fit(table, id, row).await?.is_some() {
+            self.write(table, |store| Ok(store.delete(id))).await?;
         }
         Ok(())
     }
@@ -62,11 +125,14 @@ impl MemoryDB {
         &self,
         table: &Table<Self, E>,
     ) -> Result<()> {
-        let store = self.store_table(table)?;
-        for (id, _) in self.rows(table, false).await? {
-            store.delete(&id);
-        }
-        Ok(())
+        let rows = self.rows(table, false, Fill::Nothing).await?;
+        self.write(table, |store| {
+            for (id, _) in &rows {
+                store.delete(id);
+            }
+            Ok(())
+        })
+        .await
     }
 
     pub(super) async fn insert_new_in_set<E: Entity<AnyMemoryType>>(
@@ -83,6 +149,6 @@ impl MemoryDB {
             )
             .mark_conflict());
         }
-        self.store_table(table)?.insert(row)
+        self.write(table, |store| store.insert(row)).await
     }
 }

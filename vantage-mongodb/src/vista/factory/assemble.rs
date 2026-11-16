@@ -106,6 +106,9 @@ impl VistaFactory for MongoVistaFactory {
             ));
         }
         let table = self.table_from_spec(&spec)?;
+        // Only here, on the table the caller asked for: a reference target
+        // or a `base:` table checking its own would build this one again.
+        table.check_expressions()?;
         let metadata = spec_metadata(&table, &spec)?;
         let column_paths = column_paths(&table);
         let vista = self.wrap_with_paths(table, column_paths, spec.name, metadata);

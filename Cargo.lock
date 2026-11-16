@@ -2807,12 +2807,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "md5"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae960838283323069879657ca3de837e9f7bbb4c7bf6ea7f1b290d5e9476d2e0"
-
-[[package]]
 name = "memchr"
 version = "2.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5705,7 +5699,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-api-client"
-version = "2.4.0"
+version = "2.4.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5748,7 +5742,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-aws"
-version = "0.9.1"
+version = "0.10.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -5785,7 +5779,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-cli-util"
-version = "0.6.8"
+version = "0.6.9"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -5803,7 +5797,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-cmd"
-version = "0.7.5"
+version = "0.7.6"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -5838,7 +5832,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-csv"
-version = "0.7.6"
+version = "0.7.7"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -5879,7 +5873,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama"
-version = "1.7.0"
+version = "1.7.1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -5976,7 +5970,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-log-writer"
-version = "0.7.5"
+version = "0.7.6"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -5999,7 +5993,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-memory"
-version = "3.1.1"
+version = "4.0.0"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -6009,6 +6003,7 @@ dependencies = [
  "indexmap 2.14.0",
  "parking_lot",
  "paste",
+ "rust_decimal",
  "serde",
  "serde_json",
  "serde_yaml_ng",
@@ -6025,11 +6020,12 @@ dependencies = [
 
 [[package]]
 name = "vantage-mongodb"
-version = "3.3.0"
+version = "4.0.0"
 dependencies = [
  "async-stream",
  "async-trait",
  "bson",
+ "chrono",
  "ciborium",
  "futures-util",
  "indexmap 2.14.0",
@@ -6051,7 +6047,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-redb"
-version = "0.8.3"
+version = "0.8.4"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -6073,7 +6069,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-rhai"
-version = "1.6.0"
+version = "1.6.1"
 dependencies = [
  "chrono",
  "rhai",
@@ -6086,7 +6082,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-sql"
-version = "0.12.3"
+version = "0.12.4"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -6116,7 +6112,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-surrealdb"
-version = "2.4.0"
+version = "2.4.1"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -6127,12 +6123,10 @@ dependencies = [
  "futures",
  "hex",
  "indexmap 2.14.0",
- "md5",
  "paste",
  "rust_decimal",
  "serde",
  "serde_json",
- "serde_path_to_error",
  "serde_yaml_ng",
  "surreal-client",
  "thiserror 2.0.18",
@@ -6151,7 +6145,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "3.8.1"
+version = "4.0.0"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -6216,7 +6210,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "2.11.0"
+version = "2.12.0"
 dependencies = [
  "async-stream",
  "async-trait",

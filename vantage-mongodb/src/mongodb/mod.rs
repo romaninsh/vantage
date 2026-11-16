@@ -123,6 +123,20 @@ impl MongoDB {
         })
     }
 
+    /// This datasource running its operations in the transaction `evaluator`
+    /// is in: a table related to the one `evaluator` reads or writes is read
+    /// in the same session. Unchanged when `evaluator` has no transaction or
+    /// is another datasource, whose session this one's client can't use.
+    pub(crate) fn in_transaction_of(&self, evaluator: &Self) -> Self {
+        match &evaluator.tx {
+            Some(tx) if Arc::ptr_eq(&self.key, &evaluator.key) => Self {
+                tx: Some(tx.clone()),
+                ..self.clone()
+            },
+            _ => self.clone(),
+        }
+    }
+
     pub fn tx_key(&self) -> TxKey {
         TxKey::of(&self.key)
     }

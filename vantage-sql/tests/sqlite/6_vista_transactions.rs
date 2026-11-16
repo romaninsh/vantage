@@ -17,6 +17,7 @@ use tokio::time::timeout;
 use vantage_dataset::traits::WritableValueSet;
 use vantage_sql::sqlite::SqliteDB;
 use vantage_table::table::{AfterFn, Hook, Table};
+use vantage_table::traits::table_source::TableSource;
 use vantage_table::write_context::WriteContext;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::contract::{self, TxFixture, TxTables};
@@ -54,10 +55,14 @@ impl SqliteTx {
 
 fn tables(db: SqliteDB) -> TxTables {
     let factory = db.vista_factory();
+    // `b` narrowed to the rows whose `a_id` is the id of a row of `a`.
+    let b_of_a = db.related_in_condition("a_id", &table_a(db.clone()), "id");
+    let b_of_a = table_b(db.clone()).with_condition(b_of_a);
     TxTables::new(
         factory.from_table(table_a(db.clone())).unwrap(),
         factory.from_table(table_b(db)).unwrap(),
     )
+    .with_b_of_a(factory.from_table(b_of_a).unwrap())
 }
 
 fn table_a(db: SqliteDB) -> Table<SqliteDB, EmptyEntity> {

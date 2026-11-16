@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.1 — 2026-11-16
+
+- Fix: `now()` and `today()` are registered volatile, so an engine at `OptimizationLevel::Full`
+  no longer folds them into compile-time values that ignore `clock.advance(..)` and
+  `Compiled::rebind(..)`.
+
 ## 1.6.0 — 2026-11-14
 
 - `Clock`: the time `now()` and `today()` read. `Clock::system()` is the wall clock;

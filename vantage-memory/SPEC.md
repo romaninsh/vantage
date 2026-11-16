@@ -61,15 +61,14 @@ vantage-memory/
   src/typed/convert.rs       record ⇄ AnyMemoryType; table conditions/orders/pagination → Query
   src/typed/table_source.rs  TableSource for MemoryDB
   src/typed/aggregate.rs     sum / max / min
-  src/vista.rs               MemoryTableShell: query state over one store table
-  src/vista/shell.rs         TableShell impl
-  src/vista/narrow.rs        conditions, search and order on the shell's Query
+  src/vista.rs               MemoryTableShell: a typed Table<MemoryDB> plus its Vista metadata
+  src/vista/shell.rs         TableShell impl: reads, writes and import through the table
+  src/vista/narrow.rs        conditions, search and order added to the table
   src/vista/affinity.rs      a declared column's stored form
-  src/vista/catalog.rs       MemoryCatalog: the store plus registered metadata; a VistaResolver
   src/vista/refs.rs          get_ref
   src/vista/watch.rs         watch
-  src/vista/writes.rs        insert / replace / upsert / patch / delete / delete_all / import
   src/vista/factory.rs       MemoryVistaFactory + MemoryVistaSpec
+  src/vista/spec_table.rs    spec → typed table, store table and Vista metadata
   src/seed.rs                load / load_file / dump
   examples/bench.rs          throughput at 1k / 10k / 100k rows
   tests/                     typed, vista, watch, dio, seed_joins, safe_writes, computed, contract
@@ -170,11 +169,11 @@ The evaluator is a public module. It is not the one vantage-vista ships: `vantag
 
 ## Vista layer
 
-`MemoryTableShell` implements `TableShell` directly over the store — a `MemoryTableHandle` plus its own `Query` — not over a typed `Table`. Each shell shares the table and keeps its own query state: conditions, order and search. A `Vista` over it is `Clone`, and a clone shares the table but not the query, so `vista.clone().with_condition(..)` leaves the original as it was.
+`MemoryTableShell` wraps a typed `Table<MemoryDB, EmptyEntity>`, as `SqlTableShell` and `CsvTableShell` do. Every read and write goes through the table, so its hooks, build injectors, write guard and invariants apply, and `rebind` joins a transaction through `MemoryDB::in_transaction`. The shell conforms cells and condition operands to their column's affinity before they reach the table. The table holds the query state (conditions, order, search), so a clone of the Vista copies it: `vista.clone().with_condition(..)` leaves the original as it was. Only `MemoryVistaFactory` builds a shell.
 
-- **Capabilities advertised:** `Insert`, `Update`, `Delete`, `Import`, `Subscribe`, `Order`, `Search`, `FilterOps`, `Window`, `Traverse` and `ConfineWrites`. `import` inserts every record whose id is new, never overwriting one, and returns how many were new; nothing is written unless every new record fits the set.
+- **Capabilities advertised:** `Insert`, `Update`, `Delete`, `Import`, `Subscribe`, `Order`, `Search`, `FilterOps`, `Window`, `Traverse` and `ConfineWrites`. `import` inserts every record whose id is new, never overwriting one, and returns how many were new. It is all-or-nothing: nothing is written unless every new record fits the set and every insert, hooks included, succeeds. Inside a transaction it joins that transaction. Outside one it runs in a private, unclaimed store transaction, which keeps working copies and the checked commit replay but takes no claim, so it never waits on a transaction holding the store.
 - **Not advertised:** `Cursor` (`Window` already reaches any offset) and `NativeConditions` (the store has no query language of its own).
-- **Writes stay inside the set.** Every write is checked against the shell's query: a full-record write is filled with the set's equality conditions, a record that would fall outside the set is a conflict, and a patch may not move a row out of it.
+- **Writes stay inside the set.** vantage-table fills a full-record write with the set's equality conditions and checks a patch against them; `MemoryDB` refuses a record that would fall outside the set as a conflict, and a patch that would move a row out of it. An equality on a dotted path into a map is not filled.
 - **`fetch_window`** cuts the window from a copy of the query and always carries the total, since the store counts the set as cheaply as it windows it.
 - **`watch`** subscribes to the table's channel. It checks each change against the Vista's conditions once, on the changed row only:
   - a row that newly matches arrives as `Inserted`
@@ -187,8 +186,8 @@ The evaluator is a public module. It is not the one vantage-vista ships: `vantag
 
   Rows never trigger a re-query.
 - **Traversal (`get_ref(relation, row)`).** With `None` for the row, the bare target. `HasOne`: the target Vista is narrowed to `target[id] == row[foreign_key]`, the foreign key taken as an id string (an integer `1` becomes `"1"`). `HasMany`: narrowed to `target[foreign_key] == row[id]` — the SQLite backend's convention. Both go through `Reference::narrow`, which adds an `Eq` condition to the target; the target shell conforms the operand to a typed column's stored form, and on an untyped column matches an integer and its canonical text alike (stored as `InSet` of both forms), since seed files often write foreign keys as integers. The typed layer's `related_in_condition` widens its source values the same way. A row missing the join field (its own id column for `HasMany`, or the foreign key for `HasOne`) is an error, not an empty result.
-- **The reference catalog.** The factory keeps a `MemoryCatalog`: the store plus a shared, `Clone`-cheap map from every vista name it has built to that vista's `VistaMetadata`. It implements `VistaResolver`, and `get_ref` resolves its target through `catalog.vista(&reference.target)`, so a traversal target gets its declared columns and references. A store table that was never built through this factory (or not yet) gets id-only metadata; a name that is neither registered nor in the store is not-found. A host can build one directly, `register` metadata under a name (a column declared with `Column::untyped` stores its cells as given) and call `catalog.vista(name)`.
-- **`MemoryVistaFactory`** implements `VistaFactory` and is built from a `MemoryStore` handle. `MemoryVistaSpec` (`VistaSpec<MemoryTableExtras, NoExtras, NoExtras>`) carries the table name, columns, id column, references and the driver extras `MemoryTableExtras { memory: MemoryBlock }`, where `MemoryBlock { indexed: Vec<String>, seed: Option<PathBuf> }` — YAML `memory: { indexed: [..], seed: <file>? }`.
+- **Reference targets.** `get_ref` is `Table::traverse_erased`: the target is the typed relation's table, rebuilt from its spec at traversal time through the same injector, on the shell's datasource (so it joins an open transaction), and its Vista metadata is its spec's (`metadata_from_spec`), so its column types read as in a root build. With a resolver attached (`with_resolver`), its answer is final: a target it has no spec for is an error ("reference target has no spec"). Without one, the spec is the one this factory built (`build_from_spec` or `table_from_spec`), else, for a table the store already holds, a spec declaring only its id column; a target with neither is an error. A traversal never defines or seeds the store table: only a root build does. A typed table with no spec behind it (`from_table`) gets metadata read off the table, mapped back to the affinity vocabulary: `String` is text, `i64` integer, an `AnyMemoryType` column untyped.
+- **`MemoryVistaFactory`** implements `VistaFactory` and is built from a `MemoryStore` handle. `with_injector` and `with_resolver` attach a build injector and a spec resolver; `table_from_spec` builds the typed table; `from_table` wraps any typed table. `MemoryVistaSpec` (`VistaSpec<MemoryTableExtras, NoExtras, NoExtras>`) carries the table name, columns, id column, references and the driver extras `MemoryTableExtras { memory: MemoryBlock }`, where `MemoryBlock { indexed: Vec<String>, seed: Option<PathBuf> }` — YAML `memory: { indexed: [..], seed: <file>? }`.
   - `indexed` columns are applied to the table with `add_index`, including a table that already existed under another spec; only the id column has to agree — a mismatch between the spec's `id_column` and an existing table's is an error, since the table can't be given a second id column after rows exist.
   - `seed`, when set, is loaded into the table via `seed::load_file` when the vista is built and the table is empty, so rebuilding a vista neither reverts edits nor duplicates rows. A relative path resolves against the process working directory.
   - `lazy:` columns become Vista computed columns (needs the `rhai` feature).

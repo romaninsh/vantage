@@ -41,8 +41,8 @@ impl SqlShellDialect for PostgresDB {
     }
 
     /// The executed form binds the inline values as `$N` parameters.
-    fn preview<E: Entity<AnyPostgresType>>(table: &Table<Self, E>) -> String {
-        table.select().preview()
+    fn preview<E: Entity<AnyPostgresType>>(table: &Table<Self, E>) -> Result<String> {
+        Ok(table.try_select()?.preview())
     }
 
     fn compare(

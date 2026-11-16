@@ -18,6 +18,15 @@ async fn db() -> MongoDB {
         .expect("Failed to connect to MongoDB")
 }
 
+/// A handle that never connects, for builders that take the resolving
+/// datasource but have nothing deferred to read.
+async fn offline() -> MongoDB {
+    let client = mongodb::Client::with_uri_str("mongodb://127.0.0.1:1")
+        .await
+        .unwrap();
+    MongoDB::new(client, "offline")
+}
+
 // ── Builder / preview tests (no database needed) ─────────────────────────
 
 #[test]
@@ -137,14 +146,14 @@ fn test_build_find_options() {
 #[tokio::test]
 async fn test_build_filter_empty() {
     let s = MongoSelect::new();
-    let filter = s.build_filter().await.unwrap();
+    let filter = s.build_filter(&offline().await).await.unwrap();
     assert_eq!(filter, doc! {});
 }
 
 #[tokio::test]
 async fn test_build_filter_single() {
     let s = MongoSelect::new().with_condition(doc! { "active": true });
-    let filter = s.build_filter().await.unwrap();
+    let filter = s.build_filter(&offline().await).await.unwrap();
     assert_eq!(filter, doc! { "active": true });
 }
 
@@ -153,7 +162,7 @@ async fn test_build_filter_multiple_uses_and() {
     let s = MongoSelect::new()
         .with_condition(doc! { "active": true })
         .with_condition(doc! { "price": { "$gt": 100 } });
-    let filter = s.build_filter().await.unwrap();
+    let filter = s.build_filter(&offline().await).await.unwrap();
     assert_eq!(
         filter,
         doc! { "$and": [{ "active": true }, { "price": { "$gt": 100 } }] }
@@ -163,7 +172,7 @@ async fn test_build_filter_multiple_uses_and() {
 #[tokio::test]
 async fn test_count_pipeline_empty() {
     let s = MongoSelect::new();
-    let pipeline = s.as_count_pipeline().await.unwrap();
+    let pipeline = s.as_count_pipeline(&offline().await).await.unwrap();
     assert_eq!(pipeline.len(), 1);
     assert_eq!(pipeline[0], doc! { "$count": "count" });
 }
@@ -171,7 +180,7 @@ async fn test_count_pipeline_empty() {
 #[tokio::test]
 async fn test_count_pipeline_with_filter() {
     let s = MongoSelect::new().with_condition(doc! { "is_deleted": false });
-    let pipeline = s.as_count_pipeline().await.unwrap();
+    let pipeline = s.as_count_pipeline(&offline().await).await.unwrap();
     assert_eq!(pipeline.len(), 2);
     assert_eq!(pipeline[0], doc! { "$match": { "is_deleted": false } });
     assert_eq!(pipeline[1], doc! { "$count": "count" });
@@ -180,7 +189,10 @@ async fn test_count_pipeline_with_filter() {
 #[tokio::test]
 async fn test_aggregate_pipeline_sum() {
     let s = MongoSelect::new();
-    let pipeline = s.as_aggregate_pipeline("$sum", "price").await.unwrap();
+    let pipeline = s
+        .as_aggregate_pipeline("$sum", "price", &offline().await)
+        .await
+        .unwrap();
     assert_eq!(pipeline.len(), 1);
     assert_eq!(
         pipeline[0],

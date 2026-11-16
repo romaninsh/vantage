@@ -6,6 +6,7 @@ use ciborium::Value as CborValue;
 use vantage_core::{Result, error};
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_table::sorting::{OrderBy, SortDirection as TableSortDirection};
+use vantage_table::traits::column_like::ColumnLike;
 use vantage_types::{Entity, Record};
 use vantage_vista::{
     Capability, Condition, FilterOp, SortDirection, condition_column_error, unsupported,
@@ -13,6 +14,7 @@ use vantage_vista::{
 
 use super::dialect::{Shell, SqlShellDialect};
 use super::shell::cbor_record;
+use crate::declared::{is_absent, is_temporal};
 
 /// The binary comparison template of `op`, `None` for the other operators.
 fn comparison(op: FilterOp) -> Option<&'static str> {
@@ -32,6 +34,49 @@ where
     T: SqlShellDialect,
     E: Entity<T::Value> + 'static,
 {
+    /// `value` as `field` compares it. On a date, time, datetime or timestamp
+    /// column that is the value a write would store
+    /// (`TableSource::coerce_column_value`), so text in any form a write
+    /// takes compares as the stored form does, and a value that doesn't fit
+    /// is the write's error. No value (null, `""`) and every other column
+    /// compare the value as given.
+    fn operand(&self, field: &str, value: &CborValue) -> Result<T::Value> {
+        let cell = T::cell(value.clone());
+        let temporal = self
+            .table
+            .columns()
+            .get(field)
+            .is_some_and(|column| is_temporal(column.get_type()));
+        if !temporal || is_absent(value) {
+            return Ok(cell);
+        }
+        self.table
+            .data_source()
+            .coerce_column_value(&self.table, field, cell)
+    }
+
+    /// `condition` with the operand [`apply_condition`](Self::apply_condition)
+    /// sends, so rows held in memory are judged as the database judged them.
+    /// `Like` matches the value's own text, and a condition `apply_condition`
+    /// refuses stays as given.
+    pub(super) fn typed_condition(&self, condition: &Condition) -> Condition {
+        let field = condition.column.as_str();
+        let typed = match (&condition.op, &condition.value) {
+            (FilterOp::InSet | FilterOp::NotInSet, CborValue::Array(items)) => items
+                .iter()
+                .map(|v| self.operand(field, v).map(T::cbor))
+                .collect::<Result<_>>()
+                .map(CborValue::Array),
+            (op, value) if comparison(*op).is_some() => self.operand(field, value).map(T::cbor),
+            _ => return condition.clone(),
+        };
+        let mut condition = condition.clone();
+        if let Ok(value) = typed {
+            condition.value = value;
+        }
+        condition
+    }
+
     /// A dotted column is refused with [`condition_column_error`] rather than
     /// compared as a column name, so a caller can evaluate it over the rows
     /// it reads: SQL evaluates neither a nested path into a column's value
@@ -51,7 +96,7 @@ where
             .clone();
         let value = &condition.value;
         if let Some(template) = comparison(condition.op) {
-            let cell = T::cell(value.clone());
+            let cell = self.operand(field, value)?;
             self.table
                 .add_condition(T::compare(&column, template, cell));
             return Ok(());
@@ -64,7 +109,10 @@ where
                         field = field
                     ));
                 };
-                let values: Vec<T::Value> = items.iter().map(|v| T::cell(v.clone())).collect();
+                let values = items
+                    .iter()
+                    .map(|v| self.operand(field, v))
+                    .collect::<Result<Vec<T::Value>>>()?;
                 let negate = op == FilterOp::NotInSet;
                 self.table
                     .add_condition(T::in_list(&column, &values, negate));

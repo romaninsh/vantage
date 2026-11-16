@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use vantage_core::{Result, error};
 use vantage_expressions::{Expression, Expressive, SelectableDataSource, expr_any};
-use vantage_types::Entity;
+use vantage_types::{EmptyEntity, Entity};
 use vantage_vista::ReferenceKind;
 
 use crate::{
@@ -25,6 +25,40 @@ pub enum RollupOp {
     Avg,
 }
 
+impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
+    /// The table roll-up column `name` aggregates: `relation`'s target,
+    /// built now. `column` is the target column it reads. Every backend's
+    /// [`TableSource::rollup_expression`] starts here, so the refusals are
+    /// the same on each.
+    pub fn rollup_target(
+        &self,
+        name: &str,
+        relation: &str,
+        column: Option<&str>,
+    ) -> Result<Table<T, EmptyEntity>> {
+        let target = self.get_ref_target_erased(relation)?;
+        // Over its own table the column would read itself, without end.
+        if target.table_name() == self.table_name() && column == Some(name) {
+            return Err(error!(
+                "a roll-up column can't aggregate itself",
+                column = name,
+                relation = relation,
+                table = self.table_name()
+            ));
+        }
+        // A window would aggregate one page of children, or, past the first
+        // page, skip the aggregate's only row.
+        if target.pagination().is_some() {
+            return Err(error!(
+                "a roll-up's relation target can't have pagination",
+                relation = relation,
+                table = self.table_name()
+            ));
+        }
+        Ok(target)
+    }
+}
+
 impl<T, E> Table<T, E>
 where
     T: SelectableDataSource<T::Value, T::Condition> + TableSource,
@@ -38,11 +72,19 @@ where
     /// `relation` gives for each row, narrowed by `condition`. `column` is
     /// required for every op but `Count`.
     ///
-    /// The backend renders the expression
-    /// ([`TableSource::rollup_expression`]): a correlated subquery by default.
-    /// An unknown relation or column, a relation that isn't a has_many, a
-    /// target with a window, or a backend that refuses roll-ups, is an error
-    /// here, not when the table is read.
+    /// The column is an expression column like any other
+    /// ([`Self::with_try_expression`]): the backend renders it
+    /// ([`TableSource::rollup_expression`], a correlated subquery by default)
+    /// each time a query that includes the column is built. The relation's
+    /// target is built then, not here, so adding a roll-up builds no table.
+    ///
+    /// Errors here: an unknown relation, one that isn't a has_many or is
+    /// joined by more than one key, an op without the column it needs.
+    ///
+    /// Errors when a query includes the column ([`Self::try_select`]), and
+    /// from [`Self::check_expressions`]: a target that fails to build or has
+    /// a window, an unknown or computed child column, a column that would
+    /// aggregate itself, a backend that refuses roll-ups.
     pub fn with_rollup(
         mut self,
         name: &str,
@@ -66,19 +108,22 @@ where
                 table = self.table_name()
             ));
         }
-        // A window would aggregate one page of children, or, past the first
-        // page, skip the aggregate's only row.
-        if self.get_ref_target_erased(relation)?.pagination().is_some() {
-            return Err(error!(
-                "a roll-up's relation target can't have pagination",
-                relation = relation,
-                table = self.table_name()
-            ));
+        if op != RollupOp::Count && column.is_none() {
+            return Err(error!("roll-up needs a column", op = op));
         }
-        let expr = self
-            .data_source()
-            .rollup_expression(&self, relation, op, column, condition)?;
-        let expr_fn: ExpressionFn<T> = Arc::new(move |_| expr.clone());
+        let rollup = name.to_string();
+        let relation = relation.to_string();
+        let column = column.map(str::to_string);
+        let expr_fn: ExpressionFn<T> = Arc::new(move |parent| {
+            parent.data_source().rollup_expression(
+                parent,
+                &rollup,
+                &relation,
+                op,
+                column.as_deref(),
+                condition.clone(),
+            )
+        });
         self.expressions.insert(name.to_string(), expr_fn);
         Ok(self)
     }

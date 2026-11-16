@@ -4,6 +4,7 @@
 
 use bson::doc;
 use vantage_dataset::ReadableDataSet;
+use vantage_dataset::traits::ReadableValueSet;
 #[allow(unused_imports)]
 use vantage_mongodb::AnyMongoType;
 use vantage_mongodb::{MongoDB, MongoId};
@@ -94,19 +95,27 @@ async fn offline_db() -> MongoDB {
 }
 
 /// Roll-ups and correlated subqueries are refused with an error, not a panic.
+/// A roll-up's refusal comes from the check a factory runs on a finished
+/// table and from the read, before anything is sent.
 #[tokio::test]
 async fn rollups_and_correlated_subqueries_error() {
     let clients = client_table(offline_db().await);
 
-    let err = clients
+    let rolled = clients
         .clone()
         .with_rollup("orders", "orders", RollupOp::Count, None, None)
-        .unwrap_err();
-    assert_eq!(
-        err.to_string(),
-        "rollup columns aren't supported on MongoDB yet"
-    );
-    assert!(err.is_unsupported(), "{err:?}");
+        .unwrap();
+    for err in [
+        rolled.check_expressions().unwrap_err(),
+        rolled.list_values().await.unwrap_err(),
+    ] {
+        assert_eq!(
+            err.message(),
+            "rollup columns aren't supported on MongoDB yet"
+        );
+        assert_eq!(err.context["expression_column"], "orders");
+        assert!(err.is_unsupported(), "{err:?}");
+    }
 
     let err = clients
         .get_subquery_as::<ClientOrder>("orders")

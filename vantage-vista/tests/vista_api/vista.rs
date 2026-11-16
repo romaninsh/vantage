@@ -316,6 +316,15 @@ fn with_query_returns_other_errors_and_cannot_reapply_native_keys() {
     let unknown = VistaQuery::new().with_condition(Condition::new("nope", FilterOp::Gt, 1_i64));
     assert!(people().with_query(&unknown).is_err());
 
+    // `note` is refused (not orderable), which would hand the whole order
+    // back as residual; the undeclared `nope` after it is still an error.
+    let unknown_tie_breaker = VistaQuery::new()
+        .with_order("age", SortDirection::Ascending)
+        .then_order("note", SortDirection::Ascending)
+        .then_order("nope", SortDirection::Ascending);
+    let err = people().with_query(&unknown_tie_breaker).unwrap_err();
+    assert!(!refused(&err), "{err:?}");
+
     let mut native = VistaQuery::new();
     native.native.push("raw".into());
     let err = people().with_query(&native).unwrap_err();

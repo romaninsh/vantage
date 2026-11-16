@@ -14,6 +14,11 @@
 //! keep what they're given: a column without `type:` is a `String` column
 //! too.
 
+#[cfg(feature = "vista")]
+use std::any::type_name;
+
+#[cfg(feature = "vista")]
+use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use ciborium::Value as CborValue;
 use vantage_core::{VantageError, error};
 
@@ -44,6 +49,7 @@ pub(crate) use sql_declared_types;
 
 /// YAML types SQL has no column for. Refused at load rather than quietly
 /// stored as text.
+#[cfg(feature = "vista")]
 pub(crate) const UNSUPPORTED: &[&str] = &["duration"];
 
 /// The vista factory's `column_for_type`: YAML type alias → typed `Column`,
@@ -126,6 +132,20 @@ pub(crate) fn without_option(type_name: &str) -> &str {
         .strip_prefix("core::option::Option<")
         .and_then(|t| t.strip_suffix('>'))
         .unwrap_or(type_name)
+}
+
+/// Whether a column declared as the Rust type `declared` holds a date, time,
+/// datetime or timestamp.
+#[cfg(feature = "vista")]
+pub(crate) fn is_temporal(declared: &str) -> bool {
+    let declared = without_option(declared);
+    [
+        type_name::<NaiveDate>(),
+        type_name::<NaiveTime>(),
+        type_name::<NaiveDateTime>(),
+        type_name::<DateTime<Utc>>(),
+    ]
+    .contains(&declared)
 }
 
 /// Null, or `""` as a cleared form field sends it.

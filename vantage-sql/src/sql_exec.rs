@@ -109,6 +109,7 @@ where
 }
 
 /// [`fetch_rows`] on a given executor — a connection or an open transaction.
+#[cfg(all(feature = "mysql", feature = "vista"))]
 pub(crate) async fn fetch_rows_on<'c, D, X>(
     executor: X,
     expr: &Expression<D::Value>,
@@ -171,6 +172,7 @@ where
 
 /// [`execute_affected`] on a given executor — a connection or an open
 /// transaction.
+#[cfg(all(feature = "mysql", feature = "vista"))]
 pub(crate) async fn execute_affected_on<'c, D, X>(
     executor: X,
     expr: &Expression<D::Value>,

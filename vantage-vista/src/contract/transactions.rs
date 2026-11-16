@@ -36,11 +36,21 @@ const LOCK_NEEDS_TX: &str = "lock() needs a transaction";
 pub struct TxTables {
     pub a: Vista,
     pub b: Vista,
+    /// `b` narrowed to the rows whose `a_id` is the id of a row of `a`, by
+    /// the driver's `related_in_condition`: the narrowing a table gets when
+    /// it inherits an access rule through its parent. A datasource with
+    /// transactions must give one.
+    pub b_of_a: Option<Vista>,
 }
 
 impl TxTables {
     pub fn new(a: Vista, b: Vista) -> Self {
-        Self { a, b }
+        Self { a, b, b_of_a: None }
+    }
+
+    pub fn with_b_of_a(mut self, b_of_a: Vista) -> Self {
+        self.b_of_a = Some(b_of_a);
+        self
     }
 }
 
@@ -220,6 +230,27 @@ pub async fn check_transactions(fixture: &impl TxFixture) {
         "a_throw_rolls_both_back",
         PROBE_DEADLINE,
         a_throw_rolls_both_back(fx),
+    )
+    .await;
+    run(
+        &mut runner,
+        "a_parent_inserted_in_the_transaction_admits_its_child",
+        PROBE_DEADLINE,
+        a_parent_inserted_in_the_transaction_admits_its_child(fx),
+    )
+    .await;
+    run(
+        &mut runner,
+        "a_parent_deleted_in_the_transaction_admits_no_child",
+        PROBE_DEADLINE,
+        a_parent_deleted_in_the_transaction_admits_no_child(fx),
+    )
+    .await;
+    run(
+        &mut runner,
+        "rollback_undoes_what_the_parent_narrowing_saw",
+        PROBE_DEADLINE,
+        rollback_undoes_what_the_parent_narrowing_saw(fx),
     )
     .await;
     runner.finish();
@@ -602,6 +633,118 @@ async fn a_throw_rolls_both_back(fx: &impl TxFixture) -> Result<()> {
     tx.rollback().await?;
     absent(&t.a, "x", "after rollback").await?;
     absent(&o.a, "x", "after rollback").await
+}
+
+/// The three probes below take `b_of_a` built before the transaction and
+/// wrap it into one: its read of `a` must run inside that transaction.
+fn b_of_a(t: &TxTables) -> Result<&Vista> {
+    t.b_of_a
+        .as_ref()
+        .ok_or_else(|| error!("the fixture's tables have no `b_of_a`"))
+}
+
+/// Outside any transaction, `b_of_a` takes a child of the committed
+/// `a_id`. Checked first, so a probe that fails after it fails on the
+/// transaction and not on the narrowing itself.
+async fn admits_outside(b_of_a: &Vista, id: &str, a_id: &str) -> Result<()> {
+    match b_of_a.insert_value(id, &rec_b(a_id, 1)).await {
+        Ok(_) => Ok(()),
+        Err(e) => Err(error!(format!(
+            "outside a transaction, a child of the committed {a_id} is refused: {e}"
+        ))),
+    }
+}
+
+/// Whether `inserted` is the refusal of a record outside the set; any other
+/// error is the probe's.
+fn refused(inserted: Result<Rec>) -> Result<bool> {
+    match inserted {
+        Ok(_) => Ok(false),
+        Err(e) if matches!(e.kind(), ErrorKind::Conflict) => Ok(true),
+        Err(e) => Err(e),
+    }
+}
+
+async fn a_parent_inserted_in_the_transaction_admits_its_child(fx: &impl TxFixture) -> Result<()> {
+    let t = fx.fresh().await;
+    let b_of_a = b_of_a(&t)?;
+    t.a.insert_value("p", &rec(1)).await?;
+    admits_outside(b_of_a, "q", "p").await?;
+
+    let tx = Transaction::new();
+    tx.wrap(&t.a).insert_value("x", &rec(1)).await?;
+    let wrapped = tx.wrap(b_of_a);
+    let out = async {
+        if let Err(e) = wrapped.insert_value("y", &rec_b("x", 1)).await {
+            return Err(error!(format!(
+                "a child of x, inserted in the same transaction, is refused: {e}"
+            )));
+        }
+        ensure(
+            wrapped.get_value("y").await?.is_some(),
+            "the wrapped narrowed vista doesn't read the child of x it inserted".to_string(),
+        )?;
+        tx.commit().await.map(drop)
+    }
+    .await;
+    if out.is_err() {
+        tx.rollback().await?;
+    }
+    out?;
+    present(&t.b, "y", "after commit").await
+}
+
+async fn a_parent_deleted_in_the_transaction_admits_no_child(fx: &impl TxFixture) -> Result<()> {
+    let t = fx.fresh().await;
+    let b_of_a = b_of_a(&t)?;
+    t.a.insert_value("x", &rec(1)).await?;
+    admits_outside(b_of_a, "q", "x").await?;
+
+    let tx = Transaction::new();
+    let out: Result<bool> = async {
+        tx.wrap(&t.a).delete("x").await?;
+        refused(tx.wrap(b_of_a).insert_value("y", &rec_b("x", 1)).await)
+    }
+    .await;
+    tx.rollback().await?;
+    ensure(
+        out?,
+        "a child of x is accepted after x was deleted in the same transaction".to_string(),
+    )
+}
+
+/// The transaction inserts x and deletes k, then rolls back. Outside it
+/// `b_of_a` is as before: no child of x, a child of k. What the wrapped
+/// insert returned is the first probe's to judge.
+async fn rollback_undoes_what_the_parent_narrowing_saw(fx: &impl TxFixture) -> Result<()> {
+    let t = fx.fresh().await;
+    let b_of_a = b_of_a(&t)?;
+    t.a.insert_value("k", &rec(1)).await?;
+    admits_outside(b_of_a, "q", "k").await?;
+
+    let tx = Transaction::new();
+    let a = tx.wrap(&t.a);
+    let out: Result<()> = async {
+        a.insert_value("x", &rec(1)).await?;
+        a.delete("k").await?;
+        let _ = tx.wrap(b_of_a).insert_value("y", &rec_b("x", 1)).await;
+        Ok(())
+    }
+    .await;
+    tx.rollback().await?;
+    out?;
+
+    absent(&t.b, "y", "after rollback").await?;
+    ensure(
+        refused(b_of_a.insert_value("z", &rec_b("x", 1)).await)?,
+        "after rollback a child of x, whose insert was rolled back, is accepted".to_string(),
+    )?;
+    match b_of_a.insert_value("w", &rec_b("k", 1)).await {
+        Ok(_) => Ok(()),
+        Err(e) => Err(error!(format!(
+            "after rollback a child of k, whose delete was rolled back, is refused: {e}"
+        ))),
+    }
 }
 
 /// One of two crossed writers: patch `first`, meet the other at `barrier`,

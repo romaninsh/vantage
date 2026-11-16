@@ -18,6 +18,7 @@ use vantage_expressions::ExprDataSource;
 use vantage_surrealdb::surreal_expr;
 use vantage_surrealdb::surrealdb::SurrealDB;
 use vantage_table::table::Table;
+use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::Transaction;
 use vantage_vista::contract::{self, TxFixture, TxTables};
@@ -84,7 +85,7 @@ impl SurrealTx {
             "DEFINE TABLE {a} SCHEMAFULL; \
              DEFINE FIELD n ON {a} TYPE int ASSERT $value >= 0; \
              DEFINE TABLE {b} SCHEMAFULL; \
-             DEFINE FIELD a_id ON {b} TYPE option<string>; \
+             DEFINE FIELD a_id ON {b} TYPE option<string | record<{a}>>; \
              DEFINE FIELD n ON {b} TYPE int ASSERT $value >= 0;"
         );
         for statement in schema.split_terminator(';') {
@@ -99,10 +100,21 @@ impl SurrealTx {
 
 fn tables(db: SurrealDB, (a, b): (String, String)) -> TxTables {
     let factory = db.vista_factory();
+    // `b` narrowed to the rows whose `a_id` is the id of a row of `a`. Ids
+    // are record ids here, so `a_id` is a has-one key: a bare "x" is
+    // written as a link to `a`.
+    let b_of_a = db.related_in_condition("a_id", &table_a(db.clone(), &a, &b), "id");
+    let (target, parent, child) = (db.clone(), a.clone(), b.clone());
+    let b_of_a = table_b(db.clone(), &b)
+        .with_one("a", "a_id", move |_| {
+            table_a(target.clone(), &parent, &child)
+        })
+        .with_condition(b_of_a);
     TxTables::new(
         factory.from_table(table_a(db.clone(), &a, &b)).unwrap(),
         factory.from_table(table_b(db, &b)).unwrap(),
     )
+    .with_b_of_a(factory.from_table(b_of_a).unwrap())
 }
 
 fn table_a(db: SurrealDB, a: &str, b: &str) -> Table<SurrealDB, EmptyEntity> {

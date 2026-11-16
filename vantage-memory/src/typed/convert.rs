@@ -54,8 +54,9 @@ pub(crate) fn with_id_forms(values: Vec<CborValue>) -> Vec<CborValue> {
         .collect()
 }
 
-/// The table's conditions (deferred ones resolved), orders and pagination.
-pub async fn table_query<E>(table: &Table<MemoryDB, E>) -> Result<Query>
+/// The table's conditions, orders and pagination. `db` resolves the
+/// deferred conditions, whichever datasource the table was built on.
+pub async fn table_query<E>(db: &MemoryDB, table: &Table<MemoryDB, E>) -> Result<Query>
 where
     E: Entity<AnyMemoryType>,
 {
@@ -76,5 +77,5 @@ where
     if let Some(p) = table.pagination() {
         q = q.window(p.skip().max(0) as usize, Some(p.limit().max(0) as usize));
     }
-    q.resolve().await
+    q.resolve(db).await
 }

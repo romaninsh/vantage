@@ -5,7 +5,9 @@ use std::cmp::Ordering;
 
 use ciborium::Value as CborValue;
 use vantage_memory::eval::compare::{cmp_values, like, lookup, text_of, values_eq};
-use vantage_memory::{MemoryCondition, MemoryStore, MemoryTable, MemoryTableHandle, Query};
+use vantage_memory::{
+    MemoryCondition, MemoryDB, MemoryStore, MemoryTable, MemoryTableHandle, Query,
+};
 use vantage_types::Record;
 use vantage_vista::{FilterOp, SortDirection};
 
@@ -170,12 +172,13 @@ async fn resolving_a_tree_without_deferred_parts_keeps_its_meaning() {
     ]);
     let expected = found(&t, tree.clone());
     assert_eq!(expected, ["a"]);
-    let resolved = tree.resolve().await.unwrap();
+    let db = MemoryDB::new();
+    let resolved = tree.resolve(&db).await.unwrap();
     assert_eq!(found(&t, resolved), expected);
 
     let q = Query::new()
         .filter(cmp("n", FilterOp::Gt, int(1)))
-        .resolve()
+        .resolve(&db)
         .await
         .unwrap();
     assert_eq!(ids(&t, &q), ["b", "c"]);
@@ -443,4 +446,20 @@ fn comparison_helpers_follow_the_documented_rules() {
     assert!(like("a%c", "ABBBC"));
     assert!(like("a_c", "abc"));
     assert!(!like("a_c", "abbc"));
+}
+
+#[test]
+fn a_time_tag_compares_with_time_and_text() {
+    let time = |s: &str| CborValue::Tag(101, Box::new(text(s)));
+    assert_eq!(
+        cmp_values(&time("09:30:00"), &text("10:00:00")),
+        Some(Ordering::Less)
+    );
+    assert_eq!(
+        cmp_values(&time("18:05:00"), &time("09:30:00.250")),
+        Some(Ordering::Greater)
+    );
+    assert!(values_eq(&time("09:30:00"), &text("09:30:00")));
+    assert!(values_eq(&time("09:30:00"), &time("09:30:00")));
+    assert_eq!(text_of(&time("09:30:00")), Some("09:30:00".to_string()));
 }

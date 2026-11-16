@@ -4,16 +4,20 @@
 pub mod compare;
 mod condition;
 mod order;
+mod reads;
 
 use ciborium::Value as CborValue;
 use vantage_core::Result;
 use vantage_types::Record;
 use vantage_vista::SortDirection;
 
+use crate::MemoryDB;
+use crate::store::Row;
 use condition::search_matches;
 
-pub use condition::MemoryCondition;
+pub use condition::{MemoryCondition, RelatedRead};
 pub use order::sort_rows;
+pub(crate) use reads::reads_columns;
 
 #[derive(Clone, Default)]
 pub struct Query {
@@ -49,15 +53,25 @@ impl Query {
         self
     }
 
-    /// Resolve every `Deferred` condition.
-    pub async fn resolve(mut self) -> Result<Self> {
+    /// Resolve every deferred condition; `db` does the reads of a
+    /// `DeferredIn`.
+    pub async fn resolve(mut self, db: &MemoryDB) -> Result<Self> {
         let mut out = Vec::with_capacity(self.conditions.len());
         for c in self.conditions {
-            out.push(c.resolve().await?);
+            out.push(c.resolve(db).await?);
         }
         self.conditions = out;
         Ok(self)
     }
+}
+
+/// `rows` cut to `q`'s offset and limit.
+pub(crate) fn window_rows(mut rows: Vec<(String, Row)>, q: &Query) -> Vec<(String, Row)> {
+    let end = q
+        .limit
+        .map_or(rows.len(), |l| q.offset.saturating_add(l).min(rows.len()));
+    let start = q.offset.min(end);
+    rows.drain(start..end).collect()
 }
 
 /// Whether a row passes every condition and the search.

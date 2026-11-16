@@ -1,11 +1,14 @@
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
 use ciborium::Value as CborValue;
+use vantage_core::error;
 use vantage_dataset::{ReadableValueSet, WritableValueSet};
-use vantage_memory::{MemoryCatalog, MemoryStore, MemoryVistaFactory};
-use vantage_types::Record;
-use vantage_vista::{
-    Column, FilterOp, JoinKey, Reference, SortDirection, Vista, VistaFactory, VistaMetadata,
-    VistaResolver,
-};
+use vantage_memory::{AnyMemoryType, MemoryDB, MemoryStore, MemoryVistaFactory, MemoryVistaSpec};
+use vantage_table::table::{BuildKind, Hook, Phase, Table, TableInjector, before_hook_sync};
+use vantage_types::{EmptyEntity, Record};
+use vantage_vista::{FilterOp, SortDirection, Transaction, Vista, VistaFactory};
 
 const PRODUCT: &str = r#"
 name: product
@@ -111,6 +114,21 @@ async fn op_conditions_order_search_and_count() {
     assert_eq!(ids(&v).await, ["p3"]);
 }
 
+#[tokio::test]
+async fn add_order_breaks_ties_and_set_order_drops_them() {
+    let (_s, f) = setup();
+    let mut v = f.from_yaml(PRODUCT).unwrap();
+    v.set_order(Some(("category", SortDirection::Ascending)))
+        .unwrap();
+    v.add_order("price", SortDirection::Descending).unwrap();
+    // p1 (3) and p3 (4) are both drinks; price breaks the tie.
+    assert_eq!(ids(&v).await, ["p3", "p1", "p2"]);
+    v.set_order(Some(("category", SortDirection::Ascending)))
+        .unwrap();
+    assert!(v.query().then_by.is_empty());
+    assert_eq!(ids(&v).await, ["p1", "p3", "p2"]);
+}
+
 fn datetime(s: &str) -> CborValue {
     CborValue::Tag(0, Box::new(text(s)))
 }
@@ -200,73 +218,254 @@ fn an_unknown_relation_is_not_found() {
 
 #[test]
 fn a_contained_relation_is_refused() {
-    let store = MemoryStore::new();
-    store.table("client");
-    let catalog = MemoryCatalog::new(store);
-    catalog.register(
-        "client",
-        VistaMetadata::new().with_reference(Reference::contains_many("tags", "tags")),
-    );
-    let err = catalog
-        .vista("client")
-        .unwrap()
-        .get_ref("tags", None)
-        .unwrap_err();
+    let table = Table::<MemoryDB, EmptyEntity>::new("client", MemoryDB::new())
+        .with_id_column("id")
+        .with_contained_many("tags", "tags", |db| Table::new("tag", db), None);
+    let vista = MemoryVistaFactory::new(MemoryStore::new())
+        .from_table(table)
+        .unwrap();
+    let err = vista.get_ref("tags", None).unwrap_err();
     assert!(err.is_unsupported(), "{err}");
 }
 
+const CLIENT: &str = r#"
+name: client
+id_column: id
+columns:
+  id: { type: string, flags: [id] }
+  name: { type: string }
+references:
+  orders: { table: order, kind: has_many, foreign_key: client }
+"#;
+
 #[test]
-fn a_relation_to_a_table_the_store_lacks_is_not_found() {
+fn a_relation_to_a_table_the_store_lacks_is_an_error_and_creates_no_table() {
     let store = MemoryStore::new();
-    store.table("client");
-    let catalog = MemoryCatalog::new(store);
-    catalog.register(
-        "client",
-        VistaMetadata::new().with_reference(Reference::has_many(
-            "orders",
-            "order",
-            JoinKey::new("id", "client"),
-        )),
-    );
-    let err = catalog
-        .vista("client")
-        .unwrap()
-        .get_ref("orders", None)
-        .unwrap_err();
-    assert!(err.is_not_found(), "{err}");
+    let client = MemoryVistaFactory::new(store.clone())
+        .from_yaml(CLIENT)
+        .unwrap();
+    assert!(client.get_ref("orders", None).is_err());
+    assert_eq!(store.table_names(), ["client"]);
 }
 
 #[test]
-fn a_registered_name_carries_its_metadata_and_gets_a_table() {
+fn a_spec_vista_carries_its_columns_and_gets_a_table() {
     let store = MemoryStore::new();
-    let catalog = MemoryCatalog::new(store.clone());
-    catalog.register(
-        "client",
-        VistaMetadata::new()
-            .with_id_column("id")
-            .with_column(Column::new("name", "string")),
-    );
-    let vista = catalog.vista("client").unwrap();
+    let vista = MemoryVistaFactory::new(store.clone())
+        .from_yaml(CLIENT)
+        .unwrap();
     assert_eq!(vista.name(), "client");
     assert!(vista.column("name").is_some());
     assert_eq!(store.table_names(), ["client"]);
 }
 
 #[test]
-fn an_unregistered_store_table_gets_only_its_id_column() {
+fn a_bare_table_gets_only_the_store_id_column() {
     let store = MemoryStore::new();
     store.table("order");
-    let vista = MemoryCatalog::new(store).vista("order").unwrap();
+    let table = Table::<MemoryDB, EmptyEntity>::new("order", MemoryDB::from_store(store.clone()));
+    let vista = MemoryVistaFactory::new(store).from_table(table).unwrap();
     assert_eq!(vista.id_column(), Some("id"));
     assert!(vista.columns().is_empty());
 }
 
+fn upper(record: &mut Record<AnyMemoryType>, field: &str) {
+    if let Some(CborValue::Text(t)) = record.get(field).map(|v| v.value().clone()) {
+        let upper = AnyMemoryType::untyped(text(&t.to_uppercase()));
+        record.insert(field.to_string(), upper);
+    }
+}
+
+fn upper_hook(field: &'static str) -> Hook<MemoryDB> {
+    Hook::BeforeSave(
+        Phase::Populate,
+        before_hook_sync::<MemoryDB>(move |record, _| {
+            upper(record, field);
+            Ok(())
+        }),
+    )
+}
+
+#[tokio::test]
+async fn an_injected_hook_runs_on_a_shell_write() {
+    let (s, f) = setup();
+    let injector: TableInjector<MemoryDB> = Arc::new(|_, table| {
+        table.add_hook(upper_hook("name"));
+        Ok(())
+    });
+    let v = f.with_injector(injector).from_yaml(PRODUCT).unwrap();
+    v.insert_value("p9", &record(&[("name", text("tea"))]))
+        .await
+        .unwrap();
+    let stored = s.table("product").get("p9").unwrap();
+    assert_eq!(stored.get("name"), Some(&text("TEA")));
+}
+
+#[tokio::test]
+async fn an_injected_hook_can_refuse_a_write() {
+    let (s, f) = setup();
+    let injector: TableInjector<MemoryDB> = Arc::new(|_, table| {
+        table.add_hook(Hook::BeforeSave(
+            Phase::Validate,
+            before_hook_sync::<MemoryDB>(|_, _| Err(error!("closed for writes"))),
+        ));
+        Ok(())
+    });
+    let v = f.with_injector(injector).from_yaml(PRODUCT).unwrap();
+    let err = v
+        .insert_value("p9", &record(&[("name", text("tea"))]))
+        .await
+        .unwrap_err();
+    assert_eq!(err.message(), "closed for writes");
+    assert!(s.table("product").get("p9").is_none());
+}
+
+#[tokio::test]
+async fn an_import_refused_by_a_hook_writes_nothing() {
+    let (s, f) = setup();
+    let injector: TableInjector<MemoryDB> = Arc::new(|_, table| {
+        table.add_hook(Hook::BeforeSave(
+            Phase::Validate,
+            before_hook_sync::<MemoryDB>(|record, _| {
+                match record.get("name").map(|v| v.value().clone()) {
+                    Some(CborValue::Text(name)) if name == "bad" => Err(error!("bad name")),
+                    _ => Ok(()),
+                }
+            }),
+        ));
+        Ok(())
+    });
+    let v = f.with_injector(injector).from_yaml(PRODUCT).unwrap();
+    let rows: indexmap::IndexMap<String, Record<CborValue>> = [
+        ("n1".to_string(), record(&[("name", text("good"))])),
+        ("n2".to_string(), record(&[("name", text("bad"))])),
+    ]
+    .into_iter()
+    .collect();
+    assert!(v.import_values(&rows).await.is_err());
+    let product = s.table("product");
+    assert!(product.get("n1").is_none() && product.get("n2").is_none());
+}
+
+#[tokio::test]
+async fn an_import_outside_a_transaction_does_not_wait_on_an_open_one() {
+    let (s, f) = setup();
+    let product = f.from_yaml(PRODUCT).unwrap();
+    let stock = f
+        .from_yaml("name: stock\ncolumns:\n  id: { flags: [id] }\n  qty: {}\n")
+        .unwrap();
+    let tx = Transaction::new();
+    tx.wrap(&product)
+        .insert_value("p9", &record(&[("name", text("Juice"))]))
+        .await
+        .unwrap();
+    let rows: indexmap::IndexMap<String, Record<CborValue>> = [
+        ("a".to_string(), record(&[("qty", int(1))])),
+        ("b".to_string(), record(&[("qty", int(2))])),
+    ]
+    .into_iter()
+    .collect();
+    let imported = tokio::time::timeout(Duration::from_millis(500), stock.import_values(&rows))
+        .await
+        .expect("the import waited on the open transaction");
+    assert_eq!(imported.unwrap(), 2);
+    tx.commit().await.unwrap();
+    assert!(s.table("stock").get("b").is_some());
+    assert!(s.table("product").get("p9").is_some());
+}
+
 #[test]
-fn an_unknown_name_is_not_found_and_creates_no_table() {
+fn a_resolver_miss_is_an_error() {
     let store = MemoryStore::new();
-    let err = MemoryCatalog::new(store.clone()).vista("nope").unwrap_err();
-    assert!(err.is_not_found(), "{err}");
-    assert!(store.table_names().is_empty());
+    store.table("order");
+    let client: MemoryVistaSpec = serde_yaml_ng::from_str(CLIENT).unwrap();
+    let f = MemoryVistaFactory::new(store).with_resolver(Arc::new(move |name: &str| {
+        (name == "client").then(|| client.clone())
+    }));
+    let err = f
+        .from_yaml(CLIENT)
+        .unwrap()
+        .get_ref("orders", None)
+        .unwrap_err();
+    let shown = format!("{err:?}");
+    assert!(shown.contains("reference target has no spec"), "{shown}");
+    assert!(shown.contains("order"), "{shown}");
+}
+
+#[tokio::test]
+async fn a_traversed_target_keeps_its_spec_types() {
+    let (s, f) = setup();
+    let product = PRODUCT.replace("  category:", "  rating: { type: decimal }\n  category:");
+    f.from_yaml(&product).unwrap();
+    let orders = f.from_yaml(ORDER).unwrap();
+    s.table("order")
+        .upsert("o1", record(&[("product", text("p3"))]));
+    let row = s.table("order").get("o1").unwrap();
+    let target = orders.get_ref("product", Some(&row)).unwrap();
+    let ty = |name: &str| target.column(name).unwrap().original_type.clone();
+    assert_eq!(ty("price").as_deref(), Some("int"));
+    assert_eq!(ty("rating").as_deref(), Some("decimal"));
+}
+
+const CLIENT_ORDER: &str = r#"
+name: order
+id_column: id
+columns:
+  id: { type: string, flags: [id] }
+  client: { type: string }
+  note: { type: string }
+"#;
+
+#[tokio::test]
+async fn a_reference_target_is_built_by_the_factory() {
+    let store = MemoryStore::new();
+    let specs: HashMap<String, MemoryVistaSpec> = [CLIENT, CLIENT_ORDER]
+        .into_iter()
+        .map(|yaml| serde_yaml_ng::from_str::<MemoryVistaSpec>(yaml).unwrap())
+        .map(|spec| (spec.name.clone(), spec))
+        .collect();
+    let builds = Arc::new(Mutex::new(Vec::new()));
+    let seen = builds.clone();
+    let injector: TableInjector<MemoryDB> = Arc::new(move |cx, table| {
+        seen.lock()
+            .unwrap()
+            .push((cx.key.to_string(), cx.kind.clone()));
+        if cx.key == "order" {
+            table.add_hook(upper_hook("note"));
+        }
+        Ok(())
+    });
+    let f = MemoryVistaFactory::new(store.clone())
+        .with_resolver(Arc::new(move |name: &str| specs.get(name).cloned()))
+        .with_injector(injector);
+    let client = f.from_yaml(CLIENT).unwrap();
+    client
+        .insert_value("c1", &record(&[("name", text("Ann"))]))
+        .await
+        .unwrap();
+    let row = store.table("client").get("c1").unwrap();
+
+    let orders = client.get_ref("orders", Some(&row)).unwrap();
+    orders
+        .insert_value("o1", &record(&[("note", text("rush"))]))
+        .await
+        .unwrap();
+
+    let reference = BuildKind::Reference {
+        from: "client".into(),
+        relation: "orders".into(),
+    };
+    assert!(
+        builds
+            .lock()
+            .unwrap()
+            .contains(&("order".to_string(), reference)),
+        "{:?}",
+        builds.lock().unwrap()
+    );
+    let stored = store.table("order").get("o1").unwrap();
+    assert_eq!(stored.get("note"), Some(&text("RUSH")));
+    assert_eq!(stored.get("client"), Some(&text("c1")));
 }
 
 #[tokio::test]
@@ -283,4 +482,67 @@ async fn expr_columns_are_rejected() {
     let (_s, f) = setup();
     let expr = PRODUCT.replace("price: { type: int }", "price: { type: int, expr: \"1\" }");
     assert!(f.from_yaml(&expr).is_err());
+}
+
+const LOAN: &str = r#"
+name: loan
+id_column: id
+columns:
+  id: { type: string, flags: [id] }
+  due: { type: date }
+"#;
+
+#[tokio::test]
+async fn a_date_column_stores_one_form_from_any_write() {
+    let (_s, f) = setup();
+    let v = f.from_yaml(LOAN).unwrap();
+    let day = CborValue::Tag(100, Box::new(text("2026-12-16")));
+    let rfc = |s: &str| CborValue::Tag(0, Box::new(text(s)));
+
+    v.insert_value("l1", &record(&[("due", text("2026-12-16"))]))
+        .await
+        .unwrap();
+    v.insert_value("l2", &record(&[("due", text("2026-12-16T00:00:00+00:00"))]))
+        .await
+        .unwrap();
+    v.insert_value("l3", &record(&[("due", rfc("2026-12-16T00:00:00Z"))]))
+        .await
+        .unwrap();
+    v.insert_value("l4", &record(&[("due", day.clone())]))
+        .await
+        .unwrap();
+    v.insert_value("l5", &record(&[("due", text("2026-01-01"))]))
+        .await
+        .unwrap();
+    v.patch_value("l5", &record(&[("due", text("2026-12-16T00:00:00.000Z"))]))
+        .await
+        .unwrap();
+
+    for (id, row) in v.list_values().await.unwrap() {
+        assert_eq!(row["due"], day, "{id}");
+    }
+    let by_text = v
+        .with_condition("due", FilterOp::Eq, text("2026-12-16T00:00:00Z"))
+        .unwrap();
+    assert_eq!(ids(&by_text).await.len(), 5);
+}
+
+#[tokio::test]
+async fn a_date_column_matches_quicksearch() {
+    let (_s, f) = setup();
+    let mut v = f.from_yaml(LOAN).unwrap();
+    v.insert_value("l1", &record(&[("due", text("2026-12-16"))]))
+        .await
+        .unwrap();
+    v.insert_value("l2", &record(&[("due", text("2027-01-05"))]))
+        .await
+        .unwrap();
+    v.set_search(Some("2026-12")).unwrap();
+    assert_eq!(ids(&v).await, ["l1"]);
+    let like = f
+        .from_yaml(LOAN)
+        .unwrap()
+        .with_condition("due", FilterOp::Like, text("%01-05"))
+        .unwrap();
+    assert_eq!(ids(&like).await, ["l2"]);
 }

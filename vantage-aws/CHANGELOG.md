@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.0 — 2026-11-16
+
+Requires vantage-table 4.0.0, whose `TableSource` the prelude re-exports.
+
 ## 0.9.1 — 2026-10-31
 
 Requires vantage-vista 2.6.0.

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.4 — 2026-11-16
+
+- Requires vantage-table 4.0.0.
+
 ## 0.7.3 — 2026-11-14
 
 - A Kubernetes Vista takes `add_order`: the listing is sorted in memory by every column in turn.

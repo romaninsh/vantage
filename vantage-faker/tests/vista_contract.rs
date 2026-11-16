@@ -4,10 +4,10 @@
 use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use vantage_faker::{BackendShape, ShapedShell};
-use vantage_memory::{MemoryCatalog, MemoryStore, MemoryTableShell};
+use vantage_memory::{MemoryStore, MemoryVistaFactory};
 use vantage_types::Record;
 use vantage_vista::contract::{TxFixture, TxTables};
-use vantage_vista::{Capability, Column, ColumnFlag, Vista, VistaMetadata, contract, direct};
+use vantage_vista::{Capability, Vista, VistaFactory, contract, direct};
 
 fn text(s: &str) -> CborValue {
     CborValue::Text(s.into())
@@ -36,20 +36,21 @@ fn items(shape: BackendShape) -> Vista {
         }
         table.insert_as(id, row).unwrap();
     }
-    let metadata = VistaMetadata::new()
-        .with_column(Column::new("id", "string").with_flag(ColumnFlag::Id))
-        .with_column(
-            Column::new("name", "string")
-                .with_flag(ColumnFlag::Title)
-                .with_flag(ColumnFlag::Searchable)
-                .with_flag(ColumnFlag::Orderable),
-        )
-        .with_column(Column::new("category", "string").with_flag(ColumnFlag::Orderable))
-        .with_column(Column::untyped("origin"))
-        .with_id_column("id");
-    let shell = MemoryTableShell::new(table, metadata, MemoryCatalog::new(store));
-    Vista::new("item", shell).map_shell(|inner| ShapedShell::new(inner, shape))
+    MemoryVistaFactory::new(store)
+        .from_yaml(ITEM)
+        .unwrap()
+        .map_shell(|inner| ShapedShell::new(inner, shape))
 }
+
+const ITEM: &str = r#"
+name: item
+id_column: id
+columns:
+  id: { type: string, flags: [id] }
+  name: { type: string, flags: [title, searchable] }
+  category: { type: string }
+  origin: {}
+"#;
 
 fn everything() -> BackendShape {
     BackendShape {
@@ -91,19 +92,13 @@ async fn faker_contract_clone() {
 /// a memory table made [`direct`]: the shape hands its rebind to the inner
 /// shell, which takes part directly.
 fn shaped_direct(store: &MemoryStore, name: &str) -> Vista {
-    let metadata = VistaMetadata::new()
-        .with_column(Column::new("id", "string").with_flag(ColumnFlag::Id))
-        .with_column(Column::new("n", "integer"))
-        .with_id_column("id");
-    let shell = MemoryTableShell::new(
-        store.table(name),
-        metadata,
-        MemoryCatalog::new(store.clone()),
+    let yaml = format!(
+        "name: {name}\ncolumns:\n  id: {{ type: string, flags: [id] }}\n  n: {{ type: integer }}\n"
     );
-    Vista::new(
-        name,
-        ShapedShell::new(direct(Box::new(shell)), everything()),
-    )
+    MemoryVistaFactory::new(store.clone())
+        .from_yaml(&yaml)
+        .unwrap()
+        .map_shell(|inner| ShapedShell::new(direct(inner), everything()))
 }
 
 struct Shaped;

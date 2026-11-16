@@ -57,6 +57,9 @@ impl VistaFactory for MysqlVistaFactory {
         }
 
         let lowered = lower_spec(&spec, self.db.clone(), &self.env(&spec.name))?;
+        // Only here, on the table the caller asked for: a reference target
+        // or a `base:` table checking its own would build this one again.
+        lowered.table.check_expressions()?;
         #[cfg_attr(not(feature = "rhai"), allow(unused_mut))]
         let mut vista = self.wrap(
             lowered.table,

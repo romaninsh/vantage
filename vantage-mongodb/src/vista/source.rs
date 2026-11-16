@@ -68,8 +68,9 @@ pub struct MongoTableShell {
     /// Handle for the active quicksearch condition, removed when the search
     /// is replaced or cleared.
     pub(crate) current_search_handle: Option<ConditionHandle>,
-    /// Columns whose table type is a BSON type the CBOR surface reads as
-    /// text; writes parse their values back (see the `coerce` module).
+    /// Columns whose table type writes and conditions parse values into;
+    /// `date` and `timestamp` among them read back typed (see the `coerce`
+    /// module).
     declared: IndexMap<String, BsonKind>,
 }
 
@@ -98,17 +99,24 @@ impl MongoTableShell {
     }
 
     /// Walk `column_paths` and project each spec column out of the raw doc.
-    /// Identity (top-level keys → CBOR) when no paths are configured.
-    fn unflatten_to_cbor(&self, record: Record<AnyMongoType>) -> Record<CborValue> {
-        project_record(&self.column_paths, record)
+    /// Identity (top-level keys → CBOR) when no paths are configured. A
+    /// `date` or `timestamp` column holding something that is no date is an
+    /// error.
+    fn unflatten_to_cbor(&self, record: Record<AnyMongoType>) -> Result<Record<CborValue>> {
+        project_record(
+            self.table.table_name(),
+            &self.column_paths,
+            &self.declared,
+            record,
+        )
     }
 
     fn to_rows(
         &self,
         raw: IndexMap<MongoId, Record<AnyMongoType>>,
-    ) -> Vec<(String, Record<CborValue>)> {
+    ) -> Result<Vec<(String, Record<CborValue>)>> {
         raw.into_iter()
-            .map(|(id, record)| (id.to_string(), self.unflatten_to_cbor(record)))
+            .map(|(id, record)| Ok((id.to_string(), self.unflatten_to_cbor(record)?)))
             .collect()
     }
 }
@@ -139,14 +147,14 @@ impl TableShell for MongoTableShell {
             keyset::add_id_tiebreak(&mut table);
         }
         Ok(self
-            .to_rows(table.list_values().await?)
+            .to_rows(table.list_values().await?)?
             .into_iter()
             .collect())
     }
 
     async fn get(&self, id: &str) -> Result<Option<Record<CborValue>>> {
         let record = self.table.get_value(self.parse_id(id)).await?;
-        Ok(record.map(|r| self.unflatten_to_cbor(r)))
+        record.map(|r| self.unflatten_to_cbor(r)).transpose()
     }
 
     async fn count(&self) -> Result<i64> {
@@ -174,6 +182,10 @@ impl TableShell for MongoTableShell {
 
     fn add_condition(&mut self, condition: &Condition) -> Result<()> {
         self.apply_condition(condition)
+    }
+
+    fn comparable_condition(&self, condition: &Condition) -> Condition {
+        self.typed_condition(condition)
     }
 
     fn add_native_condition(&mut self, condition: NativeCondition) -> Result<()> {
@@ -208,7 +220,7 @@ impl TableShell for MongoTableShell {
             .table
             .insert_value(mongo_id.clone(), &mongo_record)
             .await?;
-        Ok((mongo_id.to_string(), self.unflatten_to_cbor(inserted)))
+        Ok((mongo_id.to_string(), self.unflatten_to_cbor(inserted)?))
     }
 
     async fn replace(&self, id: &str, record: &Record<CborValue>) -> Result<Record<CborValue>> {
@@ -216,7 +228,7 @@ impl TableShell for MongoTableShell {
         let stored = self.stored_row(&mongo_id).await?;
         let mongo_record = self.flatten_for_write(record, stored.as_ref())?;
         let replaced = self.table.replace_value(mongo_id, &mongo_record).await?;
-        Ok(self.unflatten_to_cbor(replaced))
+        self.unflatten_to_cbor(replaced)
     }
 
     /// An insert of a missing row, a replace of a stored one, each with its
@@ -227,7 +239,7 @@ impl TableShell for MongoTableShell {
         let stored = self.stored_row(&mongo_id).await?;
         let mongo_record = self.flatten_for_write(record, stored.as_ref())?;
         let upserted = self.table.upsert_value(mongo_id, &mongo_record).await?;
-        Ok(self.unflatten_to_cbor(upserted))
+        self.unflatten_to_cbor(upserted)
     }
 
     async fn patch(&self, id: &str, partial: &Record<CborValue>) -> Result<Record<CborValue>> {
@@ -235,7 +247,7 @@ impl TableShell for MongoTableShell {
         let stored = self.stored_row(&mongo_id).await?;
         let mongo_partial = self.flatten_for_patch(partial, stored.as_ref())?;
         let patched = self.table.patch_value(mongo_id, &mongo_partial).await?;
-        Ok(self.unflatten_to_cbor(patched))
+        self.unflatten_to_cbor(patched)
     }
 
     async fn delete(&self, id: &str) -> Result<()> {

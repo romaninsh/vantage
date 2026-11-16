@@ -1,8 +1,13 @@
+#[path = "typed/rollups.rs"]
+mod rollups;
+
+use ciborium::Value as CborValue;
+use vantage_expressions::traits::expressive::DeferredFn;
 use vantage_memory::prelude::*;
 use vantage_memory::{MemoryCondition, MemoryDB};
 use vantage_table::prelude::*;
 use vantage_types::{EmptyEntity, Record};
-use vantage_vista::FilterOp;
+use vantage_vista::{FilterOp, Transaction};
 
 fn products(db: &MemoryDB) -> Table<MemoryDB, EmptyEntity> {
     Table::new("product", db.clone())
@@ -311,4 +316,154 @@ async fn id_column_mismatch_with_existing_table_errors() {
     let db = seeded().await;
     let t = Table::<MemoryDB, EmptyEntity>::new("product", db.clone()).with_id_column("sku");
     assert!(t.data_source().list_table_values(&t).await.is_err());
+}
+
+fn named(name: &str) -> Record<AnyMemoryType> {
+    [("name".to_string(), AnyMemoryType::from(name))]
+        .into_iter()
+        .collect()
+}
+
+#[tokio::test]
+async fn a_typed_write_in_a_transaction_is_invisible_until_commit() {
+    let db = seeded().await;
+    let tx = Transaction::new();
+    let inside = products(&db.in_transaction(&tx).unwrap());
+    let outside = products(&db);
+    inside
+        .data_source()
+        .insert_table_value(&inside, &"p9".to_string(), &named("Scone"))
+        .await
+        .unwrap();
+
+    let seen = inside.data_source().get_table_count(&inside).await.unwrap();
+    assert_eq!(seen, 4);
+    let held = outside
+        .data_source()
+        .get_table_count(&outside)
+        .await
+        .unwrap();
+    assert_eq!(held, 3);
+
+    tx.commit().await.unwrap();
+    let after = outside
+        .data_source()
+        .get_table_count(&outside)
+        .await
+        .unwrap();
+    assert_eq!(after, 4);
+}
+
+#[tokio::test]
+async fn a_rolled_back_typed_write_leaves_the_store() {
+    let db = seeded().await;
+    let tx = Transaction::new();
+    let inside = products(&db.in_transaction(&tx).unwrap());
+    inside
+        .data_source()
+        .delete_table_value(&inside, &"p1".to_string())
+        .await
+        .unwrap();
+    tx.rollback().await.unwrap();
+    assert_eq!(db.store().table("product").ids(), vec!["p1", "p2", "p3"]);
+}
+
+#[tokio::test]
+async fn a_failed_typed_write_fails_the_commit() {
+    let db = seeded().await;
+    let tx = Transaction::new();
+    let mut inside = products(&db.in_transaction(&tx).unwrap());
+    inside.add_condition(inside["category"].eq("drink"));
+    inside
+        .data_source()
+        .insert_table_value(&inside, &"p8".to_string(), &Record::new())
+        .await
+        .unwrap_err();
+    assert!(tx.commit().await.is_err());
+    assert_eq!(db.store().table("product").len(), 3);
+}
+
+#[tokio::test]
+async fn a_failed_typed_read_in_a_transaction_fails_the_commit() {
+    let db = seeded().await;
+    let tx = Transaction::new();
+    let joined = db.in_transaction(&tx).unwrap();
+    let wrong = Table::<MemoryDB, EmptyEntity>::new("product", joined).with_id_column("sku");
+    wrong
+        .data_source()
+        .list_table_values(&wrong)
+        .await
+        .unwrap_err();
+    assert!(tx.commit().await.is_err());
+}
+
+#[tokio::test]
+async fn two_typed_tables_commit_together() {
+    let db = seeded().await;
+    let tx = Transaction::new();
+    let joined = db.in_transaction(&tx).unwrap();
+    let product = products(&joined);
+    let note = Table::<MemoryDB, EmptyEntity>::new("note", joined.clone()).with_id_column("id");
+    product
+        .data_source()
+        .insert_table_value(&product, &"p9".to_string(), &named("Scone"))
+        .await
+        .unwrap();
+    note.data_source()
+        .insert_table_value(&note, &"n1".to_string(), &named("hello"))
+        .await
+        .unwrap();
+    assert_eq!(db.store().table("note").len(), 0);
+    assert_eq!(db.store().table("product").len(), 3);
+
+    tx.commit().await.unwrap();
+    assert_eq!(db.store().table("note").ids(), vec!["n1"]);
+    assert_eq!(db.store().table("product").len(), 4);
+}
+
+#[tokio::test]
+async fn a_committed_transaction_reaches_watchers() {
+    let db = seeded().await;
+    let mut changes = db.store().table("product").subscribe();
+    let tx = Transaction::new();
+    let inside = products(&db.in_transaction(&tx).unwrap());
+    inside
+        .data_source()
+        .insert_table_value(&inside, &"p9".to_string(), &named("Scone"))
+        .await
+        .unwrap();
+    assert!(changes.try_recv().is_err());
+
+    tx.commit().await.unwrap();
+    let change = changes.try_recv().unwrap();
+    assert_eq!(change.id(), Some("p9"));
+}
+
+/// The set's deferred condition commits the transaction while the patch
+/// checks the row, before the patch writes.
+#[tokio::test]
+async fn a_write_in_flight_when_its_transaction_commits_is_refused() {
+    let db = seeded().await;
+    let tx = Transaction::new();
+    let mut inside = products(&db.in_transaction(&tx).unwrap());
+    let committing = tx.clone();
+    inside.add_condition(MemoryCondition::Deferred(DeferredFn::from_fn(move || {
+        let tx = committing.clone();
+        async move {
+            let _ = tx.commit().await;
+            let ids = CborValue::Array(vec![CborValue::Text("p1".into())]);
+            Ok(AnyMemoryType::untyped(CborValue::Array(vec![
+                CborValue::Text("id".into()),
+                ids,
+            ])))
+        }
+    })));
+    let err = inside
+        .data_source()
+        .patch_table_value(&inside, &"p1".to_string(), &named("Chai"))
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("transaction finished"), "{err}");
+    let stored = db.store().table("product").get("p1").unwrap();
+    assert_eq!(stored["name"], CborValue::Text("Tea".into()));
 }
