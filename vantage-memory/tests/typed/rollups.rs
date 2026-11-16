@@ -1,6 +1,9 @@
 //! Roll-up columns computed by `MemoryDB`: an investor's cash is the sum of
 //! its ledger's amounts.
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use ciborium::Value as CborValue;
 use vantage_dataset::WritableValueSet;
 use vantage_memory::prelude::*;
@@ -248,6 +251,62 @@ async fn a_condition_on_a_rollup_column_filters() {
     richest.add_order(richest["cash"].descending());
     richest.set_pagination(Some(Pagination::window(0, 2)));
     assert_eq!(ids(&richest).await, ["v1", "v2"]);
+}
+
+/// `investors` whose `cash` is planned on each read that wants it; `plan`
+/// counts those reads.
+fn lazily_rolled(
+    db: &MemoryDB,
+    plan: impl Fn() -> vantage_core::Result<MemoryRollup> + Send + Sync + 'static,
+) -> (Table<MemoryDB, EmptyEntity>, Arc<AtomicUsize>) {
+    let planned = Arc::new(AtomicUsize::new(0));
+    let calls = planned.clone();
+    let table = Table::new("investor", db.clone())
+        .with_id_column("id")
+        .with_column_of::<String>("name")
+        .with_lazy_memory_rollup("cash", move |_| {
+            calls.fetch_add(1, Ordering::SeqCst);
+            plan()
+        });
+    (table, planned)
+}
+
+/// A lazy roll-up is planned for a read that wants its column and for no
+/// other: not when the table is built, counted, or read for the one column
+/// a condition on a related table joins on.
+#[tokio::test]
+async fn a_lazy_rollup_is_planned_only_for_a_read_of_its_column() {
+    let db = books().await;
+    let (t, planned) = lazily_rolled(&db, || {
+        Ok(over_ledger("cash", RollupOp::Sum, Some("amount")))
+    });
+    let ds = t.data_source();
+    assert_eq!(ds.get_table_count(&t).await.unwrap(), 3);
+    let mut moves = ledger(&db);
+    moves.add_condition(db.related_in_condition("investor", &t, "id"));
+    assert_eq!(ids(&moves).await, ["t1", "t2", "t3"]);
+    assert_eq!(planned.load(Ordering::SeqCst), 0);
+
+    assert_eq!(cell(&t, "v1", "cash").await, int(70));
+    assert!(planned.load(Ordering::SeqCst) >= 1);
+}
+
+/// A plan that fails fails the read of its column and the check a factory
+/// runs on a finished table, with the plan's own error.
+#[tokio::test]
+async fn a_lazy_rollup_that_cannot_be_planned_fails_the_read() {
+    let db = books().await;
+    let (t, _) = lazily_rolled(&db, || {
+        Err(vantage_core::error!("roll-up column not found"))
+    });
+    let ds = t.data_source();
+    for error in [
+        ds.check_rollups(&t).unwrap_err(),
+        ds.list_table_values(&t).await.unwrap_err(),
+    ] {
+        assert_eq!(error.message(), "roll-up column not found");
+    }
+    assert_eq!(ds.get_table_count(&t).await.unwrap(), 3);
 }
 
 fn decimal(text: &str) -> CborValue {

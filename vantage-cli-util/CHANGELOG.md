@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.9 — 2026-11-16
+
+- Requires vantage-table 4.0.0.
+
 ## 0.6.8 — 2026-11-13
 
 - Fix (VAN-438): `:gt=5` with no field name is an "Empty field name before operator" error. It

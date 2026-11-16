@@ -21,6 +21,7 @@ use vantage_core::ErrorKind;
 use vantage_dataset::prelude::*;
 use vantage_mongodb::MongoDB;
 use vantage_table::table::Table;
+use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::Transaction;
 use vantage_vista::contract::{self, TxFixture, TxTables};
@@ -91,10 +92,15 @@ impl MongoTx {
 
 fn tables(db: MongoDB, (a, b): (String, String)) -> TxTables {
     let factory = db.vista_factory();
+    // `b` narrowed to the rows whose `a_id` is the id of a row of `a`, read
+    // from the documents' `_id`.
+    let b_of_a = db.related_in_condition("a_id", &table_a(db.clone(), &a, &b), "_id");
+    let b_of_a = table_b(db.clone(), &b).with_condition(b_of_a);
     TxTables::new(
         factory.from_table(table_a(db.clone(), &a, &b)).unwrap(),
         factory.from_table(table_b(db, &b)).unwrap(),
     )
+    .with_b_of_a(factory.from_table(b_of_a).unwrap())
 }
 
 /// The contract's rows name their id `id`; the documents keep it in `_id`.

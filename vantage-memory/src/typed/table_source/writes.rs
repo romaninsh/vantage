@@ -6,8 +6,8 @@ use vantage_table::table::Table;
 use vantage_types::{Entity, Record};
 
 use crate::store::Row;
-use crate::typed::MemoryDB;
 use crate::typed::convert::{from_cbor_record, to_cbor_record};
+use crate::typed::{Fill, MemoryDB};
 use crate::types::AnyMemoryType;
 
 impl MemoryDB {
@@ -125,7 +125,7 @@ impl MemoryDB {
         &self,
         table: &Table<Self, E>,
     ) -> Result<()> {
-        let rows = self.rows(table, false).await?;
+        let rows = self.rows(table, false, Fill::Nothing).await?;
         self.write(table, |store| {
             for (id, _) in &rows {
                 store.delete(id);

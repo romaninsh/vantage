@@ -36,6 +36,12 @@
   text, and as midnight UTC against a datetime. Before, a date compared by its debug text, so a
   date column sorted and filtered apart from the store that holds it.
 
+- The transaction contract checks a vista narrowed by a parent table and built before the
+  transaction: a parent inserted in the transaction admits its child, a parent deleted in it
+  admits none, and a rollback undoes both. `TxTables::with_b_of_a` supplies that vista.
+- `Tag(101)` (time) compares as its text in `eval`, against another time and against text, like
+  dates and datetimes.
+
 ## 2.10.0 — 2026-11-11
 
 - `TableShell::comparable_condition(&Condition) -> Condition` (default: identity) and

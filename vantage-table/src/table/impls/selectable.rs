@@ -75,8 +75,18 @@ where
         select
     }
 
-    /// Create a select query with table configuration applied
+    /// Create a select query with table configuration applied.
+    ///
+    /// Panics if an expression callback fails; use
+    /// [`try_select`](Self::try_select).
     pub fn select(&self) -> T::Select {
+        self.try_select().unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// Create a select query with table configuration applied. Runs the
+    /// callback of each expression column in the projection, and of no
+    /// other; a failing callback's error names its column and table.
+    pub fn try_select(&self) -> Result<T::Select> {
         let mut select = self.select_empty();
 
         for column in self.columns.values() {
@@ -89,11 +99,10 @@ where
             }
             // With an active-column set, project only its members. The id
             // column is always projected — consumers rely on it to key rows.
-            if !self.is_active(column.name()) {
+            if !self.is_active_column(column.name()) {
                 continue;
             }
-            if let Some(expr_fn) = self.expressions.get(column.name()) {
-                let expr = expr_fn(self.as_entity_erased());
+            if let Some(expr) = self.try_expression_column(column.name())? {
                 self.data_source.add_select_column(
                     &mut select,
                     expr_any!("({})", (expr)),
@@ -108,9 +117,11 @@ where
             }
         }
 
-        for (name, expr_fn) in &self.expressions {
-            if !self.columns.contains_key(name) && self.is_active(name) {
-                let expr = expr_fn(self.as_entity_erased());
+        for name in self.expressions.keys() {
+            if !self.columns.contains_key(name)
+                && self.is_active_column(name)
+                && let Some(expr) = self.try_expression_column(name)?
+            {
                 self.data_source.add_select_column(
                     &mut select,
                     expr_any!("({})", (expr)),
@@ -119,7 +130,23 @@ where
             }
         }
 
-        select
+        Ok(select)
+    }
+
+    /// A select of this table's rows with one field: `column`, or its
+    /// expression when it is an expression column. No other callback runs.
+    /// Used for `IN (subquery)` joins and by aggregates.
+    pub fn try_select_only<Type>(&self, column: &T::Column<Type>) -> Result<T::Select>
+    where
+        Type: ColumnType,
+    {
+        let mut select = self.select_empty();
+        select.clear_order_by();
+        match self.try_expression_column(column.name())? {
+            Some(expr) => select.add_expression(expr_any!("({})", (expr))),
+            None => select.add_field(column.name()),
+        }
+        Ok(select)
     }
     /// Get count of records in the table
     pub async fn get_count(&self) -> Result<i64> {
@@ -196,7 +223,8 @@ where
     ///
     /// Builds `SELECT field FROM table WHERE conditions` — useful as a correlated
     /// subquery inside `with_expression`. Returns `None` if `field` is not a
-    /// column on this table (mirroring [`get_column_expr`](Self::get_column_expr));
+    /// column on this table (mirroring [`get_column_expr`](Self::get_column_expr),
+    /// its panic on a failing expression callback included);
     /// when the caller hardcodes a known column name, `.expect(...)` is fine:
     ///
     /// ```rust,ignore
@@ -229,16 +257,6 @@ where
         select.clear_order_by();
         select.add_expression(expr);
         select.expr()
-    }
-
-    /// Whether `name` is projected by [`select`](Self::select). With no active
-    /// set every column is active; otherwise only the set's members are, plus
-    /// the id column (always projected — consumers key rows by it).
-    fn is_active(&self, name: &str) -> bool {
-        match &self.active_columns {
-            None => true,
-            Some(set) => set.contains(name) || self.id_field.as_deref() == Some(name),
-        }
     }
 
     /// Restrict this table to an explicit set of columns, and import **implicit
@@ -388,7 +406,7 @@ where
             let column_def = self.data_source.create_column::<T::AnyType>(&dotted);
             self.add_column(column_def);
         }
-        let wrapped: crate::table::base::ExpressionFn<T> = Arc::new(move |_| expr.clone());
+        let wrapped: crate::table::base::ExpressionFn<T> = Arc::new(move |_| Ok(expr.clone()));
         self.expressions.insert(dotted.clone(), wrapped);
         self.imported_columns.insert(dotted.clone());
         Ok(())
@@ -407,7 +425,7 @@ where
         T::Select: Expressive<T::Value>,
     {
         match hops.split_first() {
-            None => self.get_column_expr(column).ok_or_else(|| {
+            None => self.try_get_column_expr(column)?.ok_or_else(|| {
                 error!(
                     "implicit reference target has no such column",
                     column = column
@@ -495,6 +513,9 @@ where
     /// Derive a table from an existing one: transform its select via `modifier`
     /// and use the result as the (sub-SELECT) source, inheriting the listed
     /// `columns` and `relations` plus identity/title metadata.
+    ///
+    /// Panics if one of `source`'s expression callbacks fails (it reads
+    /// `source.select()`).
     ///
     /// `modifier` receives `source.select()` and decides flat-vs-wrapped — it
     /// may extend the query in place (joins referencing the base tables) or wrap

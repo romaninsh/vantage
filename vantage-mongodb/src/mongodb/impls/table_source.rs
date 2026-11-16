@@ -3,6 +3,8 @@
 //! driver. Over a data source carrying a `MongoView`, reads run after the
 //! view's stages and writes are refused.
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use bson::{Bson, doc};
 use futures_util::TryStreamExt;
@@ -17,7 +19,7 @@ use vantage_table::table::{RollupOp, Table};
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 
-use crate::condition::MongoCondition;
+use crate::condition::{MongoCondition, RelatedRead};
 use crate::id::{MongoId, eq_filter, id_variants};
 use vantage_vista::Transaction;
 
@@ -62,15 +64,26 @@ fn select_from_table<E: Entity<AnyMongoType>>(table: &Table<MongoDB, E>) -> Resu
     Ok(select)
 }
 
+/// [`select_from_table`] for a read of rows. No expression column lowers into
+/// a MongoDB query, so nothing else would run their callbacks: running them
+/// here is what makes a column MongoDB can't compute (a roll-up) fail the
+/// read that includes it.
+fn read_select<E: Entity<AnyMongoType>>(table: &Table<MongoDB, E>) -> Result<MongoSelect> {
+    table.check_expressions()?;
+    select_from_table(table)
+}
+
 /// The table's filter for confining a write. Writes match stored documents
 /// directly, where joined columns do not exist, so a condition on one is
 /// refused rather than matching nothing. Capabilities are fixed when the
 /// vista is built, so a vista narrowed this way still advertises insert,
-/// update and delete; the refusal comes at write time.
+/// update and delete; the refusal comes at write time. `db` is the handle
+/// doing the write, so a deferred condition reads in its transaction.
 async fn write_filter<E: Entity<AnyMongoType>>(
+    db: &MongoDB,
     table: &Table<MongoDB, E>,
 ) -> Result<bson::Document> {
-    let filter = select_base(table).build_filter().await?;
+    let filter = select_base(table).build_filter(db).await?;
     if filter_uses_joins(&filter, imported_columns(table).len()) {
         return Err(error!(
             "MongoDB cannot confine a write by a condition on a joined column",
@@ -246,7 +259,7 @@ impl MongoDB {
         &self,
         table: &Table<Self, E>,
     ) -> Result<bson::Document> {
-        write_filter(table).await
+        write_filter(self, table).await
     }
 
     /// The `_id`s (as `{_id: ..}` documents) of the members of `docs` that
@@ -344,6 +357,7 @@ impl TableSource for MongoDB {
                 .map(|c| self.describe_condition(c))
                 .collect::<Vec<_>>()
                 .join(" AND "),
+            MongoCondition::Not(inner) => format!("NOT ({})", self.describe_condition(inner)),
         }
     }
 
@@ -448,10 +462,13 @@ impl TableSource for MongoDB {
         Err(error!("correlated subqueries aren't supported on MongoDB").mark_unsupported())
     }
 
-    /// Until someone builds it from `$lookup` + `$group`.
+    /// Until someone builds it from `$lookup` + `$group`. The refusal comes
+    /// when the column is read ([`read_select`]) and from
+    /// `Table::check_expressions`, which the vista factory runs on a load.
     fn rollup_expression<E>(
         &self,
         _parent: &Table<Self, E>,
+        _name: &str,
         _relation: &str,
         _op: RollupOp,
         _column: Option<&str>,
@@ -540,7 +557,7 @@ impl TableSource for MongoDB {
     where
         E: Entity<Self::Value>,
     {
-        let select = select_from_table(table)?;
+        let select = read_select(table)?;
         let docs = self.read_docs(&select).await?;
 
         let mut records = IndexMap::new();
@@ -561,7 +578,7 @@ impl TableSource for MongoDB {
     where
         E: Entity<Self::Value>,
     {
-        let mut select = select_from_table(table)?;
+        let mut select = read_select(table)?;
         if self.reads_pipeline(&select) {
             select.conditions.push(doc! { "_id": id }.into());
             select.sort.clear();
@@ -571,7 +588,7 @@ impl TableSource for MongoDB {
         }
 
         let coll = self.doc_collection(table.table_name());
-        let filter = select.build_filter().await?;
+        let filter = select.build_filter(self).await?;
 
         let Some(d) = in_session!(self, coll.find_one(confined(id, filter)))
             .map_err(|e| error!("MongoDB find_one failed", details = e.to_string()))?
@@ -590,7 +607,7 @@ impl TableSource for MongoDB {
     where
         E: Entity<Self::Value>,
     {
-        let mut select = select_from_table(table)?;
+        let mut select = read_select(table)?;
         if self.reads_pipeline(&select) {
             (select.skip, select.limit) = (None, Some(1));
             let d = self.read_docs(&select).await?.into_iter().next();
@@ -600,7 +617,7 @@ impl TableSource for MongoDB {
             }));
         }
 
-        let filter = select.build_filter().await?;
+        let filter = select.build_filter(self).await?;
         let coll = self.doc_collection(table.table_name());
 
         let mut find = coll.find_one(filter);
@@ -741,7 +758,7 @@ impl TableSource for MongoDB {
     {
         self.ensure_writable(table.table_name())?;
         let coll = self.doc_collection(table.table_name());
-        let table_filter = write_filter(table).await?;
+        let table_filter = write_filter(self, table).await?;
         let mut replacement = bson::Document::new();
         for (k, v) in record.iter() {
             replacement.insert(k, v.value().clone());
@@ -800,7 +817,7 @@ impl TableSource for MongoDB {
         self.ensure_writable(table.table_name())?;
         let not_found = || error!("Record not found", id = id.to_string()).mark_not_found();
         let coll = self.doc_collection(table.table_name());
-        let table_filter = write_filter(table).await?;
+        let table_filter = write_filter(self, table).await?;
         let filter = confined(id, table_filter);
 
         let existing = self
@@ -840,7 +857,7 @@ impl TableSource for MongoDB {
         E: Entity<Self::Value>,
     {
         self.ensure_writable(table.table_name())?;
-        let filter = write_filter(table).await?;
+        let filter = write_filter(self, table).await?;
         let coll = self.doc_collection(table.table_name());
         in_session!(self, coll.delete_one(confined(id, filter)))
             .map_err(|e| write_failed(&e, table.table_name(), "MongoDB delete_one failed"))?;
@@ -852,7 +869,7 @@ impl TableSource for MongoDB {
         E: Entity<Self::Value>,
     {
         self.ensure_writable(table.table_name())?;
-        let filter = write_filter(table).await?;
+        let filter = write_filter(self, table).await?;
         let coll = self.doc_collection(table.table_name());
         in_session!(self, coll.delete_many(filter))
             .map_err(|e| write_failed(&e, table.table_name(), "MongoDB delete_many failed"))?;
@@ -905,8 +922,9 @@ impl TableSource for MongoDB {
             || source_table.is_imported_column(source_column);
         let col = source_column.to_string();
 
-        let deferred = DeferredFn::new(move || {
+        let read: RelatedRead = Arc::new(move |db: &MongoDB| {
             let source = source.clone();
+            let reader = source.data_source().in_transaction_of(db);
             let col = col.clone();
             let field = field.clone();
             Box::pin(async move {
@@ -921,7 +939,7 @@ impl TableSource for MongoDB {
                 select.fields = vec![col.clone()];
 
                 let mut values = Vec::new();
-                for doc in source.data_source().read_docs(&select).await? {
+                for doc in reader.read_docs(&select).await? {
                     if let Some(v) = doc.get(&col) {
                         // Push the value itself, plus the alternate representation
                         // so `$in` matches regardless of whether the target stores
@@ -941,15 +959,12 @@ impl TableSource for MongoDB {
                     }
                 }
 
-                let doc = doc! { &field: { "$in": values } };
-                Ok(ExpressiveEnum::Scalar(AnyMongoType::untyped(
-                    Bson::Document(doc),
-                )))
+                Ok(doc! { &field: { "$in": values } })
             })
         });
         MongoCondition::DeferredIn {
             column: target_field.to_string(),
-            deferred,
+            read,
         }
     }
 

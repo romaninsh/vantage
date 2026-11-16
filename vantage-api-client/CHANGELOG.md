@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.4.1 — 2026-11-16
+
+- Requires vantage-table 4.0.0. A GraphQL preview whose query can't be built shows the error as a
+  note instead of panicking.
+
 ## 2.4.0 — 2026-11-13
 
 - `AuthHeader::Named { name, value }` and a `header_auth(name, value)` builder method on the REST

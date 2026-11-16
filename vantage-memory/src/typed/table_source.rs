@@ -15,8 +15,8 @@ use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 use vantage_vista::{FilterOp, Transaction};
 
-use super::MemoryDB;
 use super::convert::{from_cbor_record, table_query};
+use super::{Fill, MemoryDB};
 use crate::eval::{MemoryCondition, matches_all};
 use crate::types::AnyMemoryType;
 
@@ -156,7 +156,7 @@ impl TableSource for MemoryDB {
         E: Entity<Self::Value>,
     {
         Ok(self
-            .rows(table, true)
+            .rows(table, true, Fill::Active)
             .await?
             .into_iter()
             .map(|(id, row)| (id, from_cbor_record(&row)))
@@ -176,8 +176,8 @@ impl TableSource for MemoryDB {
                 let Some(row) = self.store_table(table).await?.get(id) else {
                     return Ok(None);
                 };
-                let row = self.filled_row(table, id, row).await?;
-                let q = table_query(table).await?;
+                let q = table_query(self, table).await?;
+                let row = self.filled_row(table, &q, id, row).await?;
                 Ok(matches_all(&q, &row)?.then(|| from_cbor_record(&row)))
             }
             .await,
@@ -193,9 +193,9 @@ impl TableSource for MemoryDB {
     {
         self.settle(
             async {
-                let mut q = table_query(table).await?;
+                let mut q = table_query(self, table).await?;
                 q.limit = Some(1);
-                let rows = self.query_rows(table, &q).await?;
+                let rows = self.query_rows(table, &q, Fill::Active).await?;
                 Ok(rows
                     .into_iter()
                     .next()
@@ -211,7 +211,7 @@ impl TableSource for MemoryDB {
     {
         self.settle(
             async {
-                let q = table_query(table).await?;
+                let q = table_query(self, table).await?;
                 Ok(self.count_rows(table, &q).await? as i64)
             }
             .await,

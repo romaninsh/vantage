@@ -273,7 +273,7 @@ impl TableSource for MysqlDB {
     {
         let id_field_name = table.id_field_name();
 
-        let select = table.select();
+        let select = table.try_select()?;
         let result = self.execute(&row_query(table, &select)).await?;
 
         parse_rows(result, &id_field_name)
@@ -293,7 +293,7 @@ impl TableSource for MysqlDB {
             let id_val = id_value(id);
             mysql_expr!("{} = {}", (ident(&id_field_name)), id_val)
         };
-        let select = table.select().with_condition(condition);
+        let select = table.try_select()?.with_condition(condition);
         let result = self.execute(&row_query(table, &select)).await?;
 
         let mut rows = parse_rows(result, &id_field_name)?;
@@ -309,7 +309,7 @@ impl TableSource for MysqlDB {
     {
         let id_field_name = table.id_field_name();
 
-        let mut select = table.select();
+        let mut select = table.try_select()?;
         select.set_limit(Some(1), None);
         let result = self.execute(&row_query(table, &select)).await?;
 
@@ -321,7 +321,7 @@ impl TableSource for MysqlDB {
     where
         E: Entity<Self::Value>,
     {
-        let select = table.select();
+        let select = table.select_empty();
         let result = self.aggregate(&select, "count", mysql_expr!("*")).await?;
         result.try_get::<i64>().ok_or_else(|| {
             error!(
@@ -339,7 +339,8 @@ impl TableSource for MysqlDB {
     where
         E: Entity<Self::Value>,
     {
-        self.aggregate(&table.select(), "sum", column.expr()).await
+        let value = table.try_column_expr_of(column)?;
+        self.aggregate(&table.select_empty(), "sum", value).await
     }
 
     async fn get_table_max<E>(
@@ -350,7 +351,8 @@ impl TableSource for MysqlDB {
     where
         E: Entity<Self::Value>,
     {
-        self.aggregate(&table.select(), "max", column.expr()).await
+        let value = table.try_column_expr_of(column)?;
+        self.aggregate(&table.select_empty(), "max", value).await
     }
 
     async fn get_table_min<E>(
@@ -361,7 +363,8 @@ impl TableSource for MysqlDB {
     where
         E: Entity<Self::Value>,
     {
-        self.aggregate(&table.select(), "min", column.expr()).await
+        let value = table.try_column_expr_of(column)?;
+        self.aggregate(&table.select_empty(), "min", value).await
     }
 
     async fn insert_table_value<E>(
@@ -586,10 +589,11 @@ impl TableSource for MysqlDB {
         E: Entity<Self::Value> + 'static,
         Self: ExprDataSource<Self::Value> + Sized,
     {
-        let mut select = table.select();
-        select.clear_fields();
-        select.clear_order_by();
-        select.add_field(column.name());
+        // Only this column's callback runs: an inherited rule builds this
+        // subquery while its own table is being built.
+        let select = table
+            .try_select_only(column)
+            .unwrap_or_else(|e| panic!("{e}"));
 
         let subquery = select.expr();
         AssociatedExpression::new(subquery, self)

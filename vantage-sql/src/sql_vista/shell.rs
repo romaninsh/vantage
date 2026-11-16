@@ -102,9 +102,14 @@ where
     }
 
     /// The SELECT as it stands, rendered with values inline. The executed
-    /// form binds those values as the dialect's parameters instead.
+    /// form binds those values as the dialect's parameters instead. A read
+    /// that an expression column fails has no query: the note carries the
+    /// error the read would return.
     fn preview(&self) -> Preview {
-        Preview::new().with_query(T::preview(&self.table))
+        match T::preview(&self.table) {
+            Ok(query) => Preview::new().with_query(query),
+            Err(e) => Preview::new().with_note(format!("the query can't be built: {e}")),
+        }
     }
 
     async fn list(&self) -> Result<IndexMap<String, Record<CborValue>>> {
@@ -134,6 +139,10 @@ where
 
     fn add_condition(&mut self, condition: &Condition) -> Result<()> {
         self.apply_condition(condition)
+    }
+
+    fn comparable_condition(&self, condition: &Condition) -> Condition {
+        self.typed_condition(condition)
     }
 
     fn add_native_condition(&mut self, condition: NativeCondition) -> Result<()> {

@@ -11,10 +11,11 @@ use vantage_core::Result;
 use vantage_types::Record;
 use vantage_vista::SortDirection;
 
+use crate::MemoryDB;
 use crate::store::Row;
 use condition::search_matches;
 
-pub use condition::MemoryCondition;
+pub use condition::{MemoryCondition, RelatedRead};
 pub use order::sort_rows;
 pub(crate) use reads::reads_columns;
 
@@ -52,11 +53,12 @@ impl Query {
         self
     }
 
-    /// Resolve every `Deferred` condition.
-    pub async fn resolve(mut self) -> Result<Self> {
+    /// Resolve every deferred condition; `db` does the reads of a
+    /// `DeferredIn`.
+    pub async fn resolve(mut self, db: &MemoryDB) -> Result<Self> {
         let mut out = Vec::with_capacity(self.conditions.len());
         for c in self.conditions {
-            out.push(c.resolve().await?);
+            out.push(c.resolve(db).await?);
         }
         self.conditions = out;
         Ok(self)

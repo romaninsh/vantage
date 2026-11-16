@@ -8,8 +8,9 @@
 //! **Format**: Uses ISO 8601 with T separator (`"2025-01-10T12:00:00Z"`)
 //! since SQLite has no native date type — the format is ours to choose.
 //!
-//! `from_cbor` accepts both tagged and plain Text values, so dates read
-//! from SQLite (which come back as untagged strings) still work.
+//! `from_cbor` accepts both tagged and plain Text values: a row read through
+//! a table comes back tagged for the columns declared with one of these
+//! types, and as untagged text otherwise (a raw query, an undeclared column).
 
 use super::{SqliteType, SqliteTypeTextMarker};
 use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Utc};
@@ -148,6 +149,7 @@ impl SqliteType for DateTime<FixedOffset> {
 fn parse_time(s: &str) -> Option<NaiveTime> {
     NaiveTime::parse_from_str(s, "%H:%M:%S")
         .or_else(|_| NaiveTime::parse_from_str(s, "%H:%M:%S%.f"))
+        .or_else(|_| NaiveTime::parse_from_str(s, "%H:%M"))
         .ok()
 }
 
@@ -156,6 +158,8 @@ fn parse_naive_datetime(s: &str) -> Option<NaiveDateTime> {
         .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f"))
         .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S"))
         .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f"))
+        .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M"))
+        .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M"))
         .ok()
 }
 

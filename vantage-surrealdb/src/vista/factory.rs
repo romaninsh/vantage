@@ -128,6 +128,9 @@ impl VistaFactory for SurrealVistaFactory {
             .as_ref()
             .is_some_and(|m| m.rhai.is_some() || m.base.is_some());
         let table = self.table_from_spec(&spec)?;
+        // Only here, on the table the caller asked for: a reference target
+        // or a `base:` table checking its own would build this one again.
+        table.check_expressions()?;
         if !read_only {
             self.db.warn_schema_mismatches(&table);
         }

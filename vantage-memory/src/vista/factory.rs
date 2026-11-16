@@ -178,6 +178,9 @@ impl VistaFactory for MemoryVistaFactory {
 
     fn build_from_spec(&self, spec: MemoryVistaSpec) -> Result<Vista> {
         let table = self.table_from_spec(&spec)?;
+        // Only here, on the table the caller asked for: a reference target
+        // checking its own would build this one again.
+        table.data_source().check_rollups(&table)?;
         spec_vista(table, &spec, self.specs())
     }
 }

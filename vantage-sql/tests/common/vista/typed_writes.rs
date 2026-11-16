@@ -1,5 +1,6 @@
 //! Typed writes: a YAML column's declared type decides the value written,
-//! whatever loosely typed shape a form or a script hands over. A backend's
+//! whatever loosely typed shape a form or a script hands over, and types a
+//! condition's value the same way. A backend's
 //! `vista` module supplies `async fn typed_events(suffix: &str) -> (DB,
 //! String)`: an empty table with nullable columns `due` (date), `at`
 //! (timestamp), `amount` (decimal, 2 places), `qty` (big integer), `starts`
@@ -12,7 +13,7 @@ macro_rules! vista_typed_writes_tests {
             use ciborium::Value as CborValue;
             use vantage_dataset::prelude::*;
             use vantage_types::Record;
-            use vantage_vista::{Vista, VistaFactory};
+            use vantage_vista::{FilterOp, Vista, VistaFactory, VistaMetadata};
 
             use super::{TestResult, typed_events};
 
@@ -226,6 +227,116 @@ columns:
                 vista.replace_value("t5", &back).await?;
                 let second = vista.get_value("t5").await?.expect("replaced");
                 assert_eq!(first, second);
+                Ok(())
+            }
+
+            /// A condition value is typed by its column as a write is, so
+            /// text in any form a write takes selects the rows that hold
+            /// that date, time or instant, and the same rows match in memory.
+            #[tokio::test]
+            async fn typed_condition_types_text_by_column() -> TestResult {
+                let vista = events("cond").await;
+                for (id, due, at, starts) in [
+                    ("first", "2026-11-01", "2026-11-01T00:00:00Z", "09:30"),
+                    ("mid", "2026-11-16", "2026-11-16T09:30:00Z", "10:00"),
+                    ("late", "2026-11-20", "2026-11-20T18:00:00Z", "08:15"),
+                ] {
+                    vista
+                        .insert_value(
+                            id,
+                            &row(&[
+                                ("due", text(due)),
+                                ("at", text(at)),
+                                ("starts", text(starts)),
+                            ]),
+                        )
+                        .await?;
+                }
+                let all = vista.list_values().await?;
+                let mut metadata = VistaMetadata::new();
+                metadata.columns = vista.columns().clone();
+
+                let dates =
+                    |days: &[&str]| CborValue::Array(days.iter().map(|d| text(d)).collect());
+                for (column, op, value, expected) in [
+                    ("at", FilterOp::Eq, text("2026-11-16 09:30:00"), vec!["mid"]),
+                    (
+                        "at",
+                        FilterOp::Gt,
+                        text("2026-11-01 00:00:00"),
+                        vec!["late", "mid"],
+                    ),
+                    (
+                        "at",
+                        FilterOp::Gte,
+                        text("2026-11-01"),
+                        vec!["first", "late", "mid"],
+                    ),
+                    ("starts", FilterOp::Eq, text("09:30"), vec!["first"]),
+                    ("starts", FilterOp::Gt, text("09:30"), vec!["mid"]),
+                    ("starts", FilterOp::Eq, text("09:30:00"), vec!["first"]),
+                    (
+                        "due",
+                        FilterOp::InSet,
+                        dates(&["2026-11-01", "2026-11-20"]),
+                        vec!["first", "late"],
+                    ),
+                    (
+                        "due",
+                        FilterOp::NotInSet,
+                        dates(&["2026-11-01", "2026-11-20"]),
+                        vec!["mid"],
+                    ),
+                ] {
+                    let mut narrowed = vista.clone();
+                    narrowed.add_condition(column, op, value.clone())?;
+                    let mut stored: Vec<_> = narrowed.list_values().await?.into_keys().collect();
+                    stored.sort();
+                    assert_eq!(stored, expected, "database: {column} {op:?} {value:?}");
+
+                    let comparable = narrowed.comparable_query();
+                    let mut held = Vec::new();
+                    for (id, record) in &all {
+                        if comparable.matches(record, &metadata)? {
+                            held.push(id.as_str());
+                        }
+                    }
+                    held.sort();
+                    assert_eq!(held, expected, "memory: {column} {op:?} {value:?}");
+                }
+                Ok(())
+            }
+
+            /// A condition value that doesn't fit its column is refused as a
+            /// write of it is, never compared as text.
+            #[tokio::test]
+            async fn typed_condition_refuses_what_doesnt_fit() -> TestResult {
+                let vista = events("condbad").await;
+                for (column, op, value) in [
+                    ("at", FilterOp::Eq, text("soon")),
+                    ("starts", FilterOp::Gt, text("25:99")),
+                    (
+                        "due",
+                        FilterOp::InSet,
+                        CborValue::Array(vec![text("2026-11-01"), text("next week")]),
+                    ),
+                ] {
+                    let mut narrowed = vista.clone();
+                    let err = narrowed
+                        .add_condition(column, op, value)
+                        .expect_err("refused");
+                    assert!(err.is_invalid_value(), "{column}: {err:?}");
+                    assert!(err.to_string().contains(column), "{column}: {err}");
+                }
+                let written = vista
+                    .insert_value("x", &row(&[("at", text("soon"))]))
+                    .await
+                    .expect_err("refused");
+                let mut narrowed = vista.clone();
+                let compared = narrowed
+                    .add_condition("at", FilterOp::Eq, text("soon"))
+                    .expect_err("refused");
+                assert_eq!(written.to_string(), compared.to_string());
                 Ok(())
             }
 

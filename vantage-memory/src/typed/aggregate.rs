@@ -12,7 +12,7 @@ use vantage_table::column::core::Column;
 use vantage_table::table::{RollupOp, Table};
 use vantage_types::Entity;
 
-use super::MemoryDB;
+use super::{Fill, MemoryDB};
 use crate::eval::compare::cmp_values;
 use crate::types::AnyMemoryType;
 
@@ -47,7 +47,7 @@ impl MemoryDB {
         table: &Table<Self, E>,
         column: &Column<AnyMemoryType>,
     ) -> Result<Vec<CborValue>> {
-        let rows = self.rows(table, false).await?;
+        let rows = self.rows(table, false, Fill::Column(column.name())).await?;
         Ok(rows
             .iter()
             .filter_map(|(_, row)| row.get(column.name()).cloned())

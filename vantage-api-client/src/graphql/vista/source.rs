@@ -99,11 +99,14 @@ impl TableShell for GraphqlApiTableShell {
     /// in those deferred branches. The document is posted to the endpoint
     /// named on the first line.
     fn preview(&self) -> Preview {
-        Preview::new().with_query(format!(
-            "POST {}\n{}",
-            self.table.data_source().endpoint(),
-            self.table.select().preview()
-        ))
+        match self.table.try_select() {
+            Ok(select) => Preview::new().with_query(format!(
+                "POST {}\n{}",
+                self.table.data_source().endpoint(),
+                select.preview()
+            )),
+            Err(e) => Preview::new().with_note(format!("the query can't be built: {e}")),
+        }
     }
 
     async fn list(&self) -> Result<IndexMap<String, Record<CborValue>>> {

@@ -19,6 +19,15 @@ async fn get_db() -> MongoDB {
     MongoDB::connect(&mongo_url(), "vantage").await.unwrap()
 }
 
+/// A handle that never connects, for resolving conditions with nothing to
+/// read.
+async fn offline() -> MongoDB {
+    let client = mongodb::Client::with_uri_str("mongodb://127.0.0.1:1")
+        .await
+        .unwrap();
+    MongoDB::new(client, "offline")
+}
+
 fn product_table(db: MongoDB) -> Table<MongoDB, EmptyEntity> {
     Table::new("product", db)
         .with_id_column("_id")
@@ -166,7 +175,7 @@ async fn negating_a_plain_value_filter_negates_its_equality() {
 async fn a_document_condition_resolves_to_itself() {
     let condition: MongoCondition = doc! { "price": { "$gt": 100 } }.into();
     assert_eq!(
-        condition.resolve().await.unwrap(),
+        condition.resolve(&offline().await).await.unwrap(),
         doc! { "price": { "$gt": 100 } }
     );
 }
@@ -175,7 +184,7 @@ async fn a_document_condition_resolves_to_itself() {
 async fn and_combines_two_conditions_under_dollar_and() {
     let condition = MongoCondition::And(vec![doc! { "a": 1 }.into(), doc! { "b": 2 }.into()]);
     assert_eq!(
-        condition.resolve().await.unwrap(),
+        condition.resolve(&offline().await).await.unwrap(),
         doc! { "$and": [{ "a": 1 }, { "b": 2 }] }
     );
 }
@@ -183,9 +192,15 @@ async fn and_combines_two_conditions_under_dollar_and() {
 #[tokio::test]
 async fn and_of_one_condition_is_that_condition_and_of_none_matches_everything() {
     let single = MongoCondition::And(vec![doc! { "x": 1 }.into()]);
-    assert_eq!(single.resolve().await.unwrap(), doc! { "x": 1 });
     assert_eq!(
-        MongoCondition::And(vec![]).resolve().await.unwrap(),
+        single.resolve(&offline().await).await.unwrap(),
+        doc! { "x": 1 }
+    );
+    assert_eq!(
+        MongoCondition::And(vec![])
+            .resolve(&offline().await)
+            .await
+            .unwrap(),
         doc! {}
     );
 }
@@ -197,7 +212,9 @@ async fn resolve_conditions_merges_a_list_like_and() {
         MongoCondition::Doc(doc! { "b": 2 }),
     ];
     assert_eq!(
-        resolve_conditions(conditions.iter()).await.unwrap(),
+        resolve_conditions(conditions.iter(), &offline().await)
+            .await
+            .unwrap(),
         doc! { "$and": [{ "a": 1 }, { "b": 2 }] }
     );
 }
@@ -213,7 +230,7 @@ fn deferred_resolving_to(value: Bson) -> MongoCondition {
 async fn a_deferred_condition_resolves_to_the_document_it_produces() {
     let condition = deferred_resolving_to(Bson::Document(doc! { "status": "active" }));
     assert_eq!(
-        condition.resolve().await.unwrap(),
+        condition.resolve(&offline().await).await.unwrap(),
         doc! { "status": "active" }
     );
 }
@@ -225,7 +242,7 @@ async fn a_deferred_condition_nests_inside_and() {
         deferred_resolving_to(Bson::Document(doc! { "owner_id": { "$in": ["a", "b"] } })),
     ]);
     assert_eq!(
-        condition.resolve().await.unwrap(),
+        condition.resolve(&offline().await).await.unwrap(),
         doc! { "$and": [
             { "active": true },
             { "owner_id": { "$in": ["a", "b"] } }
@@ -236,7 +253,7 @@ async fn a_deferred_condition_nests_inside_and() {
 #[tokio::test]
 async fn a_deferred_condition_that_is_not_a_document_fails_to_resolve() {
     let condition = deferred_resolving_to(Bson::Int32(7));
-    assert!(condition.resolve().await.is_err());
+    assert!(condition.resolve(&offline().await).await.is_err());
 }
 
 #[test]
@@ -292,6 +309,10 @@ async fn negating_an_and_selects_every_row_the_and_rejects() {
 #[tokio::test]
 async fn negating_a_deferred_condition_negates_what_it_resolves_to() {
     let deferred = deferred_resolving_to(Bson::Document(doc! { "a": { "$gt": 1_i64 } }));
-    let negated = deferred.eq_bool(false).resolve().await.unwrap();
+    let negated = deferred
+        .eq_bool(false)
+        .resolve(&offline().await)
+        .await
+        .unwrap();
     assert_eq!(negated, doc! { "a": { "$not": { "$gt": 1_i64 } } });
 }

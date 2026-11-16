@@ -37,8 +37,9 @@ pub(crate) trait SqlShellDialect:
     /// This datasource running its statements on `tx`.
     fn in_transaction(&self, tx: &Transaction) -> Result<Self>;
 
-    /// The SELECT the table would run, rendered with values inline.
-    fn preview<E: Entity<Self::Value>>(table: &Table<Self, E>) -> String;
+    /// The SELECT the table would run, rendered with values inline; the
+    /// error of an expression column that can't be built.
+    fn preview<E: Entity<Self::Value>>(table: &Table<Self, E>) -> Result<String>;
 
     /// `column <op> value`, `template` being the binary operator's
     /// `"{} = {}"`-style template.

@@ -8,14 +8,15 @@ use bson::{Bson, Document, doc};
 use super::MongoSelect;
 use super::join::filter_uses_joins;
 use crate::condition::merge_documents;
+use crate::mongodb::MongoDB;
 
 impl MongoSelect {
     /// The filter split into its conditions on stored fields and those
     /// reading a joined column.
-    async fn split_filter(&self) -> vantage_core::Result<(Document, Document)> {
+    async fn split_filter(&self, db: &MongoDB) -> vantage_core::Result<(Document, Document)> {
         let (mut stored, mut joined) = (Vec::new(), Vec::new());
         for condition in &self.conditions {
-            let resolved = condition.resolve().await?;
+            let resolved = condition.resolve(db).await?;
             if filter_uses_joins(&resolved, self.joins.len()) {
                 joined.push(resolved);
             } else {
@@ -27,16 +28,19 @@ impl MongoSelect {
 
     /// The filter as `$match` stages: one on stored fields, one on joined
     /// columns; `None` where there are no such conditions.
-    async fn match_stages(&self) -> vantage_core::Result<(Option<Document>, Option<Document>)> {
-        let (stored, joined) = self.split_filter().await?;
+    async fn match_stages(
+        &self,
+        db: &MongoDB,
+    ) -> vantage_core::Result<(Option<Document>, Option<Document>)> {
+        let (stored, joined) = self.split_filter(db).await?;
         let stage = |filter: Document| (!filter.is_empty()).then(|| doc! { "$match": filter });
         Ok((stage(stored), stage(joined)))
     }
 
     /// `pre_stages` and the stored-field `$match`; then, when a condition
     /// reads a joined column, the join stages and the joined `$match`.
-    async fn filtered_stages(&self) -> vantage_core::Result<Vec<Document>> {
-        let (stored, joined) = self.match_stages().await?;
+    async fn filtered_stages(&self, db: &MongoDB) -> vantage_core::Result<Vec<Document>> {
+        let (stored, joined) = self.match_stages(db).await?;
         let mut pipeline = self.pre_stages.clone();
         pipeline.extend(stored);
         if let Some(joined) = joined {
@@ -94,15 +98,17 @@ impl MongoSelect {
     }
 
     /// Build a row-reading pipeline; see `read_layout` for the stage order.
-    pub async fn as_read_pipeline(&self) -> vantage_core::Result<Vec<Document>> {
-        let (stored, joined) = self.match_stages().await?;
+    /// `db` does the reads of a deferred condition, here and in the other
+    /// pipeline builders.
+    pub async fn as_read_pipeline(&self, db: &MongoDB) -> vantage_core::Result<Vec<Document>> {
+        let (stored, joined) = self.match_stages(db).await?;
         Ok(self.read_layout(stored, joined, |d| d))
     }
 
     /// Build a count aggregation pipeline: [pre_stages.., $match, $count],
     /// with the join stages only when the filter reads a joined column.
-    pub async fn as_count_pipeline(&self) -> vantage_core::Result<Vec<Document>> {
-        let mut pipeline = self.filtered_stages().await?;
+    pub async fn as_count_pipeline(&self, db: &MongoDB) -> vantage_core::Result<Vec<Document>> {
+        let mut pipeline = self.filtered_stages(db).await?;
         pipeline.push(doc! { "$count": "count" });
         Ok(pipeline)
     }
@@ -113,9 +119,10 @@ impl MongoSelect {
         &self,
         func: &str,
         field: &str,
+        db: &MongoDB,
     ) -> vantage_core::Result<Vec<Document>> {
         let field_ref = format!("${}", field);
-        let mut pipeline = self.filtered_stages().await?;
+        let mut pipeline = self.filtered_stages(db).await?;
         pipeline.push(doc! { "$group": { "_id": Bson::Null, "val": { func: field_ref } } });
         Ok(pipeline)
     }

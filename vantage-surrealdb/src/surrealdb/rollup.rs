@@ -24,12 +24,13 @@ impl SurrealDB {
     pub(crate) fn render_rollup<E: Entity<AnySurrealType> + 'static>(
         &self,
         parent: &Table<SurrealDB, E>,
+        name: &str,
         relation: &str,
         op: RollupOp,
         column: Option<&str>,
         condition: Option<Expr>,
     ) -> Result<Expr> {
-        let child = parent.get_ref_target_erased(relation)?;
+        let child = parent.rollup_target(name, relation, column)?;
         let value = match op {
             RollupOp::Count => None,
             _ => {
@@ -95,7 +96,9 @@ impl SurrealDB {
                     checked.is_some(),
                 );
             }
-            let mut child = parent.get_subquery_erased(relation)?;
+            // `$parent` names the outer row, so a child over the parent's
+            // own table needs no alias.
+            let mut child = parent.correlate_ref_target(relation, child, None)?;
             for filter in filters {
                 child.add_condition(filter);
             }

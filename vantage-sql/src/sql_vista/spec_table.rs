@@ -218,8 +218,8 @@ where
     let base_table = build_spec_table(&base_spec, db, &base_env)?;
 
     let select = match block.rhai {
-        Some(code) => rhai_select::<T>(code, Some(base_table.select()), block.args)?,
-        None => base_table.select(),
+        Some(code) => rhai_select::<T>(code, Some(base_table.try_select()?), block.args)?,
+        None => base_table.try_select()?,
     };
     let table = Table::derive_from_spec(
         &base_table,

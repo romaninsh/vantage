@@ -9,8 +9,8 @@ use vantage_table::table::Table;
 use vantage_types::Entity;
 use vantage_vista::FilterOp;
 
-use super::MemoryRollup;
-use crate::eval::{MemoryCondition, Query, matches_all, sort_rows, window_rows};
+use super::{Fill, MemoryRollup, RollupColumn};
+use crate::eval::{MemoryCondition, Query, matches_all, reads_columns, sort_rows, window_rows};
 use crate::store::Row;
 use crate::store::ids::{id_forms, supplied_id};
 use crate::typed::MemoryDB;
@@ -18,22 +18,26 @@ use crate::typed::aggregate::rollup_value;
 use crate::types::AnyMemoryType;
 
 impl MemoryDB {
-    /// Rows matching `q`, with the table's roll-ups filled. When `q` reads a
-    /// roll-up column, every row is filled first and `q` runs over them.
+    /// Rows matching `q`, with the roll-ups `q` reads and those `fill` asks
+    /// for filled, and no other: a roll-up left out builds no table and
+    /// reads no child row. When `q` reads a roll-up column, every row gets
+    /// it first and `q` runs over them.
     pub(crate) async fn query_rows<E: Entity<AnyMemoryType>>(
         &self,
         table: &Table<Self, E>,
         q: &Query,
+        fill: Fill<'_>,
     ) -> Result<Vec<(String, Row)>> {
         let store = self.store_table(table).await?;
-        let rollups = self.rollups_of(table.table_name());
-        if !self.reads_rollups(table.table_name(), q) {
+        let (read, asked) = self.wanted_rollups(table, q, fill);
+        if read.is_empty() {
             let mut rows = store.query(q)?;
-            self.fill(&rollups, &mut rows).await?;
+            self.fill(&asked, &mut rows).await?;
+            self.drop_unfilled(table, &asked, &mut rows);
             return Ok(rows);
         }
         let mut rows = store.query(&Query::new())?;
-        self.fill(&rollups, &mut rows).await?;
+        self.fill(&read, &mut rows).await?;
         let mut matched = Vec::new();
         for (id, row) in rows {
             if matches_all(q, &row)? {
@@ -41,7 +45,11 @@ impl MemoryDB {
             }
         }
         sort_rows(&mut matched, &q.order);
-        Ok(window_rows(matched, q))
+        let mut rows = window_rows(matched, q);
+        self.fill(&asked, &mut rows).await?;
+        let filled: Vec<&RollupColumn> = read.into_iter().chain(asked).collect();
+        self.drop_unfilled(table, &filled, &mut rows);
+        Ok(rows)
     }
 
     /// How many rows match `q`'s conditions and search.
@@ -54,26 +62,55 @@ impl MemoryDB {
             return self.store_table(table).await?.count(q);
         }
         let all = q.clone().window(0, None);
-        Ok(self.query_rows(table, &all).await?.len())
+        Ok(self.query_rows(table, &all, Fill::Nothing).await?.len())
     }
 
-    /// Row `id` of `table` with its roll-ups filled.
+    /// Row `id` of `table` with its active roll-ups filled, and those `q`
+    /// reads, so `q` can be matched against it.
     pub(crate) async fn filled_row<E: Entity<AnyMemoryType>>(
         &self,
         table: &Table<Self, E>,
+        q: &Query,
         id: &str,
         row: Row,
     ) -> Result<Row> {
-        let rollups = self.rollups_of(table.table_name());
-        if rollups.is_empty() {
-            return Ok(row);
-        }
+        let (read, asked) = self.wanted_rollups(table, q, Fill::Active);
+        let rollups: Vec<&RollupColumn> = read.into_iter().chain(asked).collect();
         let mut rows = vec![(id.to_string(), row)];
         self.fill(&rollups, &mut rows).await?;
+        self.drop_unfilled(table, &rollups, &mut rows);
         Ok(rows.pop().map(|(_, row)| row).unwrap_or_default())
     }
 
-    async fn fill(&self, rollups: &[&MemoryRollup], rows: &mut [(String, Row)]) -> Result<()> {
+    /// Whether `q` reads one of `table`'s roll-up columns.
+    fn reads_rollups(&self, table: &str, q: &Query) -> bool {
+        let columns: Vec<&str> = self.rollups_of(table).map(|r| r.column.as_str()).collect();
+        reads_columns(q, &columns)
+    }
+
+    /// A roll-up column that wasn't filled leaves the rows: a cell stored
+    /// under its name is not its value.
+    fn drop_unfilled<E: Entity<AnyMemoryType>>(
+        &self,
+        table: &Table<Self, E>,
+        filled: &[&RollupColumn],
+        rows: &mut [(String, Row)],
+    ) {
+        for rollup in self.rollups_of(table.table_name()) {
+            if filled.iter().any(|f| f.column == rollup.column) {
+                continue;
+            }
+            for (_, row) in rows.iter_mut() {
+                if row.contains_key(&rollup.column) {
+                    Arc::make_mut(row).shift_remove(&rollup.column);
+                }
+            }
+        }
+    }
+
+    /// Resolves each of `rollups` against this `MemoryDB` and sets its value
+    /// on every row.
+    async fn fill(&self, rollups: &[&RollupColumn], rows: &mut [(String, Row)]) -> Result<()> {
         if rows.is_empty() {
             return Ok(());
         }
@@ -83,7 +120,8 @@ impl MemoryDB {
             _ => None,
         };
         for rollup in rollups {
-            let children = self.children(rollup, parent.as_deref()).await?;
+            let rollup = rollup.resolve(self)?;
+            let children = self.children(&rollup, parent.as_deref()).await?;
             for (id, row) in rows.iter_mut() {
                 let cells = children.get(id.as_str()).map_or(&[][..], Vec::as_slice);
                 Arc::make_mut(row).insert(rollup.column.clone(), rollup_value(rollup.op, cells));
@@ -120,7 +158,7 @@ impl MemoryDB {
             ));
         }
         let mut out: HashMap<String, Vec<CborValue>> = HashMap::new();
-        for (_, row) in target.query(&q.resolve().await?)? {
+        for (_, row) in target.query(&q.resolve(self).await?)? {
             let Some(parent) = supplied_id(row.get(&rollup.foreign_key)) else {
                 continue;
             };

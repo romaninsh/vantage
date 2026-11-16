@@ -43,6 +43,7 @@ pub(super) async fn watch(shell: &MongoTableShell) -> Result<VistaChangeStream> 
     let name = table.table_name();
     table.data_source().ensure_watchable(name)?;
     let column_paths = shell.column_paths.clone();
+    let declared = shell.declared.clone();
     let pipeline: Vec<Document> =
         vec![doc! { "$match": { "operationType": { "$in": OPERATION_TYPES.to_vec() } } }];
 
@@ -106,7 +107,8 @@ pub(super) async fn watch(shell: &MongoTableShell) -> Result<VistaChangeStream> 
             let inserted = event.operation_type == OperationType::Insert;
             match table.get_value(id).await? {
                 Some(record) => {
-                    let value = project_record(&column_paths, record);
+                    let value =
+                        project_record(table.table_name(), &column_paths, &declared, record)?;
                     if inserted {
                         yield VistaChange::Inserted { id: key, value };
                     } else {

@@ -5705,7 +5705,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-api-client"
-version = "2.4.0"
+version = "2.4.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5748,7 +5748,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-aws"
-version = "0.9.1"
+version = "0.10.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -5785,7 +5785,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-cli-util"
-version = "0.6.8"
+version = "0.6.9"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -5803,7 +5803,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-cmd"
-version = "0.7.5"
+version = "0.7.6"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -5838,7 +5838,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-csv"
-version = "0.7.6"
+version = "0.7.7"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -5976,7 +5976,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-log-writer"
-version = "0.7.5"
+version = "0.7.6"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -6026,11 +6026,12 @@ dependencies = [
 
 [[package]]
 name = "vantage-mongodb"
-version = "3.3.0"
+version = "4.0.0"
 dependencies = [
  "async-stream",
  "async-trait",
  "bson",
+ "chrono",
  "ciborium",
  "futures-util",
  "indexmap 2.14.0",
@@ -6052,7 +6053,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-redb"
-version = "0.8.3"
+version = "0.8.4"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -6152,7 +6153,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "3.8.1"
+version = "4.0.0"
 dependencies = [
  "async-stream",
  "async-trait",

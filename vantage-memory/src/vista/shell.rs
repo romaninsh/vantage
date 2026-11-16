@@ -196,14 +196,14 @@ impl TableShell for MemoryTableShell {
     async fn watch(&self) -> Result<VistaChangeStream> {
         self.table.check_read().await?;
         let db = self.table.data_source();
-        let targets = db.rollup_targets(self.table.table_name());
+        let targets = db.rollup_targets(self.table.table_name())?;
         if !targets.is_empty() {
             let tables: Vec<_> = std::iter::once(self.handle.clone())
                 .chain(targets.iter().filter_map(|t| db.store().existing_table(t)))
                 .collect();
             return Ok(watch::invalidations(&tables));
         }
-        let query = table_query(&self.table).await?;
+        let query = table_query(db, &self.table).await?;
         Ok(watch::stream(self.handle.clone(), query))
     }
 

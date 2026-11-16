@@ -1,6 +1,23 @@
 # Changelog
 
-## 3.3.0 — 2026-11-14
+## 4.0.0 — 2026-11-16
+
+Requires vantage-table 4.0.0, whose `TableSource` the prelude re-exports.
+
+- A table narrowed by a related table (as an inherited access rule does) reads the parent with
+  the session of the handle evaluating the condition, so inside a transaction it sees the
+  transaction's rows. `MongoCondition::DeferredIn` holds a `RelatedRead` that takes the
+  `MongoDB`; `MongoCondition::resolve`, `resolve_conditions`, `MongoSelect::build_filter` and the
+  `as_read_pipeline`, `as_count_pipeline` and `as_aggregate_pipeline` builders take the `MongoDB`.
+  A negated deferred condition is `MongoCondition::Not`.
+- Roll-ups are refused when the query is built or read, and by `check_expressions` at load.
+- Columns declared `date` and `timestamp` store BSON datetimes (`date` at midnight UTC) and read
+  as `Tag(100, "YYYY-MM-DD")` and `Tag(0, "…Z")`. They take the same text as SQLite (date only,
+  space or `T`, minute precision, fraction, `Z` or an offset; naive text is UTC). Text stored by
+  older versions still reads typed; text that is no date fails the read with the column named.
+  Conditions on them take their value through the same coercion, and `comparable_condition`
+  gives it too.
+
 
 - A MongoDB Vista takes `add_order` (a later key of the sort document): later columns break the
   ties of the first, so a Rhai `.sort("a").sort("b")` sorts by both. Requires vantage-vista

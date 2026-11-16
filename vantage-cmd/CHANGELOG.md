@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.6 — 2026-11-16
+
+- Requires vantage-table 4.0.0.
+
 ## 0.7.5 — 2026-11-13
 
 - Builds against vantage-table 3.8.1. No code change.

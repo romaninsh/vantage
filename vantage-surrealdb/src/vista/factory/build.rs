@@ -168,8 +168,8 @@ fn build_derived_table(
 
     let block = spec.driver.surreal.as_ref();
     let select = match block.and_then(|m| m.rhai.clone()) {
-        Some(code) => eval_transform(&code, base_table.select(), &spec.driver_block_args())?,
-        None => base_table.select(),
+        Some(code) => eval_transform(&code, base_table.try_select()?, &spec.driver_block_args())?,
+        None => base_table.try_select()?,
     };
     let inherit = block.and_then(|m| m.inherit.clone()).unwrap_or_default();
     let table = Table::derive_from_spec(

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.7 — 2026-11-16
+
+- Requires vantage-table 4.0.0.
+
 ## 0.7.6 — 2026-11-11
 
 - The vista factory accepts the YAML types `date`, `time`, `timestamp` and `bytes`. A CSV cell is

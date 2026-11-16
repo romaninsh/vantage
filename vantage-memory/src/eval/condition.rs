@@ -1,13 +1,21 @@
 //! Filter conditions both layers compile to.
 
+use std::sync::Arc;
+
 use ciborium::Value as CborValue;
+use futures_core::future::BoxFuture;
 use vantage_core::{Result, error};
 use vantage_expressions::traits::expressive::{DeferredFn, ExpressiveEnum};
 use vantage_types::Record;
 use vantage_vista::{FilterOp, operand_text};
 
 use super::compare::{cmp_values, like, lookup, text_of, values_eq};
-use crate::AnyMemoryType;
+use crate::{AnyMemoryType, MemoryDB};
+
+/// Reads the values a [`MemoryCondition::DeferredIn`] matches, through the
+/// `MemoryDB` evaluating the condition: inside a transaction, its copy.
+pub type RelatedRead =
+    Arc<dyn Fn(&MemoryDB) -> BoxFuture<'static, Result<Vec<CborValue>>> + Send + Sync>;
 
 #[derive(Clone)]
 pub enum MemoryCondition {
@@ -31,12 +39,12 @@ pub enum MemoryCondition {
     /// Resolved before evaluation into `Cmp { op: InSet }`. The payload is
     /// a CBOR array `[Text(path), Array(values)]`.
     Deferred(DeferredFn<AnyMemoryType>),
-    /// A [`Deferred`](Self::Deferred) known to constrain `path` (traversal's
-    /// `fk IN (parent ids)`), so the column is readable before resolution.
-    /// Resolves exactly as `Deferred` does.
+    /// `path IN (values)` over another table's rows (traversal's
+    /// `fk IN (parent ids)`), read when the condition is resolved, by the
+    /// `MemoryDB` resolving it. Resolved into `Cmp { op: InSet }`.
     DeferredIn {
         path: String,
-        deferred: DeferredFn<AnyMemoryType>,
+        read: RelatedRead,
     },
 }
 
@@ -108,28 +116,28 @@ impl MemoryCondition {
         })
     }
 
-    /// Resolve every `Deferred` in the tree.
-    pub fn resolve(
-        self,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Self>> + Send>> {
+    /// Resolve every deferred part of the tree; `db` does the reads of a
+    /// `DeferredIn`.
+    pub fn resolve(self, db: &MemoryDB) -> BoxFuture<'_, Result<Self>> {
         Box::pin(async move {
             Ok(match self {
-                Self::Deferred(d) | Self::DeferredIn { deferred: d, .. } => {
-                    deferred_to_in_set(d).await?
+                Self::Deferred(d) => deferred_to_in_set(d).await?,
+                Self::DeferredIn { path, read } => {
+                    Self::cmp(path, FilterOp::InSet, CborValue::Array(read(db).await?))
                 }
-                Self::And(all) => Self::And(resolve_all(all).await?),
-                Self::Or(any) => Self::Or(resolve_all(any).await?),
-                Self::Not(inner) => Self::Not(Box::new(inner.resolve().await?)),
+                Self::And(all) => Self::And(resolve_all(all, db).await?),
+                Self::Or(any) => Self::Or(resolve_all(any, db).await?),
+                Self::Not(inner) => Self::Not(Box::new(inner.resolve(db).await?)),
                 other => other,
             })
         })
     }
 }
 
-async fn resolve_all(list: Vec<MemoryCondition>) -> Result<Vec<MemoryCondition>> {
+async fn resolve_all(list: Vec<MemoryCondition>, db: &MemoryDB) -> Result<Vec<MemoryCondition>> {
     let mut out = Vec::with_capacity(list.len());
     for c in list {
-        out.push(c.resolve().await?);
+        out.push(c.resolve(db).await?);
     }
     Ok(out)
 }

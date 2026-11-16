@@ -4,11 +4,14 @@
 use bson::Document;
 
 use super::MongoSelect;
+use crate::condition::resolve_conditions;
+use crate::mongodb::MongoDB;
 
 impl MongoSelect {
-    /// Build the filter `Document` by resolving all conditions.
-    pub async fn build_filter(&self) -> vantage_core::Result<Document> {
-        crate::condition::resolve_conditions(self.conditions.iter()).await
+    /// Build the filter `Document` by resolving all conditions; `db` does
+    /// the reads of a deferred one.
+    pub async fn build_filter(&self, db: &MongoDB) -> vantage_core::Result<Document> {
+        resolve_conditions(self.conditions.iter(), db).await
     }
 
     /// Build the projection `Document`. Returns `None` if all fields requested.
