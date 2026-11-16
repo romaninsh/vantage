@@ -1303,7 +1303,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-cli-util"
-version = "0.6.8"
+version = "0.6.9"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -1320,7 +1320,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-cmd"
-version = "0.7.5"
+version = "0.7.6"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1395,7 +1395,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "3.8.1"
+version = "4.0.0"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1438,7 +1438,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "2.11.0"
+version = "2.12.0"
 dependencies = [
  "async-stream",
  "async-trait",
