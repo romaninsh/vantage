@@ -33,8 +33,8 @@ use ciborium::Value as CborValue;
 ///
 /// [`VistaQuery::sort_rows`]: crate::VistaQuery::sort_rows
 pub fn cbor_cmp(a: &CborValue, b: &CborValue) -> Ordering {
-    if let (Some(l), Some(r)) = (instant(a), instant(b)) {
-        return l.cmp(&r);
+    if let Some(order) = instant_cmp(a, b) {
+        return order;
     }
     let (a, b) = (datetime_as_text(a), datetime_as_text(b));
     match (a, b) {
@@ -46,6 +46,12 @@ pub fn cbor_cmp(a: &CborValue, b: &CborValue) -> Ordering {
             _ => format!("{a:?}").cmp(&format!("{b:?}")),
         },
     }
+}
+
+/// The order of two datetime values by the moment each stands for; `None`
+/// unless both are datetimes [`cbor_cmp`] reads as instants.
+pub(super) fn instant_cmp(a: &CborValue, b: &CborValue) -> Option<Ordering> {
+    Some(instant(a)?.cmp(&instant(b)?))
 }
 
 /// The text inside a CBOR standard datetime (`Tag(0, Text)`), date

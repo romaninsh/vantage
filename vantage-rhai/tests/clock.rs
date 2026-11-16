@@ -46,6 +46,23 @@ fn a_manual_clock_drives_now_and_today() {
 }
 
 #[test]
+fn full_optimization_keeps_now_and_today_reading_the_clock() {
+    let clock = Clock::manual(at("2026-11-14T09:30:00Z"));
+    let mut engine = rhai::Engine::new();
+    Dates::register_with(&mut engine, clock.clone());
+    engine.set_optimization_level(rhai::OptimizationLevel::Full);
+    let ast = engine.compile("[now(), today()]").unwrap();
+
+    clock.advance(TimeDelta::days(3));
+    let read: rhai::Array = engine.eval_ast(&ast).unwrap();
+    let read: Vec<DateTime<Utc>> = read.into_iter().map(|v| v.cast()).collect();
+    assert_eq!(
+        read,
+        [at("2026-11-17T09:30:00Z"), at("2026-11-17T00:00:00Z")]
+    );
+}
+
+#[test]
 fn a_forked_clock_advances_alone() {
     let clock = Clock::manual(at("2026-01-31T12:00:00Z"));
     let fork = clock.fork();

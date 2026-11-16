@@ -12,7 +12,7 @@ use std::fmt::Write as _;
 use chrono::{
     DateTime, Datelike, Months, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, Timelike, Utc,
 };
-use rhai::{Dynamic, Engine, EvalAltResult, ImmutableString};
+use rhai::{Dynamic, Engine, EvalAltResult, FuncRegistration, ImmutableString};
 
 use crate::host::Vocab;
 
@@ -39,9 +39,15 @@ impl Dates {
         engine.register_fn("to_string", |dt: &mut Instant| dt.to_rfc3339());
         engine.register_fn("to_debug", |dt: &mut Instant| dt.to_rfc3339());
 
+        // Volatile, so `OptimizationLevel::Full` doesn't fold them into
+        // compile-time constants that ignore the clock.
         let today = clock.clone();
-        engine.register_fn("now", move || clock.now());
-        engine.register_fn("today", move || start_of_day(&today.now()));
+        FuncRegistration::new("now")
+            .with_volatility(true)
+            .register_into_engine(engine, move || clock.now());
+        FuncRegistration::new("today")
+            .with_volatility(true)
+            .register_into_engine(engine, move || start_of_day(&today.now()));
         engine.register_fn("date", |value: Dynamic| instant("date", value));
         engine.register_fn("date", from_parts);
         engine.register_fn("days_between", |a: Dynamic, b: Dynamic| {

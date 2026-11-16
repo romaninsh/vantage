@@ -57,8 +57,12 @@ impl Vista {
 
     /// Apply `query`'s whole order. `Ok(true)` when the shell refused part
     /// of it as `Unsupported` or `Unimplemented`: the caller then sorts by
-    /// the whole order itself.
+    /// the whole order itself. Every column is checked as declared first, so
+    /// a refusal never hands an unknown column back in the residual.
     pub(super) fn apply_query_order(&mut self, query: &VistaQuery) -> Result<bool> {
+        for (column, _) in query.orders() {
+            self.require_declared(column, "with_query")?;
+        }
         let mut orders = query.orders();
         let Some((column, dir)) = orders.next() else {
             return Ok(false);

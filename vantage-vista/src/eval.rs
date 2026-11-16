@@ -7,9 +7,10 @@
 //!
 //! - a cell is read by [`cell_get`], for conditions and order alike: a flat
 //!   key, or a dotted path into nested maps;
-//! - values compare by [`cbor_cmp`]: integers and floats numerically, a
-//!   datetime (`Tag(0, Text)`) or date (`Tag(100, Text)`) as its text, and `3 == 3.0` for equality and
-//!   set membership;
+//! - values compare by [`cbor_cmp`]: integers and floats numerically, two
+//!   datetimes (`Tag(0, Text)`, `Tag(12)`, or a `Tag(100, Text)` date as
+//!   midnight UTC) by instant, a datetime against text as its text, and
+//!   `3 == 3.0`; equality and set membership follow the same rules;
 //! - a sort goes by the order column, then each tie-breaker column, puts
 //!   absent and null cells last in either direction, and breaks remaining
 //!   ties on id;
@@ -38,7 +39,7 @@ mod compare;
 mod path;
 mod search;
 
-use compare::datetime_as_text;
+use compare::{datetime_as_text, instant_cmp};
 use path::blocked_at;
 use search::matches_search;
 
@@ -177,9 +178,13 @@ impl VistaQuery {
     }
 }
 
-/// Equal values, an integer and a float of the same number, or a datetime
-/// and the same text.
+/// Equal values, an integer and a float of the same number, two datetimes
+/// at the same instant (a date being midnight UTC, as [`cbor_cmp`] orders
+/// it), or a datetime and the same text.
 fn same(a: &CborValue, b: &CborValue) -> bool {
+    if let Some(order) = instant_cmp(a, b) {
+        return order == Ordering::Equal;
+    }
     let (a, b) = (datetime_as_text(a), datetime_as_text(b));
     let int_and_float = matches!(
         (a, b),

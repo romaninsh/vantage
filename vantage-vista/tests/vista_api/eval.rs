@@ -178,6 +178,14 @@ fn a_date_tag_orders_against_text_and_datetime() {
     let row = rec(&[("due", date("2026-01-01"))]);
     assert!(cond("due", FilterOp::Eq, t("2026-01-01")).matches(&row, &meta));
     assert!(cond("due", FilterOp::Lt, at("2026-01-01T12:00:00Z")).matches(&row, &meta));
+
+    // Equality follows the instant, as ordering does.
+    let midnight = at("2026-01-01T00:00:00Z");
+    assert!(cond("due", FilterOp::Eq, midnight.clone()).matches(&row, &meta));
+    assert!(!cond("due", FilterOp::Ne, midnight.clone()).matches(&row, &meta));
+    assert!(cond("due", FilterOp::InSet, CborValue::Array(vec![midnight])).matches(&row, &meta));
+    let stamped = rec(&[("at", at("2026-01-01T02:00:00+02:00"))]);
+    assert!(cond("at", FilterOp::Eq, at("2026-01-01T00:00:00Z")).matches(&stamped, &meta));
 }
 
 #[test]

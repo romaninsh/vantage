@@ -7,6 +7,11 @@
   admits none, and a rollback undoes both. `TxTables::with_b_of_a` supplies that vista.
 - `Tag(101)` (time) compares as its text in `eval`, against another time and against text, like
   dates and datetimes.
+- Fix: in `eval`, equality and set membership compare two datetimes by instant, as ordering
+  does. A `Tag(100)` date equals midnight UTC of that day, and the same moment in two offsets is
+  equal; before, `Eq` compared their text while `<` and `>` compared instants.
+- Fix: `with_query` checks every order column is declared before applying any. An unknown
+  tie-breaker after a refused column was handed back in the residual instead of failing.
 
 ## 2.11.0 — 2026-11-14
 
