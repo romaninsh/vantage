@@ -4,12 +4,6 @@
 
 - No dead-code warnings when built without `mysql` and `vista`: the executor helpers only the
   MySQL import uses are compiled with those features.
-
-## 0.12.3 — 2026-11-14
-
-- A SQL Vista takes `add_order` (`ORDER BY a, b`): later columns break the ties of the first, so a
-  Rhai `.sort("a").sort("b")` sorts by both. Requires vantage-vista 2.11.0.
-
 - Requires vantage-table 4.0.0. Roll-up columns are built when a query is built, and only for
   the columns it selects; a roll-up over the table's own relation aliases the child
   (`"employee" AS "employee_rollup"`), so it aggregates another column correctly. Counts, sums
@@ -24,6 +18,11 @@
   `at > "2026-11-01 00:00:00"` compares instants, not text, and a value that is no date is the
   write's error. `SqlTableShell::comparable_condition` gives the same typed value, so in-memory
   matching agrees with the database.
+
+## 0.12.3 — 2026-11-14
+
+- A SQL Vista takes `add_order` (`ORDER BY a, b`): later columns break the ties of the first, so a
+  Rhai `.sort("a").sort("b")` sorts by both. Requires vantage-vista 2.11.0.
 
 ## 0.12.2 — 2026-11-13
 

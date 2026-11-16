@@ -54,7 +54,7 @@ vantage-dataset = { version = "1.2.0", path = "../vantage-dataset", features = [
 serde_yaml_ng = "0.10"
 tracing-subscriber = "0.3"
 tokio = { version = "1.52", features = ["full"] }
-vantage-vista = { version = "2.11.0", path = "../vantage-vista", features = ["contract"] }
+vantage-vista = { version = "2.12.0", path = "../vantage-vista", features = ["contract"] }
 vantage-table = { version = "4.0.0", path = "../vantage-table", features = ["rhai"] }
 
 [[example]]

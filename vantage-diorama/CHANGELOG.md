@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.1 — 2026-11-16
+
+- Requires vantage-table 4.0.0.
+
 ## 1.7.0 — 2026-11-14
 
 - Multi-column order through a Dio. A facade Vista takes `add_order`, and the tie-breakers
@@ -9,8 +13,6 @@
   diorama as a whole. A derived aggregate's Vista takes `add_order` too. A table scenery's own
   sort (`set_order`, the header click) is still one column, and a scenery that inherits the
   Dio's order takes only its first column. Requires vantage-vista 2.11.0.
-
-- Requires vantage-table 4.0.0.
 
 ## 1.6.1 — 2026-11-13
 

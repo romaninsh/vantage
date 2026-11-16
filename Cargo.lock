@@ -5873,7 +5873,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama"
-version = "1.7.0"
+version = "1.7.1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -6210,7 +6210,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "2.11.0"
+version = "2.12.0"
 dependencies = [
  "async-stream",
  "async-trait",
