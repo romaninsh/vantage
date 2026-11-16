@@ -2,7 +2,8 @@
 
 ## 2.4.1 — 2026-11-16
 
-- Drops the unused `md5` and `serde_path_to_error` dependencies.
+- Drops the unused `md5` and `serde_path_to_error` dependencies. The `decimal` feature no longer
+  enables surreal-client's `decimal`, which compiled nothing.
 
 ## 2.4.0 — 2026-11-14
 

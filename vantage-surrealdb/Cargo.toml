@@ -11,7 +11,7 @@ autoexamples = false
 
 [features]
 default = ["decimal"]
-decimal = ["surreal-client/decimal", "rust_decimal"]
+decimal = ["rust_decimal"]
 vista = []
 # `rhai` powers both the standalone query DSL and (with `vista`) scripted
 # reference traversal, so it pulls in the vista layer and its conventional
