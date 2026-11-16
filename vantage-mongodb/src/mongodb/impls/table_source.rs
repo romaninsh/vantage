@@ -463,7 +463,7 @@ impl TableSource for MongoDB {
     }
 
     /// Until someone builds it from `$lookup` + `$group`. The refusal comes
-    /// when the column is read ([`read_select`]) and from
+    /// when the column is read and from
     /// `Table::check_expressions`, which the vista factory runs on a load.
     fn rollup_expression<E>(
         &self,
