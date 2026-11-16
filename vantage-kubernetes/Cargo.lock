@@ -923,7 +923,7 @@ dependencies = [
  "pest_derive",
  "regex",
  "serde_json",
- "thiserror 2.0.18",
+ "thiserror",
 ]
 
 [[package]]
@@ -979,7 +979,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
- "thiserror 2.0.18",
+ "thiserror",
  "tokio",
  "tokio-util",
  "tower",
@@ -1000,7 +1000,7 @@ dependencies = [
  "serde",
  "serde-value",
  "serde_json",
- "thiserror 2.0.18",
+ "thiserror",
 ]
 
 [[package]]
@@ -1756,31 +1756,11 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 
 [[package]]
 name = "thiserror"
-version = "1.0.69"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6aaf5339b578ea85b50e080feb250a3e8ae8cfcdff9a461c9ec2904bc923f52"
-dependencies = [
- "thiserror-impl 1.0.69",
-]
-
-[[package]]
-name = "thiserror"
 version = "2.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4288b5bcbc7920c07a1149a35cf9590a2aa808e0bc1eafaade0b80947865fbc4"
 dependencies = [
- "thiserror-impl 2.0.18",
-]
-
-[[package]]
-name = "thiserror-impl"
-version = "1.0.69"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.118",
+ "thiserror-impl",
 ]
 
 [[package]]
@@ -2053,20 +2033,19 @@ dependencies = [
 
 [[package]]
 name = "vantage-core"
-version = "1.3.1"
+version = "1.3.2"
 dependencies = [
  "atty",
  "indexmap",
  "owo-colors",
  "serde",
- "thiserror 1.0.69",
  "tokio",
  "tracing",
 ]
 
 [[package]]
 name = "vantage-dataset"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -2077,7 +2056,6 @@ dependencies = [
  "paste",
  "serde",
  "serde_json",
- "thiserror 2.0.18",
  "uuid",
  "vantage-core",
  "vantage-types",
@@ -2085,14 +2063,13 @@ dependencies = [
 
 [[package]]
 name = "vantage-expressions"
-version = "1.3.0"
+version = "1.3.1"
 dependencies = [
  "async-trait",
  "serde",
  "serde_json",
- "thiserror 2.0.18",
+ "thiserror",
  "vantage-core",
- "vantage-dataset",
 ]
 
 [[package]]
@@ -2147,15 +2124,13 @@ dependencies = [
 
 [[package]]
 name = "vantage-types"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "chrono",
  "ciborium",
  "indexmap",
- "paste",
  "serde",
  "serde_json",
- "vantage-core",
  "vantage-types-entity",
 ]
 
@@ -2181,7 +2156,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml_ng",
- "thiserror 2.0.18",
+ "thiserror",
  "tokio",
  "tracing",
  "uuid",
