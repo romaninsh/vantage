@@ -27,19 +27,13 @@ pub(crate) fn plain_cmp(
     use std::cmp::Ordering;
     if matches!(op, "==" | "!=") {
         let same = |x: &Dynamic, y: &Dynamic| matches!(plain_cmp("==", x, y), Ok(true));
-        let equal = if let (Some(x), Some(y)) = (
-            a.read_lock::<rhai::Array>(),
-            b.read_lock::<rhai::Array>(),
-        ) {
-            Some(x.len() == y.len() && x.iter().zip(y.iter()).all(|(x, y)| same(x, y)))
-        } else if let (Some(x), Some(y)) =
-            (a.read_lock::<rhai::Map>(), b.read_lock::<rhai::Map>())
+        let equal = if let (Some(x), Some(y)) =
+            (a.read_lock::<rhai::Array>(), b.read_lock::<rhai::Array>())
         {
-            Some(
-                x.len() == y.len()
-                    && x.iter()
-                        .all(|(k, v)| y.get(k).is_some_and(|w| same(v, w))),
-            )
+            Some(x.len() == y.len() && x.iter().zip(y.iter()).all(|(x, y)| same(x, y)))
+        } else if let (Some(x), Some(y)) = (a.read_lock::<rhai::Map>(), b.read_lock::<rhai::Map>())
+        {
+            Some(x.len() == y.len() && x.iter().all(|(k, v)| y.get(k).is_some_and(|w| same(v, w))))
         } else {
             None
         };

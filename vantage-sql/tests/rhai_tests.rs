@@ -72,14 +72,12 @@ mod sqlite_tests {
             .compile(&vantage_rhai::Block::from(code))
             .and_then(|script| script.eval(&vantage_rhai::Env::new()))
             .unwrap();
-        let bools: Vec<bool> = out
-            .into_typed_array::<bool>()
-            .expect("an array of bools");
+        let bools: Vec<bool> = out.into_typed_array::<bool>().expect("an array of bools");
         assert_eq!(
             bools,
             [
-                true, false, true, true, false, true, true, true, false, false, true, true,
-                false, true, true
+                true, false, true, true, false, true, true, true, false, false, true, true, false,
+                true, true
             ]
         );
         let expr = __host()

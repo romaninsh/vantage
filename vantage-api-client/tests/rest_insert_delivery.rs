@@ -80,19 +80,6 @@ async fn an_insert_without_idempotency_is_not_retried() {
     }
 }
 
-/// A 429 means the server refused the request without acting on it, so it is
-/// resent even on a table that never declared a repeat safe.
-#[tokio::test(start_paused = true)]
-async fn a_rate_limited_insert_retries_without_idempotency() {
-    let server = MockServer::start().await;
-    failing_then_ok(&server, 429, 2).await;
-    let ep = endpoint(&server, "{}");
-
-    ep.send(&[record("a")]).await.unwrap();
-
-    assert_eq!(received(&server).await.len(), 3);
-}
-
 #[tokio::test(start_paused = true)]
 async fn an_insert_with_an_idempotency_key_retries_with_the_same_key() {
     let server = MockServer::start().await;
@@ -142,6 +129,8 @@ async fn retries_stop_after_five_attempts() {
     assert_eq!(started.elapsed(), Duration::from_secs(1 + 2 + 4 + 8));
 }
 
+/// A 429 means the server refused the request without acting on it, so it is
+/// resent even on a table that never declared a repeat safe.
 #[tokio::test(start_paused = true)]
 async fn retry_after_is_honoured_up_to_thirty_seconds() {
     for (asked, waited) in [(10, 10), (120, 30)] {
@@ -158,7 +147,7 @@ async fn retry_after_is_honoured_up_to_thirty_seconds() {
             .respond_with(ResponseTemplate::new(204))
             .mount(&server)
             .await;
-        let ep = endpoint(&server, "{ idempotent: true }");
+        let ep = endpoint(&server, "{}");
 
         let started = Instant::now();
         ep.send(&[record("a")]).await.unwrap();
