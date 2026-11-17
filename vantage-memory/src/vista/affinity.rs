@@ -1,6 +1,6 @@
 //! Declared-type affinity: an integer column stores canonical integer text as
-//! an integer; a text column and the id column store an integer as decimal
-//! text; a date column stores a date-only `Tag(100)` whether it is given
+//! an integer; a text column and an id column not declared integer store an
+//! integer as decimal text; a date column stores a date-only `Tag(100)` whether it is given
 //! date-only text or a datetime at midnight UTC (what `today()` and
 //! `add_months` return, and what SurrealDB keeps a date as). A datetime with a
 //! time of day is left as given. Anything else, including cells of an
@@ -22,10 +22,12 @@ pub(crate) enum Affinity {
 impl Affinity {
     /// The affinity of `name` in `metadata`, whose id column is `id_column`.
     pub(crate) fn of(metadata: &VistaMetadata, id_column: &str, name: &str) -> Self {
-        if name == id_column {
-            return Affinity::Text;
+        let declared = metadata.columns.get(name).map_or(Affinity::None, column);
+        match name == id_column {
+            true if declared == Affinity::Integer => Affinity::Integer,
+            true => Affinity::Text,
+            false => declared,
         }
-        metadata.columns.get(name).map_or(Affinity::None, column)
     }
 
     /// The affinity of a column declared with type `ty`.

@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.13.0 — 2026-11-17
+
+- `sqlite::vista::register_rule_conditions` and `postgres::vista::register_rule_conditions`:
+  access-rule scripts on SQLite and Postgres take `table.with_condition(sql::expr(…))`, as MySQL
+  rules do. `register_sqlite_onto` and `register_postgres_onto` register the dialect's `sql::`
+  vocabulary onto an existing engine, like `register_mysql_onto`.
+- The Rhai query vocabulary has `or_` and `and_` on expressions:
+  `(sql::ident("a") == 1).or_(sql::ident("b") == 2)` renders `("a" = 1 OR "b" = 2)`.
+- Fix: in an engine with the `sql::` vocabulary, `==`, `!=`, `<`, `>`, `<=` and `>=` build SQL
+  only when an operand is a builder expression or identifier. Plain values compare to a bool as
+  Rhai compares them, so `["a", "b"].contains("a")` is `true` again and `() == "x"` is `false`.
+  Before, a rule hook comparing plain values got an expression back or an error.
+- A trigger or procedure refusing a write (SQLite `RAISE(ABORT, …)`, Postgres `RAISE EXCEPTION`,
+  MySQL `SIGNAL SQLSTATE '45000'`) fails as an invalid value carrying the database's message,
+  with `refused_by = "database"`, instead of a generic query failure.
+
 ## 0.12.4 — 2026-11-16
 
 - No dead-code warnings when built without `mysql` and `vista`: the executor helpers only the

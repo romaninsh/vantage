@@ -335,7 +335,9 @@ async fn schema_mismatches_name_the_disagreeing_columns() -> TestResult {
          DEFINE FIELD borrower ON loan TYPE record<client>; \
          DEFINE FIELD lender ON loan TYPE option<record<client>>; \
          DEFINE FIELD amount ON loan TYPE decimal; \
-         DEFINE FIELD note ON loan TYPE string;",
+         DEFINE FIELD note ON loan TYPE string; \
+         DEFINE FIELD owner ON loan TYPE string; \
+         DEFINE FIELD opened_at ON loan TYPE string;",
     )
     .await?;
     let spec = serde_yaml_ng::from_str(
@@ -350,6 +352,8 @@ columns:
   lender: { type: string, references: client }
   amount: { type: decimal }
   note: { type: int }
+  owner: { type: string, references: client }
+  opened_at: { type: timestamp }
   extra: { type: string }
 "#,
     )?;
@@ -358,8 +362,39 @@ columns:
     assert!(db.schema_mismatches(&table).is_empty(), "not checked yet");
 
     db.check_schema().await?;
-    let mut found: Vec<(String, String, String)> = db
-        .schema_mismatches(&table)
+    let mismatches = db.schema_mismatches(&table);
+    let hint_of = |column: &str| {
+        mismatches
+            .iter()
+            .find(|m| m.column == column)
+            .map(|m| m.hint.clone())
+            .unwrap_or_default()
+    };
+    // A field still holding text gets the SurrealQL that converts it.
+    assert!(
+        hint_of("owner").contains(
+            "DEFINE FIELD OVERWRITE owner ON loan TYPE record<client>; \
+             UPDATE loan SET owner = IF string::contains(<string> owner, ':') THEN type::record(owner) \
+             ELSE type::record('client', owner) END WHERE type::is_string(owner);"
+        ),
+        "{}",
+        hint_of("owner")
+    );
+    assert!(
+        hint_of("owner").ends_with("or remove `references:` to keep text"),
+        "{}",
+        hint_of("owner")
+    );
+    assert!(
+        hint_of("opened_at").contains(
+            "DEFINE FIELD OVERWRITE opened_at ON loan TYPE datetime; \
+             UPDATE loan SET opened_at = type::datetime(opened_at) \
+             WHERE type::is_string(opened_at);"
+        ),
+        "{}",
+        hint_of("opened_at")
+    );
+    let mut found: Vec<(String, String, String)> = mismatches
         .into_iter()
         .map(|m| {
             assert_eq!(m.table, "loan");
@@ -373,6 +408,8 @@ columns:
         ("closed_at", "timestamp", "null | datetime"),
         ("due_date", "string", "datetime"),
         ("note", "int", "string"),
+        ("opened_at", "timestamp", "string"),
+        ("owner", "references: client", "string"),
     ];
     let expected: Vec<(String, String, String)> = expected
         .iter()
@@ -380,6 +417,37 @@ columns:
         .collect();
     assert_eq!(found, expected);
     let _ = factory.build_from_spec(spec)?;
+    Ok(())
+}
+
+/// A write SurrealDB refuses on a field the schema check flagged names the
+/// column and the mismatch, the database's own words kept underneath.
+#[tokio::test]
+async fn write_refused_by_a_flagged_field_names_the_mismatch() -> TestResult {
+    let (db, _) = setup().await;
+    define(
+        &db,
+        "DEFINE TABLE loan SCHEMAFULL; DEFINE FIELD note ON loan TYPE string;",
+    )
+    .await?;
+    db.check_schema().await?;
+    let vista = db.vista_factory().from_yaml(
+        r#"
+name: loan
+columns:
+  id: { type: thing, flags: [id] }
+  note: { type: int }
+"#,
+    )?;
+    let five = record(vec![("note", CborValue::Integer(5.into()))]);
+    let err = vista.insert_value("a", &five).await.expect_err("refused");
+    let shown = format!("{err:?}");
+    assert!(
+        err.to_string()
+            .contains("column `loan.note` is declared `int` but the field is `string`"),
+        "{shown}"
+    );
+    assert!(shown.contains("Couldn't coerce"), "{shown}");
     Ok(())
 }
 

@@ -18,7 +18,7 @@ use vantage_vista::{
     VistaChangeStream, VistaMetadata,
 };
 
-use super::affinity::conform_record;
+use super::affinity::{Affinity, conform_record};
 use super::{MemoryTableShell, watch};
 use crate::store::Row;
 use crate::typed::convert::{from_cbor_record, table_query, to_cbor_record};
@@ -43,6 +43,17 @@ impl MemoryTableShell {
 
     fn native(&self, record: &Rec) -> Record<AnyMemoryType> {
         from_cbor_record(&self.stored_form(record))
+    }
+
+    /// `record` as row `id`, carrying an integer id cell when the id column
+    /// is declared integer (the store keeps the key as text either way).
+    fn native_as(&self, id: &str, record: &Rec) -> Record<AnyMemoryType> {
+        let mut row = record.clone();
+        let id_column = self.id_column_name();
+        if Affinity::of(&self.metadata, id_column, id_column) == Affinity::Integer {
+            row.insert(id_column.to_string(), CborValue::Text(id.to_string()));
+        }
+        self.native(&row)
     }
 
     /// The row just inserted under `id`, as an insert with an id returns it:
@@ -103,10 +114,12 @@ impl MemoryTableShell {
                 for (id, record) in records.iter().filter(|(id, _)| store.get(id).is_none()) {
                     let mut row = self.stored_form(record);
                     conform(&mut row, &invariants)?;
-                    row.insert(
+                    let mut id_cell = Rec::new();
+                    id_cell.insert(
                         self.id_column_name().to_string(),
                         CborValue::Text(id.clone()),
                     );
+                    row.extend(self.stored_form(&id_cell));
                     // Checked with its roll-ups filled, as insert does.
                     if db.fit(table, id, Row::new(row.clone())).await?.is_none() {
                         return Err(MemoryDB::misfit(self.handle.name(), id));
@@ -230,18 +243,19 @@ impl TableShell for MemoryTableShell {
             let inserted = self.inserted(&id).await?;
             return Ok((id, inserted));
         };
+        let native = self.native_as(id, record);
         let inserted = self.table.insert_value(id.to_string(), &native).await?;
         Ok((id.to_string(), to_cbor_record(&inserted)))
     }
 
     async fn replace(&self, id: &str, record: &Rec) -> Result<Rec> {
-        let native = self.native(record);
+        let native = self.native_as(id, record);
         let replaced = self.table.replace_value(id.to_string(), &native).await?;
         Ok(to_cbor_record(&replaced))
     }
 
     async fn upsert(&self, id: &str, record: &Rec) -> Result<Rec> {
-        let native = self.native(record);
+        let native = self.native_as(id, record);
         let upserted = self.table.upsert_value(id.to_string(), &native).await?;
         Ok(to_cbor_record(&upserted))
     }

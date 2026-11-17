@@ -11,7 +11,7 @@ use tokio::sync::broadcast;
 use vantage_types::Record;
 
 use super::events::{EVENT_CAPACITY, MemoryChange};
-use super::ids::IdGen;
+use super::ids::{IdGen, supplied_id};
 use super::index::Indexes;
 use super::write::Change;
 use super::{Row, TableDef};
@@ -92,8 +92,12 @@ impl MemoryTable {
         &self.def.id_column
     }
 
+    /// `record` stored as row `id`. An id cell that already names `id` (an
+    /// integer for an integer id column) is kept; any other becomes the text.
     pub(super) fn with_id(&self, mut record: Record<CborValue>, id: &str) -> Row {
-        record.insert(self.def.id_column.clone(), CborValue::Text(id.to_string()));
+        if supplied_id(record.get(&self.def.id_column)).as_deref() != Some(id) {
+            record.insert(self.def.id_column.clone(), CborValue::Text(id.to_string()));
+        }
         Arc::new(record)
     }
 

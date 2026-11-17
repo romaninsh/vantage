@@ -243,17 +243,32 @@ const CLOSURE: &str = r#"
 row.contents.split("\n").len() - 1
 "#;
 
+/// A closure column reads its row; one can read the clock too.
 #[test]
 fn closure() {
     let lines = Column::new("lines", "int")
         .with_expression(CLOSURE)
         .unwrap();
+    let age = Column::new("age", "int")
+        .with_expression(r#"days_between(date(row.born), now())"#)
+        .unwrap();
     let metadata = VistaMetadata::new()
         .with_column(Column::new("contents", "string"))
-        .with_column(lines);
-    let note = [("contents".to_string(), text("a\nb\nc\n"))]
-        .into_iter()
-        .collect();
+        .with_column(Column::new("born", "string"))
+        .with_column(lines)
+        .with_column(age);
+    let note = [
+        ("contents".to_string(), text("a\nb\nc\n")),
+        ("born".to_string(), text("2000-01-01")),
+    ]
+    .into_iter()
+    .collect();
     let vista = memory_vista("note", metadata, vec![("n1", note)]);
-    assert_eq!(read_one(&vista, "n1").get("lines"), Some(&int(3)));
+    let row = read_one(&vista, "n1");
+    assert_eq!(row.get("lines"), Some(&int(3)));
+    let days = row.get("age").cloned();
+    assert!(
+        matches!(days, Some(CborValue::Integer(n)) if i128::from(n) > 9000),
+        "{days:?}"
+    );
 }

@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.4.2 — 2026-11-17
+
+- A roll-up reads through a bare record-reference lookup, `<~line[WHERE …]` (or
+  `doc<~line` for a `keys:` join), when its link is the child's only `REFERENCE` field. A child
+  with several `REFERENCE` fields reads through the `$parent` subquery, which a bare lookup
+  would mix up; no slow-link warning for it. The `<~(line FIELD invoice)` form is gone.
+- The Rhai query vocabulary has `or_` and `and_` on expressions:
+  `(surreal::ident("a") == 1).or_(surreal::ident("b") == 2)` renders `(a = 1 OR b = 2)`.
+- Fix: in an engine with the `surreal::` vocabulary, the comparison operators build SurrealQL
+  only when an operand is a builder expression or identifier. Plain values compare to a bool as
+  Rhai compares them, so `["a", "b"].contains("a")` is `true` again and `() == "x"` is `false`.
+- A write SurrealDB refuses to coerce for a field `schema_mismatches` lists fails as an invalid
+  value naming the column, its declared type, the field's type and the hint; the database's
+  error stays underneath.
+- Schema-mismatch hints for a field still typed `string` under a `references:`, `timestamp` or
+  `date` column give the SurrealQL that retypes the field and converts the stored text
+  (`type::record`, `type::datetime`).
+- A live frame without a record id is logged at warn before it is skipped.
+- A dotted column to an `expr:` column of the target (`bakery.label`) fails the build naming it:
+  SurrealDB follows a link to a stored field only. Declare an `expr:` on the table itself
+  instead. Before, it read a field that doesn't exist (`NONE`).
+
 ## 2.4.1 — 2026-11-16
 
 - Drops the unused `md5` and `serde_path_to_error` dependencies. The `decimal` feature no longer

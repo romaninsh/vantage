@@ -11,6 +11,10 @@ mod dotted;
 #[path = "common/condition_text.rs"]
 mod condition_text;
 
+#[cfg(all(feature = "postgres", feature = "vista", feature = "rhai"))]
+#[path = "common/rule_conditions.rs"]
+mod rule_conditions;
+
 #[cfg(all(feature = "postgres", feature = "vista"))]
 #[macro_use]
 #[path = "common/vista.rs"]
@@ -48,6 +52,9 @@ mod postgres {
     mod records;
     #[path = "5_references.rs"]
     mod references;
+    #[cfg(all(feature = "vista", feature = "rhai"))]
+    #[path = "7_rule_conditions.rs"]
+    mod rule_conditions;
     #[path = "9_safe_writes.rs"]
     mod safe_writes;
     #[path = "2_search.rs"]

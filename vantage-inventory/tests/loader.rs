@@ -281,6 +281,48 @@ fn a_document_breaking_the_schema_fails_validation_naming_each_problem() {
     assert!(text.contains("name"), "{text}");
 }
 
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[allow(dead_code)]
+enum Step {
+    Form { title: String },
+    Confirm { text: String },
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[allow(dead_code)]
+struct Flow {
+    steps: Vec<Step>,
+}
+
+/// A newtype round `Step`: its schema is a `$ref` on to `Step`'s.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[allow(dead_code)]
+struct WrappedStep(Step);
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[allow(dead_code)]
+struct WrappedFlow {
+    steps: Vec<WrappedStep>,
+}
+
+#[test]
+fn one_of_error_names_the_branch_key() {
+    let doc = "steps:\n  - kind: form\n    title: a\n    body: b\n";
+    let text = format!("{:#}", parse_yaml_validated::<Flow>(doc).unwrap_err());
+    assert!(text.contains("'body' was unexpected"), "{text}");
+    let text = format!(
+        "{:#}",
+        parse_yaml_validated::<WrappedFlow>(doc).unwrap_err()
+    );
+    assert!(
+        text.contains("'body' was unexpected"),
+        "through a newtype: {text}"
+    );
+}
+
 #[test]
 fn a_valid_document_deserializes_into_the_typed_value() {
     let item: Item = parse_yaml_validated("name: a\nscript: run\n").unwrap();

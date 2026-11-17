@@ -8,7 +8,8 @@ use std::path::Path;
 use std::sync::{Arc, LazyLock, RwLock};
 
 use anyhow::{Context, Result, anyhow};
-use jsonschema::JSONSchema;
+use jsonschema::error::ValidationErrorKind;
+use jsonschema::{JSONSchema, ValidationError};
 use schemars::{JsonSchema, schema_for};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -75,7 +76,13 @@ where
     let schema = schema_for_type::<T>()?;
     if let Err(errors) = schema.compiled.validate(&json) {
         let messages: Vec<String> = errors
-            .map(|err| format!("{}: {}", err.instance_path, err))
+            .flat_map(|err| {
+                let mut lines = vec![format!("{}: {}", err.instance_path, err)];
+                if matches!(err.kind, ValidationErrorKind::OneOfNotValid) {
+                    lines.extend(branch_errors(&schema.json, &err));
+                }
+                lines
+            })
             .collect();
         return Err(anyhow!(
             "schema validation failed:\n{}",
@@ -83,6 +90,81 @@ where
         ));
     }
     serde_json::from_value(json).context("deserialize error")
+}
+
+/// A `oneOf` failure says only that no branch matched. When the instance
+/// names its branch with a string `kind`, that branch's own errors (an
+/// unknown key, a missing one) say what is wrong; empty otherwise.
+fn branch_errors(root: &Value, err: &ValidationError<'_>) -> Vec<String> {
+    let Some(kind) = err.instance.get("kind").and_then(Value::as_str) else {
+        return Vec::new();
+    };
+    let Some(Value::Array(branches)) = walk(root, &err.schema_path.clone().into_vec()) else {
+        return Vec::new();
+    };
+    let Some(branch) = branches.iter().map(|b| resolve(root, b)).find(|b| {
+        let tag = &b["properties"]["kind"];
+        tag["const"] == kind
+            || tag["enum"]
+                .as_array()
+                .is_some_and(|e| e.iter().any(|v| v == kind))
+    }) else {
+        return Vec::new();
+    };
+    let mut standalone = branch.clone();
+    if let (Some(obj), Some(defs)) = (standalone.as_object_mut(), root.get("definitions")) {
+        obj.insert("definitions".into(), defs.clone());
+    }
+    let Ok(compiled) = JSONSchema::compile(&standalone) else {
+        return Vec::new();
+    };
+    let Err(errors) = compiled.validate(&err.instance) else {
+        return Vec::new();
+    };
+    errors
+        .map(|e| {
+            format!(
+                "{}{}: {e} (kind `{kind}`)",
+                err.instance_path, e.instance_path
+            )
+        })
+        .collect()
+}
+
+/// The schema node at `path` (a validation error's schema path, which
+/// passes through `$ref`s without naming them).
+fn walk<'a>(root: &'a Value, path: &[String]) -> Option<&'a Value> {
+    let mut node = root;
+    for segment in path {
+        let step = |n: &'a Value| match n {
+            Value::Array(items) => segment.parse::<usize>().ok().and_then(|i| items.get(i)),
+            _ => n.get(segment.as_str()),
+        };
+        node = match step(node) {
+            Some(next) => next,
+            None => step(resolve(root, node))?,
+        };
+    }
+    Some(node)
+}
+
+/// `node`, or the definition its `$ref` points at, following a chain of
+/// `$ref`s (a newtype's schema refers on to its field's). A cycle stops
+/// after a few hops.
+fn resolve<'a>(root: &'a Value, node: &'a Value) -> &'a Value {
+    let mut node = node;
+    for _ in 0..16 {
+        match node
+            .get("$ref")
+            .and_then(Value::as_str)
+            .and_then(|r| r.strip_prefix('#'))
+            .and_then(|pointer| root.pointer(pointer))
+        {
+            Some(next) => node = next,
+            None => break,
+        }
+    }
+    node
 }
 
 /// [`load_document`] then [`validate_into`].

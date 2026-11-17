@@ -380,7 +380,8 @@ where
         // look the column up.
         let resolving = ResolvingDotted::enter();
         let (target, fk_hops) = self.resolve_has_one_target(hops)?;
-        if !target.columns().contains_key(column) {
+        let computed = target.is_calculated_column(column);
+        if !computed && !target.columns().contains_key(column) {
             return Err(error!(
                 "implicit reference target has no such column",
                 column = column
@@ -393,11 +394,27 @@ where
         // SurrealDB idiom path traverses record-link fields, and a
         // relation is free to be named differently from its FK
         // (`with_one("owner", "client", …)` must lower to
-        // `client.name`, not the nonexistent `owner.name`).
+        // `client.name`, not the nonexistent `owner.name`). A computed target
+        // column has no field to follow, so it takes the subquery chain,
+        // which renders the target's expression; a backend with a native
+        // path (SurrealDB) reads a list of rows there, not one value, so it
+        // is refused.
         let fk_refs: Vec<&str> = fk_hops.iter().map(String::as_str).collect();
-        let expr = match self.data_source().traversal_path_expr(&fk_refs, column) {
-            Some(e) => e,
-            None => self.traverse_rest_generic(hops, column)?,
+        let native = self.data_source().traversal_path_expr(&fk_refs, column);
+        let expr = match (native, computed) {
+            (Some(_), true) => {
+                return Err(error!(
+                    format!(
+                        "dotted column `{col}`: `{column}` is a computed column of `{}`; \
+                         this backend can't read it through the link, declare an `expr:` \
+                         on this table instead",
+                        hops.join(".")
+                    ),
+                    column = col
+                ));
+            }
+            (Some(e), false) => e,
+            (None, _) => self.traverse_rest_generic(hops, column)?,
         };
         drop(resolving);
 

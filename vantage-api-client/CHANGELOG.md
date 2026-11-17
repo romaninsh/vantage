@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.2 — 2026-11-17
+
+- An `api.insert` answered 429 is retried even without `idempotency_key` or `idempotent`: the
+  server refused before acting, so resending is safe. Other failures still retry only when the
+  table declared a repeat safe.
+
 ## 2.4.1 — 2026-11-16
 
 - Requires vantage-table 4.0.0. A GraphQL preview whose query can't be built shows the error as a

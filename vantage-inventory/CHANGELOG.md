@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.4 — 2026-11-17
+
+- A `oneOf` schema error whose instance names its branch with a string `kind` also lists that
+  branch's own errors (`'body' was unexpected`, a missing key), so a mistyped key is named, not
+  only "not valid under any of the schemas".
+
 ## 0.1.3 — 2026-10-26
 
 - Loader tests of one behaviour are folded into one test each (schema errors, data includes) and

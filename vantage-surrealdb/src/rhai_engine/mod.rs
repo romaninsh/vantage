@@ -108,13 +108,20 @@ pub fn register_surreal_onto(engine: &mut rhai::Engine) {
             ($rhai_op:expr, $surreal_op:expr) => {
                 engine.register_fn(
                     $rhai_op,
-                    |a: rhai::Dynamic, b: rhai::Dynamic| -> Result<Ex, Box<rhai::EvalAltResult>> {
+                    |a: rhai::Dynamic,
+                     b: rhai::Dynamic|
+                     -> Result<rhai::Dynamic, Box<rhai::EvalAltResult>> {
+                        use crate::rhai_engine::operators::{is_builder, plain_cmp};
+                        // Builder operands make SurrealQL; plain values (a
+                        // rule hook's `"dev" == env`, `list.contains(x)`)
+                        // compare to a bool.
+                        if !is_builder(&a) && !is_builder(&b) {
+                            return plain_cmp($rhai_op, &a, &b).map(rhai::Dynamic::from);
+                        }
                         let la = crate::rhai_engine::operators::to_expr(a)?;
                         let rb = crate::rhai_engine::operators::to_expr(b)?;
-                        Ok(crate::rhai_engine::operators::cmp_binary(
-                            $surreal_op,
-                            la,
-                            rb,
+                        Ok(rhai::Dynamic::from(
+                            crate::rhai_engine::operators::cmp_binary($surreal_op, la, rb),
                         ))
                     },
                 );
@@ -126,6 +133,24 @@ pub fn register_surreal_onto(engine: &mut rhai::Engine) {
         reg_op!(">", ">");
         reg_op!("<=", "<=");
         reg_op!(">=", ">=");
+
+        // `a.or_(b)` / `a.and_(b)`: a bracketed `ConditionGroup`.
+        macro_rules! reg_group {
+            ($rhai_fn:expr, $method:ident) => {
+                engine.register_fn(
+                    $rhai_fn,
+                    |a: rhai::Dynamic, b: rhai::Dynamic| -> Result<Ex, Box<rhai::EvalAltResult>> {
+                        use crate::operation::SurrealOperation;
+                        use vantage_expressions::Expressive;
+                        let la = crate::rhai_engine::operators::to_expr(a)?;
+                        let rb = crate::rhai_engine::operators::to_expr(b)?;
+                        Ok(Ex(SurrealOperation::$method(&la, rb).expr()))
+                    },
+                );
+            };
+        }
+        reg_group!("or_", or_);
+        reg_group!("and_", and_);
 
         // ── Arithmetic operators on Ex (closure bodies, ad-hoc maths) ──
         // Only combos involving an Ex are registered, so native numeric

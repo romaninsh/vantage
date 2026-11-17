@@ -496,7 +496,7 @@ impl TableSource for SurrealDB {
                 if conditioned && self.id_exists_anywhere(id).await? {
                     return Err(set_writes::held_outside(table.table_name(), id));
                 }
-                return Err(e);
+                return Err(self.name_flagged_refusal(table, e));
             }
         };
         if is_empty_result(&result) {
@@ -548,7 +548,10 @@ impl TableSource for SurrealDB {
         } else {
             update = update.upsert();
         }
-        let result = self.execute(&update.expr()).await?;
+        let result = self
+            .execute(&update.expr())
+            .await
+            .map_err(|e| self.name_flagged_refusal(table, e))?;
         if in_set {
             ensure_row_affected(self, &result, table, id, "replace").await?;
         } else if is_empty_result(&result) {
@@ -594,7 +597,10 @@ impl TableSource for SurrealDB {
         for condition in table.conditions() {
             update = update.with_condition(condition.clone());
         }
-        let result = self.execute(&update.expr()).await?;
+        let result = self
+            .execute(&update.expr())
+            .await
+            .map_err(|e| self.name_flagged_refusal(table, e))?;
         ensure_row_affected(self, &result, table, id, "patch").await?;
         let map = extract_first_map(result)?;
         let id_field = table.id_field_name();
@@ -664,7 +670,10 @@ impl TableSource for SurrealDB {
         }
         let base = insert.expr();
         let query = Expression::new(format!("{} RETURN id", base.template), base.parameters);
-        let result = self.execute(&query).await?;
+        let result = self
+            .execute(&query)
+            .await
+            .map_err(|e| self.name_flagged_refusal(table, e))?;
         if is_empty_result(&result) {
             return Err(error!(
                 format!(

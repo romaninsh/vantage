@@ -1,5 +1,16 @@
 # Changelog
 
+## 4.0.1 — 2026-11-17
+
+- Fix: a patch of a row the set doesn't hold is refused as not found before the before-update
+  hooks run. Before, the hooks saw the patch with no stored row, and their error hid the real
+  reason.
+- Fix: a dotted column to a computed column of the target (`client.label` where `label` is an
+  expression column) renders the target's expression in the correlated subquery. A backend
+  with a native traversal path (SurrealDB) can't read one value that way, so there it fails at
+  `with_active_columns`, naming the column. Before, an expression column without a column
+  definition was refused as unknown.
+
 ## 4.0.0 — 2026-11-16
 
 Roll-up columns are query-time callbacks: `with_rollup` stores an ordinary expression callback

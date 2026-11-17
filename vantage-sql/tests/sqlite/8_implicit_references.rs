@@ -95,12 +95,22 @@ fn order_table(db: SqliteDB) -> Table<SqliteDB, ClientOrder> {
 
 /// `client_order -> client.name` (one hop) and `client.bakery.name` (two hops)
 /// are lowered into correlated subqueries, the second nested in the first, and
-/// aliased under the flat dotted keys.
+/// aliased under the flat dotted keys. A dotted column to an expression
+/// column of the target renders that expression inside the subquery.
 #[tokio::test]
 async fn dotted_columns_project_correlated_subqueries() {
     let db = setup().await;
+    let client_with_shout =
+        |db: SqliteDB| client_table(db).with_expression("shout", |_| sqlite_expr!("UPPER(name)"));
     let orders = order_table(db)
-        .with_active_columns(&["id", "client_id", "client.name", "client.bakery.name"])
+        .with_one("loud_client", "client_id", client_with_shout)
+        .with_active_columns(&[
+            "id",
+            "client_id",
+            "client.name",
+            "client.bakery.name",
+            "loud_client.shout",
+        ])
         .unwrap();
 
     let preview = orders.select().preview();
@@ -126,6 +136,11 @@ async fn dotted_columns_project_correlated_subqueries() {
     assert_eq!(
         o1.get("client.bakery.name").map(ToString::to_string),
         Some("'Sunrise Bakery'".to_string())
+    );
+    assert!(preview.contains("UPPER(name)"), "{preview}");
+    assert_eq!(
+        o1.get("loud_client.shout").map(ToString::to_string),
+        Some("'MARTY'".to_string())
     );
 }
 

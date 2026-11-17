@@ -5,6 +5,7 @@
 
 use std::collections::HashMap;
 
+use vantage_core::{Context, VantageError};
 use vantage_table::table::Table;
 use vantage_table::traits::column_like::ColumnLike;
 use vantage_table::traits::table_source::SchemaMismatch;
@@ -91,6 +92,51 @@ impl SurrealDB {
     }
 }
 
+impl SurrealDB {
+    /// `error`, re-raised naming the column and its mismatch when it is
+    /// SurrealDB refusing to coerce a value for a field that
+    /// [`schema_mismatches`](Self::schema_mismatches) lists; the database's
+    /// error stays underneath. Any other error is returned as is.
+    pub(crate) fn name_flagged_refusal<E: Entity<AnySurrealType>>(
+        &self,
+        table: &Table<SurrealDB, E>,
+        error: VantageError,
+    ) -> VantageError {
+        let text = format!("{error:?}");
+        let Some(field) = text
+            .split("Couldn't coerce value for field `")
+            .nth(1)
+            .and_then(|rest| rest.split('`').next())
+        else {
+            return error;
+        };
+        let stored_as = |column: &str| {
+            table
+                .columns()
+                .get(column)
+                .and_then(|c| c.alias())
+                .unwrap_or(column)
+                .to_string()
+        };
+        let Some(mismatch) = self
+            .schema_mismatches(table)
+            .into_iter()
+            .find(|m| stored_as(&m.column) == field)
+        else {
+            return error;
+        };
+        let named = vantage_core::error!(
+            format!(
+                "column `{}.{}` is declared `{}` but the field is `{}`: {}",
+                mismatch.table, mismatch.column, mismatch.declared, mismatch.stored, mismatch.hint
+            ),
+            column = mismatch.column.as_str()
+        )
+        .mark_invalid_value();
+        Err::<(), _>(error).context(named).unwrap_err()
+    }
+}
+
 enum Declared {
     /// A has-one key column: links to the target table.
     Link(String),
@@ -130,6 +176,26 @@ fn mismatch_hint(declared: &Declared, stored: &str, table: &str, field: &str) ->
                     "declare `references: {target}`, so `{target}:key` text is written as a record link"
                 )
             }
+            // A field left as text from before the YAML declared a link or
+            // a datetime: convert the stored rows rather than the YAML.
+            // Text may be `target:key` or a bare key; both become a link.
+            Declared::Link(target) if kinds.contains(&"string") => convert_text(
+                table,
+                field,
+                &format!("record<{target}>"),
+                &format!(
+                    "IF string::contains(<string> {field}, ':') THEN type::record({field}) \
+                     ELSE type::record('{target}', {field}) END"
+                ),
+                "remove `references:` to keep text",
+            ),
+            Declared::Type("timestamp" | "date") if kinds.contains(&"string") => convert_text(
+                table,
+                field,
+                "datetime",
+                &format!("type::datetime({field})"),
+                "declare `type: string`",
+            ),
             _ => format!("declare the `type:` the field holds, or `{define} …` to match the YAML"),
         });
     }
@@ -142,6 +208,18 @@ fn mismatch_hint(declared: &Declared, stored: &str, table: &str, field: &str) ->
              `{define} option<…>` takes it"
         )
     })
+}
+
+/// The hint for a text field the YAML now reads as `kind`: the SurrealQL that
+/// retypes the field and sets the text its rows hold to `converted`, or
+/// `otherwise` in the YAML.
+fn convert_text(table: &str, field: &str, kind: &str, converted: &str, otherwise: &str) -> String {
+    format!(
+        "the field still holds text; convert it with `DEFINE FIELD OVERWRITE {field} ON {table} \
+         TYPE {kind}; UPDATE {table} SET {field} = {converted} \
+         WHERE type::is_string({field});` (OVERWRITE replaces the whole definition: keep its \
+         other clauses, such as PERMISSIONS), or {otherwise}"
+    )
 }
 
 /// Whether a value of `declared` fits one alternative of a field type.

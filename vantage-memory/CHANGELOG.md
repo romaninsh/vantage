@@ -1,5 +1,12 @@
 # Changelog
 
+## 4.0.1 — 2026-11-17
+
+- Fix: the id cell of a row keeps the id column's declared type. An id column declared `int`
+  reads back `7`, not `"7"`, after a Vista write, and a typed table whose id field is `i64`
+  stores an integer. The store's row key stays text, and an id cell that already names the key
+  is kept as written.
+
 ## 4.0.0 — 2026-11-14
 
 Requires vantage-table 4.0.0 and vantage-vista 2.11.0.

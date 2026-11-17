@@ -39,6 +39,58 @@ mod sqlite_tests {
                 .map_err(|e| e.to_string())
         });
     }
+
+    #[test]
+    fn or_and_group_renders_parenthesised() {
+        let code = r#"
+            let a = sql::ident("a");
+            (a == 1).and_(sql::ident("b") == 2).or_(sql::ident("c") == 3)
+        "#;
+        let expr = __host()
+            .compile(&vantage_rhai::Block::from(code))
+            .and_then(|script| {
+                script.eval_as::<vantage_sql::rhai_engine::RhaiExpr<AnySqliteType>>(
+                    &vantage_rhai::Env::new(),
+                )
+            })
+            .unwrap();
+        assert_eq!(expr.0.preview(), r#"(("a" = 1 AND "b" = 2) OR "c" = 3)"#);
+    }
+
+    /// The `sql::` operators build expressions only from builder operands;
+    /// plain values compare as Rhai compares them.
+    #[test]
+    fn plain_values_still_compare_as_bools() {
+        let code = r#"
+            [
+                "dev" == "dev", "dev" != "dev", 1 == 1.0, 2 > 1, 1.5 <= 1,
+                "a" < "b", true == true, ["a", "b"].contains("a"), ["a"].contains("c"),
+                () == "x", () != "x", () == (), "a" == 1, "a" != 1, [1, "a"] == [1, "a"],
+                9007199254740992 == 9007199254740993, 9007199254740992 < 9007199254740993
+            ]
+        "#;
+        let out = __host()
+            .compile(&vantage_rhai::Block::from(code))
+            .and_then(|script| script.eval(&vantage_rhai::Env::new()))
+            .unwrap();
+        let bools: Vec<bool> = out.into_typed_array::<bool>().expect("an array of bools");
+        assert_eq!(
+            bools,
+            [
+                true, false, true, true, false, true, true, true, false, false, true, true, false,
+                true, true, false, true
+            ]
+        );
+        let expr = __host()
+            .compile(&vantage_rhai::Block::from(r#"sql::ident("a") == "x""#))
+            .and_then(|script| {
+                script.eval_as::<vantage_sql::rhai_engine::RhaiExpr<AnySqliteType>>(
+                    &vantage_rhai::Env::new(),
+                )
+            })
+            .unwrap();
+        assert_eq!(expr.0.preview(), r#""a" = 'x'"#);
+    }
 }
 
 #[cfg(all(feature = "postgres", feature = "rhai"))]

@@ -78,6 +78,9 @@ struct Failure {
     error: VantageError,
     retryable: bool,
     retry_after: Option<Duration>,
+    /// A 429: the server refused before acting, so a repeat is safe even on
+    /// a table that never declared one.
+    rate_limited: bool,
 }
 
 /// Attempts per request, the first included.
@@ -202,7 +205,7 @@ impl RestInsertEndpoint {
     /// each request carries its first record's id in that header. A request
     /// is rendered once and its bytes are reused on every retry; retries
     /// happen only when `idempotency_key` or `idempotent` says a repeat is
-    /// safe.
+    /// safe, or the server answered 429 (it refused before acting).
     pub async fn send_with_ids(&self, records: &[Record<CborValue>], ids: &[Uuid]) -> Result<()> {
         if records.len() != ids.len() {
             return Err(error!(
@@ -302,7 +305,8 @@ impl RestInsertEndpoint {
             let Some(failure) = failure else {
                 return Ok(());
             };
-            if !failure.retryable || !self.repeatable() || attempt >= MAX_ATTEMPTS {
+            let repeatable = self.repeatable() || failure.rate_limited;
+            if !failure.retryable || !repeatable || attempt >= MAX_ATTEMPTS {
                 return Err(failure.error);
             }
             let delay = match failure.retry_after {
@@ -345,10 +349,12 @@ impl RestInsertEndpoint {
                     _ => false,
                 };
                 let retry_after = e.retry_after;
+                let rate_limited = matches!(e.kind, ErrorKind::Status(429));
                 return Ok(Some(Failure {
                     error: client_error(e, "REST insert failed", &shown, redaction),
                     retryable,
                     retry_after,
+                    rate_limited,
                 }));
             }
         };
@@ -364,6 +370,7 @@ impl RestInsertEndpoint {
             ),
             retryable: is_retryable(status),
             retry_after: None,
+            rate_limited: status == 429,
         }))
     }
 

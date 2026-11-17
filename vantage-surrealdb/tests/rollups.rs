@@ -34,6 +34,12 @@ fn surreal_dsn(database: &str) -> String {
 /// A fresh database with the seed, its links declared `REFERENCE` or not,
 /// and the schema checked.
 async fn seeded(reference: bool) -> SurrealDB {
+    seeded_with(reference, reference).await
+}
+
+/// [`seeded`] with `line.invoice` and `line.credit` each declared
+/// `REFERENCE` or not.
+async fn seeded_with(invoice: bool, credit: bool) -> SurrealDB {
     let database = format!("rollup_{}", Uuid::new_v4().simple());
     let client = SurrealConnection::dsn(surreal_dsn(&database))
         .expect("Invalid SURREALDB_URL DSN")
@@ -41,11 +47,12 @@ async fn seeded(reference: bool) -> SurrealDB {
         .await
         .expect("Failed to connect to SurrealDB");
     let db = SurrealDB::new(client);
-    let reference = if reference { " REFERENCE" } else { "" };
+    let reference = |on: bool| if on { " REFERENCE" } else { "" };
+    let (invoice, credit) = (reference(invoice), reference(credit));
     let schema = format!(
         "DEFINE TABLE invoice SCHEMALESS; DEFINE TABLE line SCHEMALESS; \
-         DEFINE FIELD invoice ON line TYPE option<record<invoice>>{reference}; \
-         DEFINE FIELD credit ON line TYPE option<record<invoice>>{reference}; \
+         DEFINE FIELD invoice ON line TYPE option<record<invoice>>{invoice}; \
+         DEFINE FIELD credit ON line TYPE option<record<invoice>>{credit}; \
          CREATE invoice:one, invoice:two, invoice:three; \
          CREATE line:a SET invoice = invoice:one, net = 10, void = false; \
          CREATE line:b SET invoice = invoice:one, net = 6, void = true; \
@@ -174,15 +181,47 @@ async fn rollups_over_a_reference_link_read_through_record_references() {
             Some(surreal_expr!("void = {}", false)),
         )
         .unwrap();
+    // `line` holds two `REFERENCE` fields, so `<~line` would mix them: the
+    // roll-up reads through `$parent`.
     assert_eq!(
         total.select().preview(),
-        "SELECT (math::sum(<~(line FIELD invoice)[WHERE void = false AND net != NONE \
+        "SELECT (math::sum((SELECT VALUE net FROM line WHERE invoice = $parent.id \
+         AND void = false AND net != NONE AND net != NULL))) AS total FROM invoice"
+    );
+}
+
+#[tokio::test]
+async fn rollup_over_a_single_reference_link_uses_bare_lookup() {
+    let db = seeded_with(true, false).await;
+    for only_live in [false, true] {
+        let (table, warnings) = warnings_during(|| invoices(db.clone(), only_live));
+        assert_eq!(warnings, "");
+        assert_eq!(
+            rollups(&table).await,
+            expected(only_live),
+            "only_live={only_live}"
+        );
+    }
+
+    let total = Table::<SurrealDB, EmptyEntity>::new("invoice", db)
+        .with_many("lines", "invoice", line_table)
+        .with_rollup(
+            "total",
+            "lines",
+            RollupOp::Sum,
+            Some("net"),
+            Some(surreal_expr!("void = {}", false)),
+        )
+        .unwrap();
+    assert_eq!(
+        total.select().preview(),
+        "SELECT (math::sum(<~line[WHERE void = false AND net != NONE \
          AND net != NULL].net)) AS total FROM invoice"
     );
 }
 
 /// A query-sourced child aliased like the stored table keeps its own rows:
-/// `<~(line FIELD invoice)` would read every line, void ones included.
+/// `<~line` would read every line, void ones included.
 #[tokio::test]
 async fn rollup_over_a_query_sourced_child_keeps_its_query() {
     let db = seeded(true).await;
@@ -385,9 +424,7 @@ async fn rollup_over_a_keyed_relation_joins_on_its_keys() {
         if reference {
             assert_eq!(warnings, "");
             assert!(
-                select.contains(
-                    "(doc<~(line FIELD doc)[WHERE vat != NONE AND vat != NULL].vat ?? [])"
-                ),
+                select.contains("(doc<~line[WHERE vat != NONE AND vat != NULL].vat ?? [])"),
                 "{select}"
             );
         } else {

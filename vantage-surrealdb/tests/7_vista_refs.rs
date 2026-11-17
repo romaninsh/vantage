@@ -219,6 +219,53 @@ surreal:
     Ok(())
 }
 
+/// A dotted column to an `expr:` column of the target fails the build naming
+/// it: SurrealDB follows a link to a stored field only, and there is none.
+#[tokio::test]
+async fn dotted_spec_column_to_a_computed_column_fails_the_build() -> TestResult {
+    let (db, bakery_table, client_table) = setup().await;
+
+    let bakery_yaml = format!(
+        r#"
+name: bakery
+columns:
+  id: {{ type: thing, flags: [id] }}
+  name: {{ type: string }}
+  label: {{ type: string, expr: 'surreal::expr("string::concat(\"b-\", name)")' }}
+surreal:
+  table: {bakery_table}
+"#
+    );
+    let client_yaml = format!(
+        r#"
+name: client
+columns:
+  id: {{ type: thing, flags: [id] }}
+  name: {{ type: string }}
+  bakery: {{ type: thing, references: bakery }}
+  bakery.label: {{ type: string }}
+surreal:
+  table: {client_table}
+"#
+    );
+    let bakery_spec: SurrealVistaSpec = serde_yaml_ng::from_str(&bakery_yaml)?;
+    let client_spec: SurrealVistaSpec = serde_yaml_ng::from_str(&client_yaml)?;
+    let resolver = registry_resolver(vec![("bakery".into(), bakery_spec)]);
+    let err = SurrealVistaFactory::new(db)
+        .with_resolver(resolver)
+        .build_from_spec(client_spec)
+        .map(drop)
+        .expect_err("a dotted column to a computed column");
+    assert!(
+        err.to_string().contains(
+            "dotted column `bakery.label`: `label` is a computed column of `bakery`; \
+             this backend can't read it through the link"
+        ),
+        "{err}"
+    );
+    Ok(())
+}
+
 /// A dotted column orders by its projected alias, both ways: a bare
 /// `ORDER BY bakery.name` would address a field path and return the rows
 /// unsorted.

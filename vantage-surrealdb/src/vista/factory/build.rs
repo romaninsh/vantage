@@ -97,6 +97,8 @@ fn import_dotted_columns(
     }
     let names: Vec<String> = table.columns().keys().cloned().collect();
     let name_refs: Vec<&str> = names.iter().map(String::as_str).collect();
+    // A dotted column to a computed column of the target is refused here:
+    // SurrealDB follows a link to a stored field only.
     table.with_active_columns(&name_refs)
 }
 
