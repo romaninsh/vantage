@@ -148,13 +148,23 @@ fn walk<'a>(root: &'a Value, path: &[String]) -> Option<&'a Value> {
     Some(node)
 }
 
-/// `node`, or the definition its `$ref` points at.
+/// `node`, or the definition its `$ref` points at, following a chain of
+/// `$ref`s (a newtype's schema refers on to its field's). A cycle stops
+/// after a few hops.
 fn resolve<'a>(root: &'a Value, node: &'a Value) -> &'a Value {
-    node.get("$ref")
-        .and_then(Value::as_str)
-        .and_then(|r| r.strip_prefix('#'))
-        .and_then(|pointer| root.pointer(pointer))
-        .unwrap_or(node)
+    let mut node = node;
+    for _ in 0..16 {
+        match node
+            .get("$ref")
+            .and_then(Value::as_str)
+            .and_then(|r| r.strip_prefix('#'))
+            .and_then(|pointer| root.pointer(pointer))
+        {
+            Some(next) => node = next,
+            None => break,
+        }
+    }
+    node
 }
 
 /// [`load_document`] then [`validate_into`].

@@ -191,9 +191,14 @@ fn typed_id(vista: &Vista, id: String) -> Dynamic {
         .id_column()
         .and_then(|c| vista.column(c))
         .and_then(|c| c.family());
+    // Only an id that reads back as the same key: "007" stays text. A float
+    // id stays text too, since the id-taking terminals take no float.
     let number = match family {
-        Some(ColumnFamily::Integer) => id.parse::<i64>().ok().map(Dynamic::from),
-        Some(ColumnFamily::Float) => id.parse::<f64>().ok().map(Dynamic::from),
+        Some(ColumnFamily::Integer) => id
+            .parse::<i64>()
+            .ok()
+            .filter(|n| n.to_string() == id)
+            .map(Dynamic::from),
         _ => None,
     };
     number.unwrap_or_else(|| Dynamic::from(id))

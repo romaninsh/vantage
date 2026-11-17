@@ -296,13 +296,31 @@ struct Flow {
     steps: Vec<Step>,
 }
 
+/// A newtype round `Step`: its schema is a `$ref` on to `Step`'s.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[allow(dead_code)]
+struct WrappedStep(Step);
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[allow(dead_code)]
+struct WrappedFlow {
+    steps: Vec<WrappedStep>,
+}
+
 #[test]
 fn one_of_error_names_the_branch_key() {
-    let err = parse_yaml_validated::<Flow>("steps:\n  - kind: form\n    title: a\n    body: b\n")
-        .unwrap_err();
-
-    let text = format!("{err:#}");
+    let doc = "steps:\n  - kind: form\n    title: a\n    body: b\n";
+    let text = format!("{:#}", parse_yaml_validated::<Flow>(doc).unwrap_err());
     assert!(text.contains("'body' was unexpected"), "{text}");
+    let text = format!(
+        "{:#}",
+        parse_yaml_validated::<WrappedFlow>(doc).unwrap_err()
+    );
+    assert!(
+        text.contains("'body' was unexpected"),
+        "through a newtype: {text}"
+    );
 }
 
 #[test]

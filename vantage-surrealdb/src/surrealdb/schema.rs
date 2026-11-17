@@ -178,12 +178,24 @@ fn mismatch_hint(declared: &Declared, stored: &str, table: &str, field: &str) ->
             }
             // A field left as text from before the YAML declared a link or
             // a datetime: convert the stored rows rather than the YAML.
-            Declared::Link(target) if kinds.contains(&"string") => {
-                convert_text(table, field, &format!("record<{target}>"), "type::record")
-            }
-            Declared::Type("timestamp" | "date") if kinds.contains(&"string") => {
-                convert_text(table, field, "datetime", "type::datetime")
-            }
+            // Text may be `target:key` or a bare key; both become a link.
+            Declared::Link(target) if kinds.contains(&"string") => convert_text(
+                table,
+                field,
+                &format!("record<{target}>"),
+                &format!(
+                    "IF string::contains(<string> {field}, ':') THEN type::record({field}) \
+                     ELSE type::record('{target}', {field}) END"
+                ),
+                "remove `references:` to keep text",
+            ),
+            Declared::Type("timestamp" | "date") if kinds.contains(&"string") => convert_text(
+                table,
+                field,
+                "datetime",
+                &format!("type::datetime({field})"),
+                "declare `type: string`",
+            ),
             _ => format!("declare the `type:` the field holds, or `{define} …` to match the YAML"),
         });
     }
@@ -199,12 +211,14 @@ fn mismatch_hint(declared: &Declared, stored: &str, table: &str, field: &str) ->
 }
 
 /// The hint for a text field the YAML now reads as `kind`: the SurrealQL that
-/// retypes the field and converts the text its rows hold with `function`.
-fn convert_text(table: &str, field: &str, kind: &str, function: &str) -> String {
+/// retypes the field and sets the text its rows hold to `converted`, or
+/// `otherwise` in the YAML.
+fn convert_text(table: &str, field: &str, kind: &str, converted: &str, otherwise: &str) -> String {
     format!(
         "the field still holds text; convert it with `DEFINE FIELD OVERWRITE {field} ON {table} \
-         TYPE {kind}; UPDATE {table} SET {field} = {function}({field}) \
-         WHERE type::is_string({field});`, or declare `type: string`"
+         TYPE {kind}; UPDATE {table} SET {field} = {converted} \
+         WHERE type::is_string({field});` (OVERWRITE replaces the whole definition: keep its \
+         other clauses, such as PERMISSIONS), or {otherwise}"
     )
 }
 

@@ -259,7 +259,7 @@ surreal:
     assert!(
         err.to_string().contains(
             "dotted column `bakery.label`: `label` is a computed column of `bakery`; \
-             SurrealDB can't read it through the link"
+             this backend can't read it through the link"
         ),
         "{err}"
     );

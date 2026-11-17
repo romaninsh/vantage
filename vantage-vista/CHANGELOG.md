@@ -2,9 +2,9 @@
 
 ## 2.12.1 — 2026-11-17
 
-- Fix: a script's `insert()` and `upsert()` return the id as a number when the id column holds
-  integers (or floats), so `table("t").insert(#{ id: 7 })` gives `7`, not `"7"`. A text id column
-  still gives text.
+- Fix: a script's `insert()` and `upsert()` return the id as an integer when the id column holds
+  integers, so `table("t").insert(#{ id: 7 })` gives `7`, not `"7"`. A key that isn't the
+  integer's own text (`"007"`) and any other id column still give text.
 - `lazy:` column expressions get the date vocabulary (`now()`, `today()`, `date()`,
   `days_between()`, …).
 

@@ -72,6 +72,11 @@ fn insert_returns_int_id_for_int_id_column() {
         eval::<String>(&host, r#"table("t").insert(#{ id: "r9", a: 1 })"#),
         "r9"
     );
+    // A key that isn't the integer's own text stays the key it is.
+    assert_eq!(
+        eval::<String>(&host, r#"table("intid").upsert("007", #{ a: 1 })"#),
+        "007"
+    );
 }
 
 #[test]

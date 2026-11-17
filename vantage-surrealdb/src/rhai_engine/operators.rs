@@ -47,7 +47,9 @@ pub(crate) fn plain_cmp(
             .ok()
             .or_else(|| v.as_float().ok())
     };
-    let ordering: Option<Ordering> = if let (Some(x), Some(y)) = (number(a), number(b)) {
+    let ordering: Option<Ordering> = if let (Ok(x), Ok(y)) = (a.as_int(), b.as_int()) {
+        Some(x.cmp(&y))
+    } else if let (Some(x), Some(y)) = (number(a), number(b)) {
         x.partial_cmp(&y)
     } else if let (Ok(x), Ok(y)) = (a.as_immutable_string_ref(), b.as_immutable_string_ref()) {
         Some(x.as_str().cmp(y.as_str()))

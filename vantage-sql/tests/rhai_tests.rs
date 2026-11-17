@@ -65,7 +65,8 @@ mod sqlite_tests {
             [
                 "dev" == "dev", "dev" != "dev", 1 == 1.0, 2 > 1, 1.5 <= 1,
                 "a" < "b", true == true, ["a", "b"].contains("a"), ["a"].contains("c"),
-                () == "x", () != "x", () == (), "a" == 1, "a" != 1, [1, "a"] == [1, "a"]
+                () == "x", () != "x", () == (), "a" == 1, "a" != 1, [1, "a"] == [1, "a"],
+                9007199254740992 == 9007199254740993, 9007199254740992 < 9007199254740993
             ]
         "#;
         let out = __host()
@@ -77,7 +78,7 @@ mod sqlite_tests {
             bools,
             [
                 true, false, true, true, false, true, true, true, false, false, true, true, false,
-                true, true
+                true, true, false, true
             ]
         );
         let expr = __host()

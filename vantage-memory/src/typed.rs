@@ -202,7 +202,7 @@ impl MemoryDB {
             .id_field()
             .is_some_and(|c| ColumnLike::get_type(c).ends_with("i64"));
         let cell = match id.parse::<i64>() {
-            Ok(n) if int_id => CborValue::Integer(n.into()),
+            Ok(n) if int_id && n.to_string() == id => CborValue::Integer(n.into()),
             _ => CborValue::Text(id.to_string()),
         };
         row.insert(id_column, cell);

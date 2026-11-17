@@ -6,10 +6,10 @@
   hooks run. Before, the hooks saw the patch with no stored row, and their error hid the real
   reason.
 - Fix: a dotted column to a computed column of the target (`client.label` where `label` is an
-  expression column) renders the target's expression in the correlated subquery, even on a
-  backend with a native traversal path. Before, an expression column without a column
-  definition was refused as unknown, and a native path read a stored field of that name, which
-  doesn't exist.
+  expression column) renders the target's expression in the correlated subquery. A backend
+  with a native traversal path (SurrealDB) can't read one value that way, so there it fails at
+  `with_active_columns`, naming the column. Before, an expression column without a column
+  definition was refused as unknown.
 
 ## 4.0.0 — 2026-11-16
 

@@ -374,8 +374,14 @@ columns:
     assert!(
         hint_of("owner").contains(
             "DEFINE FIELD OVERWRITE owner ON loan TYPE record<client>; \
-             UPDATE loan SET owner = type::record(owner) WHERE type::is_string(owner);"
+             UPDATE loan SET owner = IF string::contains(<string> owner, ':') THEN type::record(owner) \
+             ELSE type::record('client', owner) END WHERE type::is_string(owner);"
         ),
+        "{}",
+        hint_of("owner")
+    );
+    assert!(
+        hint_of("owner").ends_with("or remove `references:` to keep text"),
         "{}",
         hint_of("owner")
     );
