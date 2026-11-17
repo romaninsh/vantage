@@ -9,6 +9,10 @@ mod dotted;
 #[path = "common/condition_text.rs"]
 mod condition_text;
 
+#[cfg(all(feature = "vista", feature = "rhai"))]
+#[path = "common/rule_conditions.rs"]
+mod rule_conditions;
+
 #[cfg(feature = "vista")]
 #[macro_use]
 #[path = "common/vista.rs"]
@@ -60,6 +64,9 @@ mod sqlite {
     mod references;
     #[path = "5_rollups.rs"]
     mod rollups;
+    #[cfg(all(feature = "vista", feature = "rhai"))]
+    #[path = "7_rule_conditions.rs"]
+    mod rule_conditions;
     #[path = "9_safe_writes.rs"]
     mod safe_writes;
     #[path = "2_search.rs"]

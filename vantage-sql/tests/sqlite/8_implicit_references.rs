@@ -129,6 +129,27 @@ async fn dotted_columns_project_correlated_subqueries() {
     );
 }
 
+/// A dotted column to an expression column of the target renders the
+/// target's expression inside the correlated subquery.
+#[tokio::test]
+async fn dotted_column_to_an_expression_column_renders_it() {
+    let db = setup().await;
+    let client_with_shout =
+        |db: SqliteDB| client_table(db).with_expression("shout", |_| sqlite_expr!("UPPER(name)"));
+    let orders = order_table(db.clone())
+        .with_one("loud_client", "client_id", client_with_shout)
+        .with_active_columns(&["id", "loud_client.shout"])
+        .unwrap();
+
+    let preview = orders.select().preview();
+    assert!(preview.contains("UPPER(name)"), "{preview}");
+    let rows = orders.list_values().await.unwrap();
+    assert_eq!(
+        rows["o1"].get("loud_client.shout").map(ToString::to_string),
+        Some("'MARTY'".to_string())
+    );
+}
+
 /// An imported column exists only as a projection alias, so a vista
 /// condition on it is refused, never sent as a column name.
 #[cfg(feature = "vista")]

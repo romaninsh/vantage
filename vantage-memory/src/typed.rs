@@ -194,7 +194,18 @@ impl MemoryDB {
         record: &Record<AnyMemoryType>,
     ) -> Record<CborValue> {
         let mut row = to_cbor_record(record);
-        row.insert(self.id_column(table), CborValue::Text(id.to_string()));
+        let id_column = self.id_column(table);
+        if crate::store::ids::supplied_id(row.get(&id_column)).as_deref() == Some(id) {
+            return row;
+        }
+        let int_id = table
+            .id_field()
+            .is_some_and(|c| ColumnLike::get_type(c).ends_with("i64"));
+        let cell = match id.parse::<i64>() {
+            Ok(n) if int_id => CborValue::Integer(n.into()),
+            _ => CborValue::Text(id.to_string()),
+        };
+        row.insert(id_column, cell);
         row
     }
 

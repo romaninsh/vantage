@@ -35,19 +35,21 @@ pub(crate) fn register_writes(
     let w = gate.clone();
     engine.register_fn(
         "insert",
-        move |h: &mut Handle, map: RhaiMap| -> RhaiResult<String> {
-            insert_record(&w.target(h)?, map_to_record(map)?, None)
+        move |h: &mut Handle, map: RhaiMap| -> RhaiResult<Dynamic> {
+            let vista = w.target(h)?;
+            let id = insert_record(&vista, map_to_record(map)?, None)?;
+            Ok(typed_id(&vista, id))
         },
     );
 
     let w = gate.clone();
     engine.register_fn(
         "upsert",
-        move |h: &mut Handle, id: Dynamic, map: RhaiMap| -> RhaiResult<String> {
+        move |h: &mut Handle, id: Dynamic, map: RhaiMap| -> RhaiResult<Dynamic> {
             let vista = w.target(h)?;
             let id = id_string(id)?;
             run(vista.upsert_value(id.clone(), &map_to_record(map)?))?;
-            Ok(id)
+            Ok(typed_id(&vista, id))
         },
     );
 
@@ -180,6 +182,21 @@ pub(crate) fn new_id(vista: &Vista, id_col: &str) -> RhaiResult<String> {
         Some(generator) => generator.try_generate().map_err(rhai_err),
         None => Ok(IdGenerator::UuidV7.generate()),
     }
+}
+
+/// `id` as the script sees it: a number when the id column holds numbers and
+/// the text parses as one, the text otherwise.
+fn typed_id(vista: &Vista, id: String) -> Dynamic {
+    let family = vista
+        .id_column()
+        .and_then(|c| vista.column(c))
+        .and_then(|c| c.family());
+    let number = match family {
+        Some(ColumnFamily::Integer) => id.parse::<i64>().ok().map(Dynamic::from),
+        Some(ColumnFamily::Float) => id.parse::<f64>().ok().map(Dynamic::from),
+        _ => None,
+    };
+    number.unwrap_or_else(|| Dynamic::from(id))
 }
 
 /// Delete `id` from `vista`'s set: `true` once the row is gone (missing or

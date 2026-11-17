@@ -12,6 +12,8 @@ pub mod spec;
 
 pub use factory::SqliteVistaFactory;
 pub use source::SqliteTableShell;
+#[cfg(feature = "rhai")]
+pub use source::register_rule_conditions;
 pub use spec::{
     InheritBlock, SqliteColumnBlock, SqliteColumnExtras, SqliteTableBlock, SqliteTableExtras,
     SqliteVistaSpec,

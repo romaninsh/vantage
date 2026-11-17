@@ -66,6 +66,12 @@ pub(crate) fn eval_to_select_args(
         })
 }
 
+/// Register the PostgreSQL query vocabulary onto an existing engine: the free
+/// functions under `sql::` and the methods and operators on the SQL types.
+pub fn register_postgres_onto(engine: &mut rhai::Engine) {
+    __register_engine_onto(engine);
+}
+
 pub(crate) fn eval_to_select(
     code: &str,
     base: Option<PostgresSelect>,

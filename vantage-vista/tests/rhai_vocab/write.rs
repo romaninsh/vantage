@@ -54,9 +54,23 @@ fn an_insert_of_an_existing_id_returns_it_and_writes_nothing() {
 #[test]
 fn server_made_ids_ask_the_backend() {
     let host = read_write(&store());
+    assert_eq!(eval::<i64>(&host, r#"table("auto").insert(#{ a: 1 })"#), 1);
+}
+
+#[test]
+fn insert_returns_int_id_for_int_id_column() {
+    let host = read_write(&store());
     assert_eq!(
-        eval::<String>(&host, r#"table("auto").insert(#{ a: 1 })"#),
-        "1"
+        eval::<i64>(&host, r#"table("intid").insert(#{ id: 7, a: 1 })"#),
+        7
+    );
+    assert_eq!(
+        eval::<i64>(&host, r#"table("intid").upsert(8, #{ a: 1 })"#),
+        8
+    );
+    assert_eq!(
+        eval::<String>(&host, r#"table("t").insert(#{ id: "r9", a: 1 })"#),
+        "r9"
     );
 }
 

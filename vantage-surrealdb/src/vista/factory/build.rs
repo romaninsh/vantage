@@ -97,7 +97,39 @@ fn import_dotted_columns(
     }
     let names: Vec<String> = table.columns().keys().cloned().collect();
     let name_refs: Vec<&str> = names.iter().map(String::as_str).collect();
-    table.with_active_columns(&name_refs)
+    let table = table.with_active_columns(&name_refs)?;
+    refuse_dotted_computed(spec, &table)?;
+    Ok(table)
+}
+
+/// A dotted column to a computed column of the target. SurrealDB follows a
+/// link to a stored field only; the generic subquery that renders the
+/// target's expression reads a list of rows here, not one value, so the
+/// build fails instead. SurrealDB always offers the link path, so a dotted
+/// column lowered to anything else (an expression with parameters) is one.
+fn refuse_dotted_computed(
+    spec: &SurrealVistaSpec,
+    table: &Table<SurrealDB, EmptyEntity>,
+) -> Result<()> {
+    for name in spec.columns.keys().filter(|n| n.contains('.')) {
+        let Some(expr) = table.try_expression_column(name)? else {
+            continue;
+        };
+        if expr.parameters.is_empty() {
+            continue;
+        }
+        let (hops, column) = name.rsplit_once('.').unwrap_or(("", name));
+        return Err(error!(
+            format!(
+                "dotted column `{name}`: `{column}` is a computed column of `{hops}`; \
+                 SurrealDB can't read it through the link, declare an `expr:` on this \
+                 table instead"
+            ),
+            table = spec.name.as_str(),
+            column = name.as_str()
+        ));
+    }
+    Ok(())
 }
 
 /// Lower a column's `expr:` script into a server-side computed column,

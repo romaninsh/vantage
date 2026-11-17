@@ -12,6 +12,8 @@ pub mod spec;
 
 pub use factory::PostgresVistaFactory;
 pub use source::PostgresTableShell;
+#[cfg(feature = "rhai")]
+pub use source::register_rule_conditions;
 pub use spec::{
     InheritBlock, PostgresColumnBlock, PostgresColumnExtras, PostgresTableBlock,
     PostgresTableExtras, PostgresVistaSpec,

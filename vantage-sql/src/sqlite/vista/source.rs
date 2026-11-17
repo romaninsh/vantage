@@ -6,10 +6,19 @@
 
 use ciborium::Value as CborValue;
 use vantage_core::Result;
+#[cfg(feature = "rhai")]
+use vantage_rhai::rhai::{Engine, EvalAltResult};
 use vantage_table::column::core::Column;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Entity};
+#[cfg(feature = "rhai")]
+use vantage_vista::rhai::RuleHandle;
 use vantage_vista::{Transaction, Vista};
+
+#[cfg(feature = "rhai")]
+use crate::rhai_engine::RhaiExpr;
+#[cfg(feature = "rhai")]
+use crate::sqlite::vista::rhai_source::register_sqlite_onto;
 
 use crate::condition::{SqliteCondition, build_sql_binary};
 use crate::primitives::identifier::ident;
@@ -85,4 +94,24 @@ impl SqlShellDialect for SqliteDB {
         let factory = SqliteVistaFactory::new(shell.table.data_source().clone());
         move |table| factory.from_table(table)
     }
+}
+
+/// The SQLite vocabulary for rule scripts: the `sql::` constructors and
+/// operators, and `table.with_condition(<expr>)` on the [`RuleHandle`],
+/// which narrows the table by the expression as a [`SqliteCondition`].
+/// Register it after [`register_rule_vocab`](vantage_vista::rhai::register_rule_vocab).
+#[cfg(feature = "rhai")]
+pub fn register_rule_conditions(engine: &mut Engine) {
+    register_sqlite_onto(engine);
+    engine.register_fn(
+        "with_condition",
+        |h: &mut RuleHandle,
+         cond: RhaiExpr<AnySqliteType>|
+         -> std::result::Result<RuleHandle, Box<EvalAltResult>> {
+            let key = cond.0.preview();
+            h.native_condition(Box::new(SqliteCondition::from(cond.0)), key)
+                .map_err(|e| e.to_string())?;
+            Ok(h.clone())
+        },
+    );
 }

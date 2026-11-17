@@ -35,6 +35,42 @@ fn records(result: AnySqliteType) -> Vec<Record<AnySqliteType>> {
     Vec::<Record<AnySqliteType>>::try_from(result).unwrap()
 }
 
+/// A trigger's `RAISE(ABORT, …)` is the database refusing the write: the
+/// error carries the trigger's message as an invalid value.
+#[tokio::test]
+async fn a_trigger_raise_is_an_invalid_value_with_its_message() {
+    let db = setup().await;
+    sqlx::query(
+        "CREATE TRIGGER no_cheap BEFORE INSERT ON product WHEN NEW.price < 1 \
+         BEGIN SELECT RAISE(ABORT, 'price must be at least 1'); END",
+    )
+    .execute(db.pool())
+    .await
+    .unwrap();
+    let err = db
+        .execute(&sqlite_expr!(
+            "INSERT INTO product (id, name, price, calories) VALUES ({}, {}, {}, {})",
+            "p1",
+            "Tea",
+            0i64,
+            1i64
+        ))
+        .await
+        .unwrap_err();
+    assert!(err.is_invalid_value(), "{err:?}");
+    assert_eq!(err.message(), "price must be at least 1");
+    assert_eq!(
+        err.context.get("refused_by").map(String::as_str),
+        Some(r#""database""#)
+    );
+    // vantage-server finds the refusal by ` (refused_by: ` right after the
+    // message, so it must be the first context key.
+    assert!(
+        format!("{err}").starts_with(r#"price must be at least 1 (refused_by: "database", sql: "#),
+        "{err}"
+    );
+}
+
 // ── Insert multiple rows via nested expressions in a single VALUES ─────────
 
 #[tokio::test]

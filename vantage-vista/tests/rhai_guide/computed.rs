@@ -244,6 +244,25 @@ row.contents.split("\n").len() - 1
 "#;
 
 #[test]
+fn a_lazy_column_reads_the_clock() {
+    let age = Column::new("age", "int")
+        .with_expression(r#"days_between(date(row.born), now())"#)
+        .unwrap();
+    let metadata = VistaMetadata::new()
+        .with_column(Column::new("born", "string"))
+        .with_column(age);
+    let person = [("born".to_string(), text("2000-01-01"))]
+        .into_iter()
+        .collect();
+    let vista = memory_vista("person", metadata, vec![("p1", person)]);
+    let days = read_one(&vista, "p1").get("age").cloned();
+    assert!(
+        matches!(days, Some(CborValue::Integer(n)) if i128::from(n) > 9000),
+        "{days:?}"
+    );
+}
+
+#[test]
 fn closure() {
     let lines = Column::new("lines", "int")
         .with_expression(CLOSURE)

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.12.1 — 2026-11-17
+
+- Fix: a script's `insert()` and `upsert()` return the id as a number when the id column holds
+  integers (or floats), so `table("t").insert(#{ id: 7 })` gives `7`, not `"7"`. A text id column
+  still gives text.
+- `lazy:` column expressions get the date vocabulary (`now()`, `today()`, `date()`,
+  `days_between()`, …).
+
 ## 2.12.0 — 2026-11-16
 
 - The transaction contract checks a vista narrowed by a parent table and built before the

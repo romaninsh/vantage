@@ -36,7 +36,11 @@ pub(crate) fn column_values(
 ) -> Vec<CborValue> {
     rows.iter()
         .filter_map(|(id, row)| match column == id_column {
-            true => Some(CborValue::Text(id.clone())),
+            true => Some(
+                row.get(column)
+                    .cloned()
+                    .unwrap_or_else(|| CborValue::Text(id.clone())),
+            ),
             false => row.get(column).cloned(),
         })
         .collect()

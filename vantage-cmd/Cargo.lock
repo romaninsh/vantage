@@ -1395,7 +1395,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "4.0.0"
+version = "4.0.1"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1438,7 +1438,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "2.12.0"
+version = "2.12.1"
 dependencies = [
  "async-stream",
  "async-trait",

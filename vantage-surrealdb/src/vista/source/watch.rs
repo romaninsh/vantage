@@ -37,6 +37,12 @@ where
             let mut live = live;
             while let Some(note) = live.recv().await {
                 let Some(thing) = Thing::from_cbor(note.record_id.clone()) else {
+                    tracing::warn!(
+                        table = %table_name,
+                        action = ?note.action,
+                        record = ?note.record_id,
+                        "live frame without a record id skipped; the view may miss this change"
+                    );
                     continue;
                 };
                 let id = thing.to_string();

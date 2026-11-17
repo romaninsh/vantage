@@ -164,6 +164,24 @@ async fn patch_that_nulls_the_sets_column_is_a_conflict() {
 }
 
 #[tokio::test]
+async fn patch_hidden_row_refused_before_hooks() {
+    let (all, set) = sets().await;
+    let log: Log = Arc::default();
+    let set = set.with_hook(Hook::BeforeUpdate(
+        Phase::Validate,
+        recording_before("before-update", log.clone()),
+    ));
+    let err = set
+        .patch_value("out1", &rec(json!({"name": "x"})))
+        .await
+        .unwrap_err();
+    assert!(err.is_not_found(), "{err}");
+    assert!(log.lock().unwrap().is_empty(), "{:?}", log.lock().unwrap());
+    let out1 = all.get_value("out1").await.unwrap().unwrap();
+    assert_eq!(out1["name"], json!("b"));
+}
+
+#[tokio::test]
 async fn patch_naming_the_sets_own_value_is_accepted() {
     let (_, set) = sets().await;
     let patched = set

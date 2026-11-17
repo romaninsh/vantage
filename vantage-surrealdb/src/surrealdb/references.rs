@@ -91,6 +91,17 @@ impl SurrealDB {
         Some(links.contains(&(table.to_string(), field.to_string())))
     }
 
+    /// Whether `table.field` is `table`'s only `REFERENCE` link, so a bare
+    /// `<~table` lookup reads exactly the records it links.
+    pub(crate) fn is_sole_reference_link(&self, table: &str, field: &str) -> bool {
+        let refs = self.references.lock().unwrap();
+        let Some(links) = refs.links.as_ref() else {
+            return false;
+        };
+        let mut fields = links.iter().filter(|(t, _)| t == table).map(|(_, f)| f);
+        fields.next().is_some_and(|f| f == field) && fields.next().is_none()
+    }
+
     /// Warn, once per link, that a roll-up over `child.field` reads through
     /// the correlated `$parent` form: at the first query that includes the
     /// column. `linked` is the table the field's records point at, when

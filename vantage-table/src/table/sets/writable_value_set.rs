@@ -73,6 +73,15 @@ where
         let erased = self.as_entity_erased();
         let mut partial = partial.clone();
         let former = self.former_for_update(&id, false).await?;
+        // The row was read for the hooks and the set doesn't hold it: the
+        // source would refuse the patch anyway, so the hooks don't see it.
+        let read = !self.before_update_hooks().is_empty() || !self.after_update_hooks().is_empty();
+        if read && former.is_none() {
+            return Err(
+                vantage_core::error!("row isn't in this set", table = self.table_name())
+                    .mark_not_found(),
+            );
+        }
         let update = UpdateOf {
             id: &id,
             stored: former.as_ref(),

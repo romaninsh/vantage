@@ -133,7 +133,8 @@ where
         .fetch_all(executor)
         .await
         .map_err(|e| {
-            let err = error!(D::QUERY_FAILED, details = e.to_string());
+            let err =
+                refusal(&e).unwrap_or_else(|| error!(D::QUERY_FAILED, details = e.to_string()));
             failure_context::<D>(err, sql, params)
         })?;
 
@@ -192,11 +193,27 @@ where
     X: Executor<'c, Database = D::Db>,
     <D::Db as Database>::Arguments: IntoArguments<D::Db>,
 {
-    let done = bind_all::<D>(sql, params)?
-        .execute(executor)
-        .await
-        .with_context(|| failure_context::<D>(error!(D::STATEMENT_FAILED), sql, params))?;
+    let done = match bind_all::<D>(sql, params)?.execute(executor).await {
+        Ok(done) => done,
+        Err(e) => match refusal(&e) {
+            Some(err) => return Err(failure_context::<D>(err, sql, params)),
+            None => Err(e)
+                .with_context(|| failure_context::<D>(error!(D::STATEMENT_FAILED), sql, params))?,
+        },
+    };
     Ok(D::rows_affected(&done))
+}
+
+/// A trigger or procedure refusing the write on purpose: SQLite's
+/// `RAISE(ABORT, …)` (constraint-trigger code 1811), PostgreSQL's `RAISE
+/// EXCEPTION` (P0001), MySQL's `SIGNAL SQLSTATE '45000'`. Its message is
+/// meant for the user, so it becomes the error's message. `refused_by` is
+/// the first context key (the server looks for ` (refused_by: `).
+fn refusal(e: &sqlx::Error) -> Option<VantageError> {
+    let db = e.as_database_error()?;
+    let code = db.code()?;
+    matches!(code.as_ref(), "1811" | "P0001" | "45000")
+        .then(|| error!(db.message().to_string(), refused_by = "database").mark_invalid_value())
 }
 
 /// Resolve deferred parameters (which may query other databases), then

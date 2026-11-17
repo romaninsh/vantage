@@ -7,11 +7,20 @@ mod watch;
 
 use ciborium::Value as CborValue;
 use vantage_core::Result;
+#[cfg(feature = "rhai")]
+use vantage_rhai::rhai::{Engine, EvalAltResult};
 use vantage_table::column::core::Column;
 use vantage_table::sorting::{OrderBy, SortDirection};
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Entity};
+#[cfg(feature = "rhai")]
+use vantage_vista::rhai::RuleHandle;
 use vantage_vista::{Capability, Transaction, Vista, VistaChangeStream};
+
+#[cfg(feature = "rhai")]
+use crate::postgres::vista::rhai_source::register_postgres_onto;
+#[cfg(feature = "rhai")]
+use crate::rhai_engine::RhaiExpr;
 
 use crate::condition::{PostgresCondition, build_sql_binary};
 use crate::postgres::PostgresDB;
@@ -127,4 +136,24 @@ impl SqlShellDialect for PostgresDB {
     {
         shell.listen()
     }
+}
+
+/// The PostgreSQL vocabulary for rule scripts: the `sql::` constructors and
+/// operators, and `table.with_condition(<expr>)` on the [`RuleHandle`],
+/// which narrows the table by the expression as a [`PostgresCondition`].
+/// Register it after [`register_rule_vocab`](vantage_vista::rhai::register_rule_vocab).
+#[cfg(feature = "rhai")]
+pub fn register_rule_conditions(engine: &mut Engine) {
+    register_postgres_onto(engine);
+    engine.register_fn(
+        "with_condition",
+        |h: &mut RuleHandle,
+         cond: RhaiExpr<AnyPostgresType>|
+         -> std::result::Result<RuleHandle, Box<EvalAltResult>> {
+            let key = cond.0.preview();
+            h.native_condition(Box::new(PostgresCondition::from(cond.0)), key)
+                .map_err(|e| e.to_string())?;
+            Ok(h.clone())
+        },
+    );
 }

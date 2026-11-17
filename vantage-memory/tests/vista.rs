@@ -102,6 +102,27 @@ async fn an_untyped_column_keeps_written_integers() {
 }
 
 #[tokio::test]
+async fn int_id_column_reads_back_integer() {
+    let (s, f) = setup();
+    let yaml = "name: ticket\nid_column: id\ncolumns:\n  id: { type: int, flags: [id] }\n  \
+                title: { type: string }\n";
+    let v = f.from_yaml(yaml).unwrap();
+    v.insert_value("7", &record(&[("title", text("a"))]))
+        .await
+        .unwrap();
+    v.replace_value("8", &record(&[("id", int(8)), ("title", text("b"))]))
+        .await
+        .unwrap();
+    assert_eq!(s.table("ticket").get("7").unwrap().get("id"), Some(&int(7)));
+    let got = v.get_value("7").await.unwrap().unwrap();
+    assert_eq!(got.get("id"), Some(&int(7)));
+    let rows = v.list_values().await.unwrap();
+    assert_eq!(rows["8"].get("id"), Some(&int(8)));
+    let narrowed = v.with_condition("id", FilterOp::Eq, int(8)).unwrap();
+    assert_eq!(ids(&narrowed).await, ["8"]);
+}
+
+#[tokio::test]
 async fn op_conditions_order_search_and_count() {
     let (_s, f) = setup();
     let mut v = f.from_yaml(PRODUCT).unwrap();

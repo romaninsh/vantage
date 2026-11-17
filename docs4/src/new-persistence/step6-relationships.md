@@ -189,7 +189,7 @@ same call.
 | Backend                  | Renders                                                                         | Supported                    |
 | ------------------------ | ------------------------------------------------------------------------------- | ---------------------------- |
 | SQLite, Postgres, MySQL  | correlated subquery (the default)                                               | yes                          |
-| SurrealDB                | `math::sum(<~(line FIELD invoice).net)` over a `REFERENCE` link, else `$parent` | yes                          |
+| SurrealDB                | `math::sum(<~line.net)` over the child's only `REFERENCE` link, else `$parent`   | yes                          |
 | MongoDB                  | —                                                                               | not yet: `Unsupported` error |
 | CSV, REST, other drivers | —                                                                               | `Unsupported` error          |
 
