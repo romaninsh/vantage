@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.2 — 2026-11-17
+
+- Lockfile follows the published feedback round-up crates; no code changes.
+
 All notable changes to `vantage-spacetimedb` are documented here.
 
 ## 0.7.1 — 2026-10-31

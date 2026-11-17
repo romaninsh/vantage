@@ -1918,7 +1918,7 @@ dependencies = [
 
 [[package]]
 name = "example_gpui"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "anyhow",
  "bakery_model3",
@@ -7935,7 +7935,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-aws"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "async-trait",
  "chrono",
