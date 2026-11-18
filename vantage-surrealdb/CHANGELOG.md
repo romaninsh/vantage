@@ -2,9 +2,12 @@
 
 ## 2.4.3 — 2026-11-18
 
-- Insert, replace, upsert, patch and delete refuse a record id whose table part names another
-  table ("record id belongs to another table"). Before, `user:admin` written through a `client`
-  table ran `UPSERT user:admin` or `DELETE user:admin` against the `user` record.
+- The by-id writes (insert, replace, upsert, patch, delete) refuse a record id whose table part
+  names another table, with "record id belongs to another table". Before, `user:admin` written
+  through a `client` table ran `UPSERT user:admin` or `DELETE user:admin` against the `user`
+  record. A Rhai `patch` of such an id now raises this error where it used to return `false`.
+  On a table with an update hook the stored row is read first, so a foreign id there still
+  fails as a row outside the set.
 
 ## 2.4.2 — 2026-11-17
 
