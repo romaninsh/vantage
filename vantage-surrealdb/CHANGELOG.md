@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.3 — 2026-11-18
+
+- Insert, replace, upsert, patch and delete refuse a record id whose table part names another
+  table ("record id belongs to another table"). Before, `user:admin` written through a `client`
+  table ran `UPSERT user:admin` or `DELETE user:admin` against the `user` record.
+
 ## 2.4.2 — 2026-11-17
 
 - A roll-up reads through a bare record-reference lookup, `<~line[WHERE …]` (or

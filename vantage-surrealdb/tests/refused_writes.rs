@@ -187,6 +187,37 @@ async fn refused_patch_and_replace_error() {
     assert_eq!(err.kind(), vantage_core::ErrorKind::NotFound);
 }
 
+#[tokio::test]
+async fn an_id_from_another_table_is_refused() {
+    let (all, _viewer) = fixture().await;
+    let user = Table::<SurrealDB, EmptyEntity>::new("user", all.data_source().clone())
+        .with_id_column("id")
+        .with_column_of::<String>("name");
+    let admin = Thing::new("user", "admin");
+    user.insert_value(admin.clone(), &rec(&[("name", "root")]))
+        .await
+        .unwrap();
+
+    let written = rec(&[("name", "x")]);
+    for err in [
+        all.insert_value(admin.clone(), &written).await.unwrap_err(),
+        all.replace_value(admin.clone(), &written)
+            .await
+            .unwrap_err(),
+        all.patch_value(admin.clone(), &written).await.unwrap_err(),
+        all.delete(admin.clone()).await.unwrap_err(),
+    ] {
+        assert!(
+            err.message().contains("record id belongs to another table"),
+            "unexpected error: {err}"
+        );
+    }
+    assert_eq!(
+        user.get_value(admin).await.unwrap().unwrap()["name"],
+        text("root")
+    );
+}
+
 #[cfg(feature = "rhai")]
 fn spec(yaml: &str) -> SurrealVistaSpec {
     serde_yaml_ng::from_str(yaml).expect("spec yaml")

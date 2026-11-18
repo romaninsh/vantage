@@ -465,6 +465,7 @@ impl TableSource for SurrealDB {
     where
         E: Entity<Self::Value>,
     {
+        set_writes::own_id(table, id)?;
         // The `WritableDataSet::insert` contract is idempotent: a record
         // already in the set is returned untouched.
         if let Some(existing) = self.get_table_value(table, id).await? {
@@ -521,6 +522,7 @@ impl TableSource for SurrealDB {
     where
         E: Entity<Self::Value>,
     {
+        set_writes::own_id(table, id)?;
         let conditioned = table.conditions().next().is_some();
         let mut in_set = false;
         if conditioned {
@@ -577,6 +579,7 @@ impl TableSource for SurrealDB {
     where
         E: Entity<Self::Value>,
     {
+        set_writes::own_id(table, id)?;
         let Some(current) = self.get_table_value(table, id).await? else {
             return Err(
                 error!("Row not found", table = table.table_name(), id = id.clone())
@@ -612,6 +615,7 @@ impl TableSource for SurrealDB {
     where
         E: Entity<Self::Value>,
     {
+        set_writes::own_id(table, id)?;
         // A missing record, or one outside the conditions, matches nothing: Ok.
         // A refused delete also comes back empty, so `RETURN BEFORE` tells the
         // two apart: nothing returned while the set still holds the record.
