@@ -169,10 +169,14 @@ pub trait WritableValueSet: ValueSet {
 
     /// Replace the entire record at the specified ID (HTTP PUT)
     ///
-    /// **Idempotent**: completely overwrites existing data if present. If
-    /// possible, will remove/recreate record; therefore if `record` doesn't
-    /// contain certain attributes which were present in the database, those
-    /// will be removed. If record does not exist, will create it.
+    /// **Idempotent**: writes `record` over the row with this id, creating it
+    /// when missing. Pass every field: document stores (MongoDB, SurrealDB)
+    /// replace the whole document, while SQL backends keep the stored value of
+    /// a column the record leaves out.
+    ///
+    /// **One row**: only the row with this id is written. A record that
+    /// clashes with another row on a UNIQUE column fails with the backend's
+    /// duplicate-key error; the other row is never updated or deleted.
     ///
     /// **Confined**: a row in the set is replaced (`Conflict` if the new row
     /// would leave the set); an id held outside the set is `Conflict` where

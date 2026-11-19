@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.2 — 2026-11-19
+
+- Docs: `replace_value` writes only the row with its id; a clash on another UNIQUE column is a
+  duplicate-key error. The old text said fields left out of the record are removed, which no SQL
+  backend does.
+
 ## 1.2.1 — 2026-11-16
 
 - Drops the unused `thiserror` dependency.

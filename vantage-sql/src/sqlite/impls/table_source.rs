@@ -403,6 +403,9 @@ impl TableSource for SqliteDB {
             .ok_or_else(|| error!("Inserted row disappeared", id = id.clone()))
     }
 
+    /// Replace by id as `INSERT … ON CONFLICT (id) DO UPDATE`. A clash on
+    /// another UNIQUE column is a "UNIQUE constraint failed" error. Columns
+    /// the record leaves out keep their stored values.
     async fn replace_table_value<E>(
         &self,
         table: &Table<Self, E>,
@@ -415,20 +418,35 @@ impl TableSource for SqliteDB {
         guard_replace(self, table, id, record).await?;
 
         let id_field_name = table.id_field_name();
-        // SQLite INSERT OR REPLACE handles both insert and update
         let insert = crate::sqlite::statements::SqliteInsert::new(table.table_name())
             .with_record(record)
             // The explicit id param is authoritative on this path, so apply it
             // after the record — a record-carried id (e.g. one a generator hook
             // filled) must not override the id the caller asked to write.
             .with_field(&id_field_name, AnySqliteType::from(id.clone()));
-        let expr = insert.expr();
-        let replace_expr = Expression::new(
-            expr.template
-                .replacen("INSERT INTO", "INSERT OR REPLACE INTO", 1),
-            expr.parameters.clone(),
-        );
-        self.execute(&replace_expr).await?;
+        let base = insert.expr();
+
+        // Only an id clash updates. Not `INSERT OR REPLACE`: that deletes
+        // whichever row clashes on any UNIQUE column, not just the id.
+        let upsert = if record.is_empty() {
+            expr_any!(
+                "{} ON CONFLICT ({}) DO NOTHING",
+                (base),
+                (ident(&id_field_name))
+            )
+        } else {
+            let set_parts: Vec<Expression<AnySqliteType>> = record
+                .keys()
+                .map(|k| expr_any!("{} = excluded.{}", (ident(k)), (ident(k))))
+                .collect();
+            expr_any!(
+                "{} ON CONFLICT ({}) DO UPDATE SET {}",
+                (base),
+                (ident(&id_field_name)),
+                (Expression::from_vec(set_parts, ", "))
+            )
+        };
+        self.execute(&upsert).await?;
 
         self.get_table_value(table, id)
             .await?

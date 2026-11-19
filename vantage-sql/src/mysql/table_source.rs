@@ -20,10 +20,10 @@ use crate::mysql::MysqlDB;
 use crate::mysql::statements::MysqlSelect;
 use crate::mysql::types::{AnyMysqlType, MysqlType};
 use crate::primitives::identifier::ident;
+use crate::set_writes::id_exists_anywhere;
 use crate::table_writes::{
     guard_insert, guard_new_row, guard_patch, guard_replace, settle_failed_insert,
 };
-use vantage_expressions::expr_any;
 
 sql_declared_types!(sql_coerce_fn!(MysqlDB, MysqlType, AnyMysqlType));
 
@@ -396,6 +396,11 @@ impl TableSource for MysqlDB {
             .ok_or_else(|| error!("Inserted row disappeared", id = id.clone()))
     }
 
+    /// Replace by id in two statements: an id lookup, then `UPDATE … WHERE id
+    /// AND <conditions>` for a stored row or a plain `INSERT` for a new one.
+    /// A clash on another UNIQUE column is a duplicate-key error, and so is a
+    /// concurrent insert of the same id between the two statements. Columns
+    /// the record leaves out keep their stored values.
     async fn replace_table_value<E>(
         &self,
         table: &Table<Self, E>,
@@ -408,29 +413,36 @@ impl TableSource for MysqlDB {
         guard_replace(self, table, id, record).await?;
 
         let id_field_name = table.id_field_name();
-        let insert = crate::mysql::statements::MysqlInsert::new(table.table_name())
-            .with_record(record)
-            // The explicit id param is authoritative on this path, so apply it
-            // after the record — a record-carried id (e.g. one a generator hook
-            // filled) must not override the id the caller asked to write.
-            .with_field(&id_field_name, id_value(id));
-        let base = insert.expr();
-
-        let set_parts: Vec<Expression<AnyMysqlType>> = if record.is_empty() {
-            vec![expr_any!(
-                "{} = {}",
-                (ident(&id_field_name)),
-                (ident(&id_field_name))
-            )]
+        // Not `ON DUPLICATE KEY UPDATE`: that fires on any UNIQUE column and
+        // would update whichever row holds the same e.g. email. Look the id
+        // up instead and UPDATE or INSERT by id alone.
+        if id_exists_anywhere(self, table, id).await? {
+            // The explicit id param is authoritative: a record-carried id
+            // must not rewrite the row's key.
+            let mut values = record.clone();
+            values.shift_remove(&id_field_name);
+            if !values.is_empty() {
+                let id_condition = {
+                    let id_val = id_value(id);
+                    mysql_expr!("{} = {}", (ident(&id_field_name)), id_val)
+                };
+                let mut update = crate::mysql::statements::MysqlUpdate::new(table.table_name())
+                    .with_record(&values)
+                    .with_condition(id_condition);
+                for condition in table.conditions() {
+                    update = update.with_condition(condition.clone());
+                }
+                self.execute(&update.expr()).await?;
+            }
         } else {
-            record
-                .keys()
-                .map(|k| expr_any!("{} = VALUES({})", (ident(k)), (ident(k))))
-                .collect()
-        };
-        let conflict = Expression::from_vec(set_parts, ", ");
-        let upsert = expr_any!("{} ON DUPLICATE KEY UPDATE {}", (base), (conflict));
-        self.execute(&upsert).await?;
+            let insert = crate::mysql::statements::MysqlInsert::new(table.table_name())
+                .with_record(record)
+                // The explicit id param is authoritative on this path, so apply it
+                // after the record — a record-carried id (e.g. one a generator hook
+                // filled) must not override the id the caller asked to write.
+                .with_field(&id_field_name, id_value(id));
+            self.execute(&insert.expr()).await?;
+        }
 
         self.get_table_value(table, id)
             .await?

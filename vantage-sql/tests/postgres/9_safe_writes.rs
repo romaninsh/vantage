@@ -18,7 +18,7 @@ async fn item(test: &str) -> Table<PostgresDB, EmptyEntity> {
     .await
     .unwrap();
     sqlx::query(sqlx::AssertSqlSafe(format!(
-        "CREATE TABLE \"{name}\" (id TEXT PRIMARY KEY, name TEXT, parent TEXT, price BIGINT)"
+        "CREATE TABLE \"{name}\" (id TEXT PRIMARY KEY, name TEXT, parent TEXT, price BIGINT, email TEXT UNIQUE)"
     )))
     .execute(db.pool())
     .await
@@ -29,6 +29,7 @@ async fn item(test: &str) -> Table<PostgresDB, EmptyEntity> {
         .with_column_of::<String>("name")
         .with_column_of::<String>("parent")
         .with_column_of::<i64>("price")
+        .with_column_of::<String>("email")
 }
 
 safe_writes_tests!(PostgresDB, AnyPostgresType);

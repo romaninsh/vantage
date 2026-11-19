@@ -185,9 +185,9 @@ where
     }
 
     /// An insert of a missing row, a replace of a stored one, each with its
-    /// own hooks. A table without them writes the dialect's replace statement
-    /// (`INSERT … ON CONFLICT DO UPDATE`, `… ON DUPLICATE KEY UPDATE`,
-    /// `INSERT OR REPLACE`), which creates a missing row in one operation.
+    /// own hooks. A table without them goes through the dialect's replace
+    /// (`INSERT … ON CONFLICT (id) DO UPDATE` on PostgreSQL and SQLite, an id
+    /// lookup then `UPDATE` or `INSERT` on MySQL), which creates a missing row.
     async fn upsert(&self, id: &str, record: &Record<CborValue>) -> Result<Record<CborValue>> {
         let upserted = self
             .table
