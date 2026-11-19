@@ -433,7 +433,9 @@ assert_eq!(table.get_max(&table["price"]).await.unwrap().try_get::<i64>().unwrap
 
 - **`insert_table_value`** — INSERT with a known ID. Build an `SqliteInsert` with the id field and
   record fields, execute, then read back via `get_table_value`.
-- **`replace_table_value`** — full replacement. For SQLite, use `INSERT OR REPLACE INTO`.
+- **`replace_table_value`** — full replacement. For SQLite, append
+  `ON CONFLICT ("id") DO UPDATE SET` for the record's fields to the insert. Not `INSERT OR REPLACE`:
+  it deletes whichever row clashes on any UNIQUE column, not just the one with this id.
 - **`patch_table_value`** — partial update. Build an `SqliteUpdate` with only the provided fields
   and a WHERE condition on the id field.
 - **`delete_table_value`** — DELETE with a WHERE condition on the id field.

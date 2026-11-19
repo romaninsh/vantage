@@ -9,6 +9,11 @@ use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
+use vantage_expressions::{Expression, Expressive, expr_any};
+
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
+use crate::primitives::identifier::{Identifier, ident};
 use crate::set_writes::{SetWrites, id_exists_anywhere, row_in_set};
 
 /// Checks before an insert of `id`. `Some(row)` when the set already holds
@@ -210,6 +215,39 @@ where
         table = table.table_name()
     )
     .mark_conflict()
+}
+
+/// `insert` turned into an upsert on the id alone: `ON CONFLICT (id) DO UPDATE
+/// SET k = excluded.k` for each key of `record`, `DO NOTHING` when it is empty.
+/// A clash on another UNIQUE column stays an error and leaves that row alone,
+/// unlike `INSERT OR REPLACE` or MySQL's `ON DUPLICATE KEY UPDATE`.
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
+pub(crate) fn upsert_on_id<V>(
+    insert: Expression<V>,
+    id_field: &str,
+    record: &Record<V>,
+) -> Expression<V>
+where
+    V: Clone,
+    Identifier: Expressive<V>,
+{
+    if record.is_empty() {
+        return expr_any!(
+            "{} ON CONFLICT ({}) DO NOTHING",
+            (insert),
+            (ident(id_field))
+        );
+    }
+    let set: Vec<Expression<V>> = record
+        .keys()
+        .map(|k| expr_any!("{} = excluded.{}", (ident(k)), (ident(k))))
+        .collect();
+    expr_any!(
+        "{} ON CONFLICT ({}) DO UPDATE SET {}",
+        (insert),
+        (ident(id_field)),
+        (Expression::from_vec(set, ", "))
+    )
 }
 
 /// Re-read a row after its UPDATE. The patch paths check the row is in the

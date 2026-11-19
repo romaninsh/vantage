@@ -18,7 +18,7 @@ async fn item(test: &str) -> Table<MysqlDB, EmptyEntity> {
     .await
     .unwrap();
     sqlx::query(sqlx::AssertSqlSafe(format!(
-        "CREATE TABLE `{name}` (id VARCHAR(64) PRIMARY KEY, name TEXT, parent TEXT, price BIGINT)"
+        "CREATE TABLE `{name}` (id VARCHAR(64) PRIMARY KEY, name TEXT, parent TEXT, price BIGINT, email VARCHAR(64) UNIQUE)"
     )))
     .execute(db.pool())
     .await
@@ -28,6 +28,7 @@ async fn item(test: &str) -> Table<MysqlDB, EmptyEntity> {
         .with_column_of::<String>("name")
         .with_column_of::<String>("parent")
         .with_column_of::<i64>("price")
+        .with_column_of::<String>("email")
 }
 
 safe_writes_tests!(MysqlDB, AnyMysqlType);

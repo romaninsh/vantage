@@ -19,7 +19,7 @@ use crate::postgres::statements::PostgresSelect;
 use crate::postgres::types::{AnyPostgresType, PostgresType};
 use crate::primitives::identifier::ident;
 use crate::table_writes::{
-    guard_insert, guard_new_row, guard_patch, guard_replace, settle_failed_insert,
+    guard_insert, guard_new_row, guard_patch, guard_replace, settle_failed_insert, upsert_on_id,
 };
 use vantage_expressions::expr_any;
 
@@ -432,32 +432,7 @@ impl TableSource for PostgresDB {
             // after the record — a record-carried id (e.g. one a generator hook
             // filled) must not override the id the caller asked to write.
             .with_field(&id_field_name, id_param(table, id));
-        let base = insert.expr();
-
-        let set_parts: Vec<Expression<AnyPostgresType>> = if record.is_empty() {
-            let upsert = expr_any!(
-                "{} ON CONFLICT ({}) DO NOTHING",
-                (base),
-                (ident(&id_field_name))
-            );
-            self.execute(&upsert).await?;
-            return self
-                .get_table_value(table, id)
-                .await?
-                .ok_or_else(|| error!("Row missing after upsert", id = id.clone()));
-        } else {
-            record
-                .keys()
-                .map(|k| expr_any!("{} = EXCLUDED.{}", (ident(k)), (ident(k))))
-                .collect()
-        };
-        let conflict_set = Expression::from_vec(set_parts, ", ");
-        let upsert = expr_any!(
-            "{} ON CONFLICT ({}) DO UPDATE SET {}",
-            (base),
-            (ident(&id_field_name)),
-            (conflict_set)
-        );
+        let upsert = upsert_on_id(insert.expr(), &id_field_name, record);
         self.execute(&upsert).await?;
 
         self.get_table_value(table, id)

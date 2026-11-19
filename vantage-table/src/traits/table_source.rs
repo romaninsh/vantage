@@ -353,8 +353,11 @@ pub trait TableSource: DataSource + Clone + 'static {
     /// idempotent:** an id held by a row outside `table.conditions()` fails
     /// with `Conflict`; the written row must fit the conditions, else
     /// `Conflict` and nothing changes. Refuse with `Unsupported` when a
-    /// condition can be neither applied nor evaluated. See `WritableValueSet`
-    /// for the table.
+    /// condition can be neither applied nor evaluated. Write only the row with
+    /// this id: a clash on another UNIQUE column must surface as an error, so
+    /// no statement that updates or deletes the clashing row (`INSERT OR
+    /// REPLACE`, MySQL `ON DUPLICATE KEY UPDATE`). See `WritableValueSet` for
+    /// the table.
     async fn replace_table_value<E>(
         &self,
         table: &Table<Self, E>,

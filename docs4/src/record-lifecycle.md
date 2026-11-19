@@ -333,7 +333,7 @@ Who registers where:
 When the set doesn't hold it, the write is an insert: the insert hooks run, so the id generator
 and a created-at stamp apply only to a new row. When it does, the write is a replace and the update
 hooks get the row as `stored`. A table without insert or update hooks skips the read and writes a
-replace, which creates a missing row in one statement. The SQL, SurrealDB and MongoDB vista shells
+replace, which creates a missing row too. The SQL, SurrealDB and MongoDB vista shells
 write `Vista::upsert_value` this way.
 
 ### Delete and delete-all

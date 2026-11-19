@@ -3,7 +3,8 @@
 //!
 //! A backend's `safe_writes` module imports its `Table`, `EmptyEntity` and
 //! dialect operation trait, defines `async fn item(test: &str)` — an empty
-//! `item` table with a text `id` and `name`, `parent`, `price` columns, kept
+//! `item` table with a text `id`, `name`, `parent`, `price` columns and a
+//! UNIQUE `email`, kept
 //! apart from other tests by `test` where the database is shared — and
 //! invokes `safe_writes_tests!(DB, ValueType)`.
 
@@ -138,6 +139,34 @@ macro_rules! safe_writes_tests {
         #[tokio::test]
         async fn after_update_sees_the_former_row_on_patch() {
             assert_after_update_sees_the_former_row("after_update_former_patch", true).await;
+        }
+
+        /// Only an id clash may turn a replace into an update: a clash on
+        /// another UNIQUE column is an error and leaves that row alone,
+        /// whether the replaced id exists (`a`) or not (`c`).
+        #[tokio::test]
+        async fn replace_does_not_touch_a_row_holding_the_same_unique_key() {
+            let all = item("replace_unique_key").await;
+            let email = |s: &str| <$value>::from(s.to_string());
+            for (id, mail) in [("a", "a@x.test"), ("b", "b@x.test")] {
+                all.insert_value(id, &rec(&[("name", id.into()), ("email", email(mail))]))
+                    .await
+                    .unwrap();
+            }
+            for id in ["a", "c"] {
+                all.replace_value(
+                    id,
+                    &rec(&[("name", "z".into()), ("email", email("b@x.test"))]),
+                )
+                .await
+                .expect_err("b@x.test belongs to row b");
+                let b = all.get_value("b").await.unwrap().expect("row b survives");
+                assert_eq!(b.get("name"), Some(&<$value>::from("b".to_string())));
+                assert_eq!(b.get("email"), Some(&email("b@x.test")));
+            }
+            let a = all.get_value("a").await.unwrap().expect("row a survives");
+            assert_eq!(a.get("name"), Some(&<$value>::from("a".to_string())));
+            assert!(all.get_value("c").await.unwrap().is_none());
         }
     };
 }

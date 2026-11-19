@@ -20,10 +20,10 @@ use crate::mysql::MysqlDB;
 use crate::mysql::statements::MysqlSelect;
 use crate::mysql::types::{AnyMysqlType, MysqlType};
 use crate::primitives::identifier::ident;
+use crate::set_writes::id_exists_anywhere;
 use crate::table_writes::{
     guard_insert, guard_new_row, guard_patch, guard_replace, settle_failed_insert,
 };
-use vantage_expressions::expr_any;
 
 sql_declared_types!(sql_coerce_fn!(MysqlDB, MysqlType, AnyMysqlType));
 
@@ -45,6 +45,37 @@ where
 /// MySQL will coerce to integer when the column type requires it.
 pub(super) fn id_value(id: &str) -> AnyMysqlType {
     AnyMysqlType::from(id.to_string())
+}
+
+/// `INSERT` of `record` under `id`. The id param is applied after the record:
+/// a record-carried id (e.g. one a generator hook filled) must not override
+/// the id the caller asked to write.
+fn insert_with_id<E: Entity<AnyMysqlType>>(
+    table: &Table<MysqlDB, E>,
+    id: &str,
+    record: &Record<AnyMysqlType>,
+) -> Expression<AnyMysqlType> {
+    crate::mysql::statements::MysqlInsert::new(table.table_name())
+        .with_record(record)
+        .with_field(table.id_field_name(), id_value(id))
+        .expr()
+}
+
+/// `UPDATE … SET <values> WHERE id = ? AND <the table's conditions>`.
+fn update_in_set<E: Entity<AnyMysqlType>>(
+    table: &Table<MysqlDB, E>,
+    id: &str,
+    values: &Record<AnyMysqlType>,
+) -> Expression<AnyMysqlType> {
+    let id_val = id_value(id);
+    let id_condition = mysql_expr!("{} = {}", (ident(table.id_field_name())), id_val);
+    let mut update = crate::mysql::statements::MysqlUpdate::new(table.table_name())
+        .with_record(values)
+        .with_condition(id_condition);
+    for condition in table.conditions() {
+        update = update.with_condition(condition.clone());
+    }
+    update.expr()
 }
 
 pub(super) fn parse_rows(
@@ -380,14 +411,7 @@ impl TableSource for MysqlDB {
             return Ok(existing);
         }
 
-        let id_field_name = table.id_field_name();
-        let insert = crate::mysql::statements::MysqlInsert::new(table.table_name())
-            .with_record(record)
-            // The explicit id param is authoritative on this path, so apply it
-            // after the record — a record-carried id (e.g. one a generator hook
-            // filled) must not override the id the caller asked to write.
-            .with_field(&id_field_name, id_value(id));
-        if let Err(e) = self.execute(&insert.expr()).await {
+        if let Err(e) = self.execute(&insert_with_id(table, id, record)).await {
             return settle_failed_insert(self, table, id, e).await;
         }
 
@@ -408,29 +432,22 @@ impl TableSource for MysqlDB {
         guard_replace(self, table, id, record).await?;
 
         let id_field_name = table.id_field_name();
-        let insert = crate::mysql::statements::MysqlInsert::new(table.table_name())
-            .with_record(record)
-            // The explicit id param is authoritative on this path, so apply it
-            // after the record — a record-carried id (e.g. one a generator hook
-            // filled) must not override the id the caller asked to write.
-            .with_field(&id_field_name, id_value(id));
-        let base = insert.expr();
-
-        let set_parts: Vec<Expression<AnyMysqlType>> = if record.is_empty() {
-            vec![expr_any!(
-                "{} = {}",
-                (ident(&id_field_name)),
-                (ident(&id_field_name))
-            )]
+        // Not `ON DUPLICATE KEY UPDATE`: that fires on any UNIQUE column and
+        // would update whichever row holds the same e.g. email. Look the id
+        // up instead and UPDATE or INSERT by id alone; another UNIQUE clash,
+        // or a concurrent insert of the same id, is a duplicate-key error.
+        // Columns the record leaves out keep their stored values.
+        if id_exists_anywhere(self, table, id).await? {
+            // The explicit id param is authoritative: a record-carried id
+            // must not rewrite the row's key.
+            let mut values = record.clone();
+            values.shift_remove(&id_field_name);
+            if !values.is_empty() {
+                self.execute(&update_in_set(table, id, &values)).await?;
+            }
         } else {
-            record
-                .keys()
-                .map(|k| expr_any!("{} = VALUES({})", (ident(k)), (ident(k))))
-                .collect()
-        };
-        let conflict = Expression::from_vec(set_parts, ", ");
-        let upsert = expr_any!("{} ON DUPLICATE KEY UPDATE {}", (base), (conflict));
-        self.execute(&upsert).await?;
+            self.execute(&insert_with_id(table, id, record)).await?;
+        }
 
         self.get_table_value(table, id)
             .await?
@@ -447,19 +464,7 @@ impl TableSource for MysqlDB {
         E: Entity<Self::Value>,
     {
         guard_patch(self, table, id, partial).await?;
-
-        let id_field_name = table.id_field_name();
-        let id_condition = {
-            let id_val = id_value(id);
-            mysql_expr!("{} = {}", (ident(&id_field_name)), id_val)
-        };
-        let mut update = crate::mysql::statements::MysqlUpdate::new(table.table_name())
-            .with_record(partial)
-            .with_condition(id_condition);
-        for condition in table.conditions() {
-            update = update.with_condition(condition.clone());
-        }
-        self.execute(&update.expr()).await?;
+        self.execute(&update_in_set(table, id, partial)).await?;
 
         crate::table_writes::refetch_after_patch(self, table, id).await
     }

@@ -5809,7 +5809,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-dataset"
-version = "1.2.1"
+version = "1.2.2"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -6036,7 +6036,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-sql"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -6099,7 +6099,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "4.0.1"
+version = "4.0.2"
 dependencies = [
  "async-stream",
  "async-trait",

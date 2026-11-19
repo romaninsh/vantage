@@ -42,9 +42,10 @@ never there or is outside the set. A write that isn't allowed (`Writes::Denied`,
 backend lacks) throws, `delete` included, and so does any other failure. Why:
 [Safe writes](../record-lifecycle.md#safe-writes).
 
-`patch` changes only the fields in the map. `upsert` replaces the whole row, so fields left out of
-the map are gone afterwards. [Computed columns](./computed.md) in the map are dropped before the
-write reaches the backend.
+`patch` changes only the fields in the map. `upsert` is meant to write the whole row, so pass every
+field: what happens to one left out depends on the backend (the SQL backends keep its stored value,
+others may clear it). [Computed columns](./computed.md) in the map are dropped before the write
+reaches the backend.
 
 ## Ids
 

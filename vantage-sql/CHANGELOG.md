@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.13.1 — 2026-11-19
+
+- Fix: a replace (and an upsert on a table without write hooks) only ever writes the row with
+  the given id. With a UNIQUE `email`, replacing `c` with an email row `b` already holds used to
+  update row `b` on MySQL (`ON DUPLICATE KEY UPDATE` fires on any unique key) and delete row `b`
+  on SQLite (`INSERT OR REPLACE` drops every clashing row). It now fails with the duplicate-key
+  error and leaves `b` alone, as Postgres already did. MySQL looks the id up and runs an `UPDATE`
+  or an `INSERT`; SQLite uses `INSERT … ON CONFLICT (id) DO UPDATE`.
+- SQLite writes (insert, replace, patch) run as `INSERT OR ABORT` / `UPDATE OR ABORT`, so a
+  UNIQUE column the schema declares `ON CONFLICT REPLACE` fails the write instead of deleting
+  the row that holds the value.
+- On SQLite, a replace of a stored row keeps the stored value of a column the record leaves out,
+  as on Postgres and MySQL. Before, `INSERT OR REPLACE` reset it to the column default.
+
 ## 0.13.0 — 2026-11-17
 
 - `sqlite::vista::register_rule_conditions` and `postgres::vista::register_rule_conditions`:

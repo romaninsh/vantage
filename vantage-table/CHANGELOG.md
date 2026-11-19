@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.0.2 — 2026-11-19
+
+- Docs: `replace_table_value` must write only the row with its id; a statement that updates or
+  deletes a row clashing on another UNIQUE column (`INSERT OR REPLACE`, `ON DUPLICATE KEY UPDATE`)
+  breaks the contract.
+
 ## 4.0.1 — 2026-11-17
 
 - Fix: a patch of a row the set doesn't hold is refused as not found before the before-update
