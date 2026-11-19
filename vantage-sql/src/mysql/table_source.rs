@@ -47,6 +47,20 @@ pub(super) fn id_value(id: &str) -> AnyMysqlType {
     AnyMysqlType::from(id.to_string())
 }
 
+/// `INSERT` of `record` under `id`. The id param is applied after the record:
+/// a record-carried id (e.g. one a generator hook filled) must not override
+/// the id the caller asked to write.
+fn insert_with_id<E: Entity<AnyMysqlType>>(
+    table: &Table<MysqlDB, E>,
+    id: &str,
+    record: &Record<AnyMysqlType>,
+) -> Expression<AnyMysqlType> {
+    crate::mysql::statements::MysqlInsert::new(table.table_name())
+        .with_record(record)
+        .with_field(table.id_field_name(), id_value(id))
+        .expr()
+}
+
 /// `UPDATE … SET <values> WHERE id = ? AND <the table's conditions>`.
 fn update_in_set<E: Entity<AnyMysqlType>>(
     table: &Table<MysqlDB, E>,
@@ -397,14 +411,7 @@ impl TableSource for MysqlDB {
             return Ok(existing);
         }
 
-        let id_field_name = table.id_field_name();
-        let insert = crate::mysql::statements::MysqlInsert::new(table.table_name())
-            .with_record(record)
-            // The explicit id param is authoritative on this path, so apply it
-            // after the record — a record-carried id (e.g. one a generator hook
-            // filled) must not override the id the caller asked to write.
-            .with_field(&id_field_name, id_value(id));
-        if let Err(e) = self.execute(&insert.expr()).await {
+        if let Err(e) = self.execute(&insert_with_id(table, id, record)).await {
             return settle_failed_insert(self, table, id, e).await;
         }
 
@@ -442,13 +449,7 @@ impl TableSource for MysqlDB {
                 self.execute(&update_in_set(table, id, &values)).await?;
             }
         } else {
-            let insert = crate::mysql::statements::MysqlInsert::new(table.table_name())
-                .with_record(record)
-                // The explicit id param is authoritative on this path, so apply it
-                // after the record — a record-carried id (e.g. one a generator hook
-                // filled) must not override the id the caller asked to write.
-                .with_field(&id_field_name, id_value(id));
-            self.execute(&insert.expr()).await?;
+            self.execute(&insert_with_id(table, id, record)).await?;
         }
 
         self.get_table_value(table, id)

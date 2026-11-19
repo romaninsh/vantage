@@ -403,9 +403,8 @@ impl TableSource for SqliteDB {
             .ok_or_else(|| error!("Inserted row disappeared", id = id.clone()))
     }
 
-    /// Replace by id as `INSERT … ON CONFLICT (id) DO UPDATE`. A clash on
-    /// another UNIQUE column is a "UNIQUE constraint failed" error. Columns
-    /// the record leaves out keep their stored values.
+    /// Upserts on the id alone ([`upsert_on_id`]); another UNIQUE clash is
+    /// "UNIQUE constraint failed".
     async fn replace_table_value<E>(
         &self,
         table: &Table<Self, E>,

@@ -414,9 +414,7 @@ impl TableSource for PostgresDB {
             .ok_or_else(|| error!("Inserted row disappeared", id = id.clone()))
     }
 
-    /// Replace by id as `INSERT … ON CONFLICT (id) DO UPDATE`. A clash on
-    /// another UNIQUE column is a duplicate-key error. Columns the record
-    /// leaves out keep their stored values.
+    /// Upserts on the id alone ([`upsert_on_id`]).
     async fn replace_table_value<E>(
         &self,
         table: &Table<Self, E>,
