@@ -80,6 +80,22 @@ pub(crate) fn row_with_id<E: Entity<AnySurrealType>>(
     row
 }
 
+/// Refuses an id whose table part names another table: `user:admin` written
+/// through `client` would otherwise reach the `user` record.
+pub(crate) fn own_id<E: Entity<AnySurrealType>>(
+    table: &Table<SurrealDB, E>,
+    id: &Thing,
+) -> Result<()> {
+    if id.table() == table.table_name() {
+        return Ok(());
+    }
+    Err(error!(
+        "record id belongs to another table",
+        table = table.table_name(),
+        id = id.clone()
+    ))
+}
+
 /// Insert or replace of an id that a record outside the table's conditions holds.
 pub(crate) fn held_outside(table_name: &str, id: &Thing) -> VantageError {
     error!(
