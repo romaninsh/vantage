@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.0.2 — 2026-11-19
+
+- Tests: run `contract::check_list_condition`.
+
 ## 4.0.1 — 2026-11-19
 
 - A sub-document written under the top of a nested column path holds only declared paths:

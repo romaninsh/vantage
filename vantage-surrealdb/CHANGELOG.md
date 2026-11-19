@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.4.4 — 2026-11-19
+
+- Tests: run `contract::check_list_condition`.
+
 ## 2.4.3 — 2026-11-18
 
 - The by-id writes (insert, replace, upsert, patch, delete) refuse a record id whose table part

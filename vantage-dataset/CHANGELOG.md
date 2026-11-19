@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.0 — 2026-11-19
+
+- `contract::check_list_condition`: writes through a set narrowed by a list (`parent IN ("p1",
+  "p3")`, as a list-valued access rule narrows a table) stay in the list. An insert outside the
+  list or naming no listed value, and a replace or patch that moves a row out, are Conflicts.
+
 ## 1.2.2 — 2026-11-19
 
 - Docs: `replace_value` writes only the row with its id; a clash on another UNIQUE column is a

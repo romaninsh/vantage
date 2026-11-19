@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.13.2 — 2026-11-19
+
+- Tests: SQLite, PostgreSQL and MySQL run `contract::check_list_condition`.
+
 ## 0.13.1 — 2026-11-19
 
 - Fix: a replace (and an upsert on a table without write hooks) only ever writes the row with
