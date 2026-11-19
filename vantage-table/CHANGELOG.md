@@ -1,5 +1,16 @@
 # Changelog
 
+## 4.1.0 — 2026-11-19
+
+- A write (insert, replace, patch, upsert) may only name columns the table declares, plus the id,
+  a column's stored name (`fullName` for `full_name`) and the top of a declared nested path
+  (`place` for `place.venue_id`). Anything else fails with Forbidden "column is not declared on
+  this table", and that includes a key a Normalize or Populate hook sets. Before, an undeclared key
+  went to the database as a column name: `{"is_admin": 1}` wrote a column the entity left out, and
+  `{"Salary": 1}` wrote `salary` on MySQL and SQLite past a read-only rule on `salary`. A table
+  that declares no columns now takes no values. Expression and imported columns still count as
+  declared and are still dropped from a row read and saved back.
+
 ## 4.0.2 — 2026-11-19
 
 - Docs: `replace_table_value` must write only the row with its id; a statement that updates or

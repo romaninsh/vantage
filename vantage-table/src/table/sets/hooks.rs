@@ -22,6 +22,7 @@ use crate::table::{
     AfterCx, AfterFn, BeforeCx, BeforeDeleteFn, BeforeFn, DeleteAllCx, DeleteAllFn, DeleteCx,
     HookReturn, Phase, Table,
 };
+use crate::traits::column_like::ColumnLike;
 use crate::traits::table_source::TableSource;
 use crate::write_context::WriteContext;
 
@@ -63,9 +64,10 @@ where
 
 impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// What every insert, replace and patch does to `record` before the
-    /// set's invariants: the Normalize and Populate hooks, dropping imported
-    /// and expression columns, typing the declared columns through the
-    /// source, then the Validate hooks, which so see the record as stored.
+    /// set's invariants: the Normalize and Populate hooks, refusing a column
+    /// the table doesn't declare, dropping imported and expression columns,
+    /// typing the declared columns through the source, then the Validate
+    /// hooks, which so see the record as stored.
     pub(crate) async fn before_write(
         &self,
         hooks: &[(Phase, BeforeFn<T>)],
@@ -76,10 +78,49 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             hooks.split_at(hooks.partition_point(|(phase, _)| *phase < Phase::Validate));
         let erased = self.as_entity_erased();
         run_before(shaping, record, update, erased).await?;
+        self.refuse_undeclared_columns(record)?;
         self.strip_imported_columns(record);
         self.strip_expression_columns(record);
         self.coerce_record(record)?;
         run_before(validating, record, update, erased).await
+    }
+
+    /// A write names only declared columns and the id, so a physical column
+    /// the entity leaves out (`is_admin`), or a case variant of a declared
+    /// one (`Salary` for `salary`) that a case-insensitive database would
+    /// write, is refused, and so is one a hook set. A table with no columns
+    /// accepts only the id.
+    ///
+    /// A key may also be a column's stored name (its alias, `fullName`) or
+    /// the top of a stored nested path (`place` for `place.venue_id`); the
+    /// backend checks the keys inside such a nested value.
+    fn refuse_undeclared_columns(&self, record: &Record<T::Value>) -> Result<()> {
+        let id_field = self.id_field_name();
+        let declared = |key: &str| {
+            key == id_field
+                || self.columns().contains_key(key)
+                // Computed and imported columns are declared; the steps
+                // after this drop them from a row read and saved back.
+                || self.is_expression_column(key)
+                || self.is_imported_column(key)
+                || self.columns().values().any(|c| {
+                    c.alias().is_some_and(|alias| {
+                        alias == key
+                            || alias
+                                .strip_prefix(key)
+                                .is_some_and(|rest| rest.starts_with('.'))
+                    })
+                })
+        };
+        match record.keys().find(|k| !declared(k.as_str())) {
+            Some(column) => Err(vantage_core::error!(
+                "column is not declared on this table",
+                table = self.table_name(),
+                column = column.as_str()
+            )
+            .mark_forbidden()),
+            None => Ok(()),
+        }
     }
 
     /// Each declared column of `record` other than the id, as the source

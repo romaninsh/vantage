@@ -15,7 +15,6 @@ struct Event {
     name: String,
     user_id: i64,
     is_admin: bool,
-    extra: String,
 }
 
 fn event() -> Event {
@@ -23,7 +22,6 @@ fn event() -> Event {
         name: "login".into(),
         user_id: 42,
         is_admin: true,
-        extra: "should be dropped".into(),
     }
 }
 
@@ -61,10 +59,6 @@ async fn inserts_append_one_json_line_each_in_call_order_even_through_a_clone() 
     assert_eq!(rows[0]["name"], "login");
     assert_eq!(rows[0]["user_id"], 42);
     assert_eq!(rows[0]["is_admin"], true);
-    assert!(
-        rows[0].get("extra").is_none(),
-        "a field outside the column list is dropped"
-    );
     assert_eq!(rows[1]["id"], second);
 }
 

@@ -30,7 +30,11 @@ async fn tables() -> (
             ],
         )
         .await;
-    let all = Table::new("item", src.clone()).with_id_column("id");
+    let all = Table::new("item", src.clone())
+        .with_id_column("id")
+        .with_column_of::<String>("name")
+        .with_column_of::<String>("parent")
+        .with_column_of::<i64>("price");
     let set = all.clone().with_condition(eq("parent", json!("p1")));
     (all, set)
 }

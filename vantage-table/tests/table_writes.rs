@@ -26,14 +26,38 @@ fn rec(value: Value) -> Record<Value> {
     Record::from(value)
 }
 
+/// The columns this file's writes and hooks name; a write may name only
+/// declared columns.
+fn declared(table: MockTable) -> MockTable {
+    [
+        "name",
+        "age",
+        "parent",
+        "parent_id",
+        "price",
+        "ssn",
+        "created",
+        "touched",
+        "saved",
+        "deleted",
+        "inserted",
+        "created_at",
+        "updated_at",
+    ]
+    .into_iter()
+    .fold(table, |table, column| {
+        table.with_column_of::<String>(column)
+    })
+}
+
 async fn empty() -> MockTable {
     let src = MockTableSource::new().with_data("t", vec![]).await;
-    MockTable::new("t", src)
+    declared(MockTable::new("t", src))
 }
 
 async fn with_rows(rows: Vec<Value>) -> MockTable {
     let src = MockTableSource::new().with_data("t", rows).await;
-    MockTable::new("t", src).with_id_column("id")
+    declared(MockTable::new("t", src).with_id_column("id"))
 }
 
 /// `all` holds `in1` (parent p1) and `out1` (parent p2); `set` is `all` narrowed
@@ -272,7 +296,7 @@ async fn conditioned_table_refuses_writes_the_source_cannot_confine() {
         .without_confined_writes()
         .with_data("t", vec![json!({"id": "1", "parent": "p1"})])
         .await;
-    let all = MockTable::new("t", src.clone());
+    let all = declared(MockTable::new("t", src.clone()));
     let set = all
         .clone()
         .with_condition(src.eq_value_condition("parent", json!("p1")).unwrap());
@@ -314,6 +338,63 @@ async fn a_condition_the_source_cannot_evaluate_refuses_by_id_writes() {
     );
     assert!(set.patch_value("1", &r).await.unwrap_err().is_unsupported());
     assert!(set.delete("1").await.unwrap_err().is_unsupported());
+}
+
+// --- undeclared columns -------------------------------------------------------
+
+/// A write names only declared columns: a column the table leaves out, a
+/// case variant of a declared one, or one a hook sets is refused before the
+/// source sees it. A table with no columns takes no values at all.
+#[tokio::test]
+async fn a_write_naming_an_undeclared_column_is_forbidden() {
+    let src = MockTableSource::new()
+        .with_data("t", vec![json!({"id": "1", "name": "a", "salary": 10})])
+        .await;
+    let table = MockTable::new("t", src.clone())
+        .with_id_column("id")
+        .with_column_of::<String>("name")
+        .with_column_of::<i64>("salary");
+
+    for bad in [
+        json!({"Salary": 99}),
+        json!({"is_admin": 1}),
+        json!({"name": "b", "is_admin": 1}),
+    ] {
+        let err = table.patch_value("1", &rec(bad.clone())).await.unwrap_err();
+        assert!(err.is_forbidden(), "{bad}: {err}");
+        let err = table
+            .replace_value("1", &rec(bad.clone()))
+            .await
+            .unwrap_err();
+        assert!(err.is_forbidden(), "{bad}: {err}");
+        let err = table.insert_value("2", &rec(bad)).await.unwrap_err();
+        assert!(err.is_forbidden(), "{err}");
+    }
+    let hooked = table.clone().with_hook(Hook::BeforeUpdate(
+        Phase::Populate,
+        setting("is_admin", "1"),
+    ));
+    let err = hooked
+        .patch_value("1", &rec(json!({"name": "b"})))
+        .await
+        .unwrap_err();
+    assert!(err.is_forbidden(), "{err}");
+
+    table
+        .patch_value("1", &rec(json!({"salary": 11})))
+        .await
+        .unwrap();
+    let stored = table.get_value("1").await.unwrap().unwrap();
+    assert_eq!(stored["salary"], json!(11));
+    assert_eq!(stored["name"], json!("a"));
+    assert!(stored.get("is_admin").is_none());
+
+    let bare = MockTable::new("t", src).with_id_column("id");
+    let err = bare
+        .patch_value("1", &rec(json!({"name": "c"})))
+        .await
+        .unwrap_err();
+    assert!(err.is_forbidden(), "{err}");
 }
 
 // --- denials ------------------------------------------------------------------
@@ -1001,7 +1082,7 @@ async fn prepare_insert_runs_hooks_and_invariants_without_writing() {
 async fn prepare_insert_refuses_a_table_whose_source_cannot_confine_writes() {
     let src = MockTableSource::new().without_confined_writes();
     let condition = src.eq_value_condition("parent", json!("p1")).unwrap();
-    let set = MockTable::new("t", src).with_condition(condition);
+    let set = declared(MockTable::new("t", src)).with_condition(condition);
     let err = set
         .prepare_insert(&rec(json!({"name": "a"})))
         .await
@@ -1061,7 +1142,7 @@ async fn insert_replace_and_patch_type_declared_columns_through_the_source() {
     let log: Log = Arc::default();
     let table = typed(vec![], log.clone()).await;
     table
-        .insert_value("1", &rec(json!({"name": "a", "age": "41", "note": "7"})))
+        .insert_value("1", &rec(json!({"name": "a", "age": "41"})))
         .await
         .unwrap();
     assert_eq!(
@@ -1069,10 +1150,7 @@ async fn insert_replace_and_patch_type_declared_columns_through_the_source() {
         json!(41)
     );
     table
-        .replace_value(
-            "1",
-            &rec(json!({"id": "1", "name": "a", "age": "42", "note": "7"})),
-        )
+        .replace_value("1", &rec(json!({"id": "1", "name": "a", "age": "42"})))
         .await
         .unwrap();
     assert_eq!(
@@ -1085,8 +1163,8 @@ async fn insert_replace_and_patch_type_declared_columns_through_the_source() {
         .unwrap();
     let row = table.get_value("1").await.unwrap().unwrap();
     assert_eq!(row["age"], json!(43));
-    assert_eq!(row["note"], json!("7"));
-    // The id column and the undeclared `note` never reach the source.
+    assert_eq!(row["name"], json!("a"));
+    // The id column never reaches the source.
     let mut seen = log.lock().unwrap().clone();
     seen.sort();
     assert_eq!(seen, ["age", "age", "age", "name", "name"]);
@@ -1192,7 +1270,7 @@ async fn a_value_that_does_not_fit_is_invalid_value_and_writes_nothing() {
 #[tokio::test]
 async fn a_row_read_and_written_back_unchanged_stays_unchanged() {
     let table = typed(
-        vec![json!({"id": "1", "name": "a", "age": 41, "note": "x"})],
+        vec![json!({"id": "1", "name": "a", "age": 41})],
         Log::default(),
     )
     .await;

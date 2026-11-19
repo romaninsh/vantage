@@ -114,6 +114,7 @@ async fn read_modify_write_preserves_object_id_date_decimal() -> TestResult {
     let seed = seed(&db).await?;
 
     let typed = Table::<MongoDB, EmptyEntity>::new("events", db.clone())
+        .with_id_column("_id")
         .with_column_of::<String>("client_id")
         .with_column_of::<AnyMongoType>("when")
         .with_column_of::<AnyMongoType>("far")
@@ -124,8 +125,13 @@ async fn read_modify_write_preserves_object_id_date_decimal() -> TestResult {
         .with_column_of::<String>("note");
     round_trip(&db, &db.vista_factory().from_table(typed)?, &seed).await?;
 
+    // A table with no columns reads the row but can't write it back.
     let bare = Table::<MongoDB, EmptyEntity>::new("events", db.clone());
-    round_trip(&db, &db.vista_factory().from_table(bare)?, &seed).await?;
+    let bare = db.vista_factory().from_table(bare)?;
+    let row = bare.get_value("e1").await?.expect("e1");
+    let err = bare.replace_value("e1", &row).await.unwrap_err();
+    assert!(err.is_forbidden(), "{err}");
+    assert_types_kept(&raw(&db, "e1").await, &seed);
 
     // The nested venue rides on its own spec column here.
     let yaml = db.vista_factory().build_from_spec(spec(

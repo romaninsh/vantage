@@ -116,13 +116,17 @@ async fn a_table_vista_is_insert_only_and_names_its_driver() {
 }
 
 #[tokio::test]
-async fn vista_insert_writes_declared_columns_and_drops_the_rest() {
+async fn vista_insert_refuses_an_undeclared_column() {
     let (dir, _writer, vista) = events();
 
     let mut record = Record::<CborValue>::new();
     record.insert("name".into(), CborValue::Text("login".into()));
     record.insert("user_id".into(), CborValue::Integer(42.into()));
-    record.insert("extra".into(), CborValue::Text("dropped".into()));
+    let mut with_extra = record.clone();
+    with_extra.insert("extra".into(), CborValue::Text("refused".into()));
+
+    let err = vista.insert_return_id_value(&with_extra).await.unwrap_err();
+    assert!(err.is_forbidden(), "{err}");
 
     let id = vista.insert_return_id_value(&record).await.unwrap();
     assert_eq!(id.len(), 26);
@@ -130,11 +134,10 @@ async fn vista_insert_writes_declared_columns_and_drops_the_rest() {
     sleep(Duration::from_millis(100)).await;
 
     let rows = read_lines(&dir.path().join("events.jsonl")).await;
-    assert_eq!(rows.len(), 1);
+    assert_eq!(rows.len(), 1, "the refused insert wrote nothing");
     assert_eq!(rows[0]["name"], "login");
     assert_eq!(rows[0]["user_id"], 42);
     assert_eq!(rows[0]["id"], id);
-    assert!(rows[0].get("extra").is_none());
 }
 
 #[tokio::test]

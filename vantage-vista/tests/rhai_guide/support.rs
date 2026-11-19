@@ -80,6 +80,30 @@ references:
   client: { table: client, kind: has_one, foreign_key: client }
 "#;
 
+/// The import target for orders, copied as they are or mapped. Its columns
+/// are untyped, so imported cells are stored as given.
+const ARCHIVE: &str = r#"
+name: archive
+id_column: id
+columns:
+  id: { type: String, flags: [id] }
+  client: {}
+  total: {}
+  status: {}
+  amount: {}
+  note: {}
+"#;
+
+/// The import target for clients.
+const BACKUP: &str = r#"
+name: backup
+id_column: id
+columns:
+  id: { type: String, flags: [id] }
+  name: {}
+  vip: {}
+"#;
+
 /// `table(name)` over the shop: a fresh memory Vista per call. A name the
 /// shop doesn't hold gets a new, empty table.
 pub fn resolver(store: &MemoryStore) -> Arc<dyn VistaResolver> {
@@ -90,6 +114,8 @@ pub fn resolver(store: &MemoryStore) -> Arc<dyn VistaResolver> {
     Arc::new(move |name: &str| match name {
         "client" => factory.from_yaml(CLIENT),
         "order" => factory.from_yaml(ORDER),
+        "archive" => factory.from_yaml(ARCHIVE),
+        "backup" => factory.from_yaml(BACKUP),
         other => factory.build_from_spec(MemoryVistaSpec::new(other)),
     })
 }

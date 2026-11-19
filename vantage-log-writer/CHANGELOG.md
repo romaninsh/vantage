@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.7 — 2026-11-19
+
+- Tests: tables declare the columns they write, and a vista insert with an undeclared key is
+  refused (vantage-table 4.1) rather than written without it.
+
 ## 0.7.6 — 2026-11-16
 
 - Requires vantage-table 4.0.0.
