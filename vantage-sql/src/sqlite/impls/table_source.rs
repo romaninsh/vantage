@@ -403,8 +403,6 @@ impl TableSource for SqliteDB {
             .ok_or_else(|| error!("Inserted row disappeared", id = id.clone()))
     }
 
-    /// Upserts on the id alone ([`upsert_on_id`]); another UNIQUE clash is
-    /// "UNIQUE constraint failed".
     async fn replace_table_value<E>(
         &self,
         table: &Table<Self, E>,
@@ -423,8 +421,8 @@ impl TableSource for SqliteDB {
             // after the record — a record-carried id (e.g. one a generator hook
             // filled) must not override the id the caller asked to write.
             .with_field(&id_field_name, AnySqliteType::from(id.clone()));
-        self.execute(&upsert_on_id(insert.expr(), &id_field_name, record))
-            .await?;
+        let replace_expr = upsert_on_id(insert.expr(), &id_field_name, record);
+        self.execute(&replace_expr).await?;
 
         self.get_table_value(table, id)
             .await?

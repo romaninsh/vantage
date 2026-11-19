@@ -414,7 +414,6 @@ impl TableSource for PostgresDB {
             .ok_or_else(|| error!("Inserted row disappeared", id = id.clone()))
     }
 
-    /// Upserts on the id alone ([`upsert_on_id`]).
     async fn replace_table_value<E>(
         &self,
         table: &Table<Self, E>,
@@ -433,8 +432,8 @@ impl TableSource for PostgresDB {
             // after the record — a record-carried id (e.g. one a generator hook
             // filled) must not override the id the caller asked to write.
             .with_field(&id_field_name, id_param(table, id));
-        self.execute(&upsert_on_id(insert.expr(), &id_field_name, record))
-            .await?;
+        let upsert = upsert_on_id(insert.expr(), &id_field_name, record);
+        self.execute(&upsert).await?;
 
         self.get_table_value(table, id)
             .await?

@@ -420,11 +420,6 @@ impl TableSource for MysqlDB {
             .ok_or_else(|| error!("Inserted row disappeared", id = id.clone()))
     }
 
-    /// Replace by id in two statements: an id lookup, then `UPDATE … WHERE id
-    /// AND <conditions>` for a stored row or a plain `INSERT` for a new one.
-    /// A clash on another UNIQUE column is a duplicate-key error, and so is a
-    /// concurrent insert of the same id between the two statements. Columns
-    /// the record leaves out keep their stored values.
     async fn replace_table_value<E>(
         &self,
         table: &Table<Self, E>,
@@ -439,7 +434,9 @@ impl TableSource for MysqlDB {
         let id_field_name = table.id_field_name();
         // Not `ON DUPLICATE KEY UPDATE`: that fires on any UNIQUE column and
         // would update whichever row holds the same e.g. email. Look the id
-        // up instead and UPDATE or INSERT by id alone.
+        // up instead and UPDATE or INSERT by id alone; another UNIQUE clash,
+        // or a concurrent insert of the same id, is a duplicate-key error.
+        // Columns the record leaves out keep their stored values.
         if id_exists_anywhere(self, table, id).await? {
             // The explicit id param is authoritative: a record-carried id
             // must not rewrite the row's key.
