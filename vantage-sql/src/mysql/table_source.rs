@@ -47,6 +47,23 @@ pub(super) fn id_value(id: &str) -> AnyMysqlType {
     AnyMysqlType::from(id.to_string())
 }
 
+/// `UPDATE … SET <values> WHERE id = ? AND <the table's conditions>`.
+fn update_in_set<E: Entity<AnyMysqlType>>(
+    table: &Table<MysqlDB, E>,
+    id: &str,
+    values: &Record<AnyMysqlType>,
+) -> Expression<AnyMysqlType> {
+    let id_val = id_value(id);
+    let id_condition = mysql_expr!("{} = {}", (ident(table.id_field_name())), id_val);
+    let mut update = crate::mysql::statements::MysqlUpdate::new(table.table_name())
+        .with_record(values)
+        .with_condition(id_condition);
+    for condition in table.conditions() {
+        update = update.with_condition(condition.clone());
+    }
+    update.expr()
+}
+
 pub(super) fn parse_rows(
     result: AnyMysqlType,
     id_field_name: &str,
@@ -422,17 +439,7 @@ impl TableSource for MysqlDB {
             let mut values = record.clone();
             values.shift_remove(&id_field_name);
             if !values.is_empty() {
-                let id_condition = {
-                    let id_val = id_value(id);
-                    mysql_expr!("{} = {}", (ident(&id_field_name)), id_val)
-                };
-                let mut update = crate::mysql::statements::MysqlUpdate::new(table.table_name())
-                    .with_record(&values)
-                    .with_condition(id_condition);
-                for condition in table.conditions() {
-                    update = update.with_condition(condition.clone());
-                }
-                self.execute(&update.expr()).await?;
+                self.execute(&update_in_set(table, id, &values)).await?;
             }
         } else {
             let insert = crate::mysql::statements::MysqlInsert::new(table.table_name())
@@ -459,19 +466,7 @@ impl TableSource for MysqlDB {
         E: Entity<Self::Value>,
     {
         guard_patch(self, table, id, partial).await?;
-
-        let id_field_name = table.id_field_name();
-        let id_condition = {
-            let id_val = id_value(id);
-            mysql_expr!("{} = {}", (ident(&id_field_name)), id_val)
-        };
-        let mut update = crate::mysql::statements::MysqlUpdate::new(table.table_name())
-            .with_record(partial)
-            .with_condition(id_condition);
-        for condition in table.conditions() {
-            update = update.with_condition(condition.clone());
-        }
-        self.execute(&update.expr()).await?;
+        self.execute(&update_in_set(table, id, partial)).await?;
 
         crate::table_writes::refetch_after_patch(self, table, id).await
     }

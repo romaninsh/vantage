@@ -22,7 +22,7 @@ use crate::primitives::identifier::ident;
 use crate::sqlite::SqliteDB;
 use crate::sqlite::types::{AnySqliteType, SqliteType};
 use crate::table_writes::{
-    guard_insert, guard_new_row, guard_patch, guard_replace, settle_failed_insert,
+    guard_insert, guard_new_row, guard_patch, guard_replace, settle_failed_insert, upsert_on_id,
 };
 use vantage_expressions::expr_any;
 
@@ -424,29 +424,8 @@ impl TableSource for SqliteDB {
             // after the record — a record-carried id (e.g. one a generator hook
             // filled) must not override the id the caller asked to write.
             .with_field(&id_field_name, AnySqliteType::from(id.clone()));
-        let base = insert.expr();
-
-        // Only an id clash updates. Not `INSERT OR REPLACE`: that deletes
-        // whichever row clashes on any UNIQUE column, not just the id.
-        let upsert = if record.is_empty() {
-            expr_any!(
-                "{} ON CONFLICT ({}) DO NOTHING",
-                (base),
-                (ident(&id_field_name))
-            )
-        } else {
-            let set_parts: Vec<Expression<AnySqliteType>> = record
-                .keys()
-                .map(|k| expr_any!("{} = excluded.{}", (ident(k)), (ident(k))))
-                .collect();
-            expr_any!(
-                "{} ON CONFLICT ({}) DO UPDATE SET {}",
-                (base),
-                (ident(&id_field_name)),
-                (Expression::from_vec(set_parts, ", "))
-            )
-        };
-        self.execute(&upsert).await?;
+        self.execute(&upsert_on_id(insert.expr(), &id_field_name, record))
+            .await?;
 
         self.get_table_value(table, id)
             .await?
