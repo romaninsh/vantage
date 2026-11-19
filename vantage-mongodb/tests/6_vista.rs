@@ -628,6 +628,37 @@ mongo:
         &bson::doc! { "city": "Hill Valley", "zip": "1986", "street": "Lyon Drive" }
     );
 
+    // The sub-document takes only declared paths: `address.street` and
+    // `address.secret` aren't columns, however they are spelled.
+    for undeclared in [
+        (
+            "address",
+            CborValue::Map(vec![("secret".into(), "x".into())]),
+        ),
+        ("address.street", CborValue::Text("Elm Street".into())),
+        ("address", CborValue::Null),
+        ("address", CborValue::Text("gone".into())),
+    ] {
+        let patch: Record<CborValue> = vec![(undeclared.0.to_string(), undeclared.1)]
+            .into_iter()
+            .collect();
+        let err = vista
+            .patch_value(marty_id.clone(), &patch)
+            .await
+            .unwrap_err();
+        assert!(err.is_forbidden(), "{err}");
+    }
+    let raw = db
+        .collection::<bson::Document>("clients")
+        .find_one(bson::doc! { "_id": ObjectId::parse_str(&marty_id)? })
+        .await?
+        .expect("doc present");
+    assert_eq!(
+        raw.get_document("address")?.get_str("street")?,
+        "Lyon Drive"
+    );
+    assert!(raw.get_document("address")?.get("secret").is_none());
+
     // A null parent can't take a dotted `$set`: the patch writes the
     // sub-document whole, built from the leaves it sets.
     let lorraine = ObjectId::new();

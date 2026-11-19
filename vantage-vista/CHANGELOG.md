@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.12.2 — 2026-11-19
+
+- Tests: the Rhai guide and vocabulary fixtures declare the columns their imports and dotted
+  writes use, as vantage-table 4.1 requires.
+
 ## 2.12.1 — 2026-11-17
 
 - Fix: a script's `insert()` and `upsert()` return the id as an integer when the id column holds

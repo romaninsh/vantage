@@ -336,6 +336,19 @@ async fn import_keeps_nested_paths() -> TestResult {
     );
     assert!(docs[0].get("city").is_none());
 
+    // The sub-document takes only declared paths on import too.
+    let mut sneaky = Record::new();
+    sneaky.insert(
+        "address".to_string(),
+        CborValue::Map(vec![("secret".into(), "x".into())]),
+    );
+    let err = v
+        .import_values(&batch(vec![(ObjectId::new(), sneaky)]))
+        .await
+        .unwrap_err();
+    assert!(err.is_forbidden(), "{err}");
+    assert_eq!(stored(&db, "clients").await?.len(), 1);
+
     teardown(&db).await;
     Ok(())
 }

@@ -562,7 +562,7 @@ async fn an_unrecognised_count_result_is_an_error_not_zero() {
 
 #[tokio::test]
 async fn get_count_counts_the_rows_and_follows_writes() {
-    let table = people().await;
+    let table = people().await.with_column_of::<String>("name");
     assert_eq!(table.get_count().await.unwrap(), 2);
     table
         .insert_value("3", &Record::from(json!({"name": "Carol"})))
@@ -589,7 +589,7 @@ async fn the_count_expression_executes_to_the_live_row_count() {
         .with_data("t", vec![json!({"id": "1"}), json!({"id": "2"})])
         .await
         .with_query_source(mock_builder::new());
-    let table = MockTable::new("t", src);
+    let table = MockTable::new("t", src).with_column_of::<String>("name");
     table
         .insert_value("3", &Record::from(json!({"name": "Carol"})))
         .await

@@ -310,10 +310,14 @@ write stops it with nothing written:
    it, to choose between insert and replace;
 3. the `Phase::Normalize` hooks: clean the input (trim, default empties);
 4. the `Phase::Populate` hooks, the default phase: set or compute fields;
-5. the `Phase::Validate` hooks: judge the record as it will be written;
-6. dropping imported and expression columns, then the set's invariants;
-7. the datasource write;
-8. the after-hooks, at once or after the commit.
+5. refusing a key the table doesn't declare (Forbidden), whether the caller or a hook set it: a
+   write names declared columns, the id, a column's stored name or the top of a declared nested
+   path, so `is_admin` left out of the entity, or `Salary` for a read-only `salary`, never
+   reaches the database;
+6. the `Phase::Validate` hooks: judge the record as it will be written;
+7. dropping imported and expression columns, then the set's invariants;
+8. the datasource write;
+9. the after-hooks, at once or after the commit.
 
 Within a phase, hooks run in registration order. `BeforeSave` hooks take their place among
 `BeforeInsert` / `BeforeUpdate` by phase and registration, as if registered on both.

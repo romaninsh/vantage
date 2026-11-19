@@ -194,7 +194,9 @@ mod tests {
 
         // Nothing panics before the drop, so the database goes either way.
         let ran = timeout(Duration::from_secs(4), async {
-            let table = Table::<MongoDB, EmptyEntity>::new("a", db.clone()).with_id_column("id");
+            let table = Table::<MongoDB, EmptyEntity>::new("a", db.clone())
+                .with_id_column("id")
+                .with_column_of::<i64>("n");
             let a = db.vista_factory().from_table(table)?;
             let tx = Transaction::new();
             let row: Record<CborValue> = [("n".to_string(), CborValue::Integer(1.into()))]

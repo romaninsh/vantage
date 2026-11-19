@@ -24,7 +24,11 @@ fn rec(value: Value) -> Record<Value> {
 
 async fn table(rows: Vec<Value>) -> MockTable {
     let src = MockTableSource::new().with_data("t", rows).await;
-    MockTable::new("t", src).with_id_column("id")
+    MockTable::new("t", src)
+        .with_id_column("id")
+        .with_column_of::<String>("name")
+        .with_column_of::<String>("environment")
+        .with_column_of::<bool>("stamped")
 }
 
 #[tokio::test]

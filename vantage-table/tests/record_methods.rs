@@ -29,12 +29,30 @@ fn person(id: &str, name: &str, age: i32) -> Person {
 
 async fn users(rows: Vec<serde_json::Value>) -> Table<MockTableSource, TestUser> {
     let mock = MockTableSource::new().with_data("users", rows).await;
-    Table::<MockTableSource, EmptyEntity>::new("users", mock).into_entity::<TestUser>()
+    Table::<MockTableSource, EmptyEntity>::new("users", mock)
+        .with_id_column("id")
+        .with_column_of::<String>("name")
+        .with_column_of::<String>("email")
+        .with_column_of::<bool>("active")
+        .into_entity::<TestUser>()
 }
 
 async fn people(rows: Vec<serde_json::Value>) -> Table<MockTableSource, Person> {
+    people_with(rows, &["name", "age"]).await
+}
+
+async fn people_with(
+    rows: Vec<serde_json::Value>,
+    columns: &[&str],
+) -> Table<MockTableSource, Person> {
     let mock = MockTableSource::new().with_data("people", rows).await;
-    Table::<MockTableSource, EmptyEntity>::new("people", mock).into_entity::<Person>()
+    columns
+        .iter()
+        .fold(
+            Table::<MockTableSource, EmptyEntity>::new("people", mock).with_id_column("id"),
+            |table, column| table.with_column_of::<String>(*column),
+        )
+        .into_entity::<Person>()
 }
 
 #[tokio::test]
@@ -142,9 +160,12 @@ async fn streaming_a_row_that_does_not_fit_the_entity_yields_an_error() {
 
 #[tokio::test]
 async fn streamed_entities_carry_the_lazy_columns_like_listed_ones() {
-    let table = people(vec![serde_json::json!({"id": "1", "name": "Alice"})])
-        .await
-        .with_lazy_expression("age", |_| async { Ok(serde_json::json!(30)) });
+    let table = people_with(
+        vec![serde_json::json!({"id": "1", "name": "Alice"})],
+        &["name"],
+    )
+    .await
+    .with_lazy_expression("age", |_| async { Ok(serde_json::json!(30)) });
     assert_eq!(table.list().await.unwrap()["1"], person("1", "Alice", 30));
 
     let mut stream = table.stream();

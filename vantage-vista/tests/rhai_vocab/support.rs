@@ -28,7 +28,8 @@ pub fn store() -> MemoryStore {
     store
 }
 
-/// Memory Vistas over `store`, declaring `id`, `a`, `n` and `tag` (`short`
+/// Memory Vistas over `store`, declaring `id`, `a`, `n`, `tag`, `name` and
+/// the untyped nested `inventory`, `meta`, `deep` and `flat` (`short`
 /// mints 10-character base58 ids); `mock` a mock without bulk import that
 /// already holds `r1 {a:7}`, `auto` and `intid` empty mocks with a numeric id
 /// column, flagged `auto` on `auto`.
@@ -55,7 +56,9 @@ pub fn resolver(store: &MemoryStore) -> Arc<dyn VistaResolver> {
         }
         let vista = factory.from_yaml(&format!(
             "name: {name}\nid_column: id\ncolumns:\n  id: {{ type: String, flags: [id] }}\n  \
-             a: {{ type: int }}\n  n: {{ type: int }}\n  tag: {{ type: String }}\n"
+             a: {{ type: int }}\n  n: {{ type: int }}\n  tag: {{ type: String }}\n  \
+             name: {{ type: String }}\n  inventory: {{}}\n  meta: {{}}\n  deep: {{}}\n  \
+             flat: {{}}\n"
         ))?;
         if name == "short" {
             return Ok(vista.with_id_generator(IdGenerator::short(10, ShortId::BASE58)?));

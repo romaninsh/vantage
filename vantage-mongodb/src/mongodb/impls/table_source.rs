@@ -198,6 +198,78 @@ fn record_to_doc(record: &Record<AnyMongoType>) -> bson::Document {
     d
 }
 
+/// A sub-document written under the top of a nested column path (`place`
+/// for a column stored at `place.venue_id`) holds only declared paths:
+/// `{place: {secret: 1}}` is refused like any undeclared column, and so is
+/// a scalar, array or null there, which would replace the whole sub-document.
+pub(crate) fn refuse_undeclared_nested<E: Entity<AnyMongoType>>(
+    table: &Table<MongoDB, E>,
+    record: &Record<AnyMongoType>,
+) -> Result<()> {
+    let paths: Vec<&str> = table
+        .columns()
+        .values()
+        .filter_map(|c| c.alias())
+        .filter(|alias| alias.contains('.'))
+        .collect();
+    if paths.is_empty() {
+        return Ok(());
+    }
+    for (key, value) in record.iter() {
+        let exact = table.columns().contains_key(key)
+            || table.columns().values().any(|c| c.alias() == Some(key));
+        let nested_root = paths.iter().any(|p| {
+            p.strip_prefix(key.as_str())
+                .is_some_and(|r| r.starts_with('.'))
+        });
+        if exact || !nested_root {
+            continue;
+        }
+        match value.value() {
+            Bson::Document(doc) => nested_paths_declared(table.table_name(), key, doc, &paths)?,
+            _ => {
+                return Err(error!(
+                    "column is not declared on this table",
+                    table = table.table_name(),
+                    column = key.as_str()
+                )
+                .mark_forbidden());
+            }
+        }
+    }
+    Ok(())
+}
+
+fn nested_paths_declared(
+    table: &str,
+    prefix: &str,
+    doc: &bson::Document,
+    paths: &[&str],
+) -> Result<()> {
+    for (key, value) in doc {
+        let path = format!("{prefix}.{key}");
+        if paths.contains(&path.as_str()) {
+            continue;
+        }
+        let deeper = paths.iter().any(|p| {
+            p.strip_prefix(path.as_str())
+                .is_some_and(|r| r.starts_with('.'))
+        });
+        match value {
+            Bson::Document(inner) if deeper => nested_paths_declared(table, &path, inner, paths)?,
+            _ => {
+                return Err(error!(
+                    "column is not declared on this table",
+                    table = table,
+                    column = path
+                )
+                .mark_forbidden());
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Put `value` where `$set` would: a dotted key (`"address.city"`) walks
 /// into sub-documents, creating them and overwriting a scalar in the way.
 pub(crate) fn set_dotted(doc: &mut bson::Document, key: &str, value: Bson) {
@@ -701,6 +773,7 @@ impl TableSource for MongoDB {
         E: Entity<Self::Value>,
     {
         self.ensure_writable(table.table_name())?;
+        refuse_undeclared_nested(table, record)?;
         let coll = self.doc_collection(table.table_name());
         let mut doc = bson::Document::new();
         doc.insert("_id", id);
@@ -757,6 +830,7 @@ impl TableSource for MongoDB {
         E: Entity<Self::Value>,
     {
         self.ensure_writable(table.table_name())?;
+        refuse_undeclared_nested(table, record)?;
         let coll = self.doc_collection(table.table_name());
         let table_filter = write_filter(self, table).await?;
         let mut replacement = bson::Document::new();
@@ -815,6 +889,7 @@ impl TableSource for MongoDB {
         E: Entity<Self::Value>,
     {
         self.ensure_writable(table.table_name())?;
+        refuse_undeclared_nested(table, partial)?;
         let not_found = || error!("Record not found", id = id.to_string()).mark_not_found();
         let coll = self.doc_collection(table.table_name());
         let table_filter = write_filter(self, table).await?;
@@ -885,6 +960,7 @@ impl TableSource for MongoDB {
         E: Entity<Self::Value>,
     {
         self.ensure_writable(table.table_name())?;
+        refuse_undeclared_nested(table, record)?;
         let coll = self.doc_collection(table.table_name());
         let mut doc = bson::Document::new();
         for (k, v) in record.iter() {
