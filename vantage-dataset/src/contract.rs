@@ -8,6 +8,8 @@
 //! `in1` = `{name: "a", parent: "p1"}` (inside `set`) and
 //! `out1` = `{name: "b", parent: "p2"}` (outside). `set` is the same storage
 //! narrowed by `parent = "p1"`.
+//! [`check_list_condition`] takes the same seed with `set` narrowed by
+//! `parent IN ("p1", "p3")` instead.
 //! Before [`check_operator_condition`], seed `cheap` = `{price: 5}` and
 //! `dear` = `{price: 20}`; `set` is narrowed by `price > 10`.
 
@@ -392,6 +394,76 @@ where
         )
         .await
         .expect("an insert that fits the operator condition succeeds");
+}
+
+/// `set` is narrowed by a list (`parent IN ("p1", "p3")`), as a list-valued
+/// access rule narrows a table, over the usual `in1` (p1) / `out1` (p2) seed.
+/// A list has no single value to stamp, so a write must name a listed value
+/// itself: one outside the list, or none, is a Conflict.
+pub async fn check_list_condition<S>(f: &Fixture<'_, S>)
+where
+    S: ReadableValueSet + WritableValueSet + Sync,
+    S::Value: InvariantValue,
+{
+    let p = |s: &str| ("parent", (f.text)(s));
+    for (id, record, rule) in [
+        (
+            "n1",
+            rec(vec![("name", (f.text)("x")), p("p2")]),
+            "an insert outside the list must fail",
+        ),
+        (
+            "n2",
+            rec(vec![("name", (f.text)("x"))]),
+            "an insert naming no listed value must fail",
+        ),
+    ] {
+        let e = fails(f.set.insert_value((f.id)(id), &record).await, rule);
+        assert!(e.is_conflict(), "{rule}: {e}");
+        assert!(
+            row(f.all, (f.id)(id)).await.is_none(),
+            "{rule}: nothing stored"
+        );
+    }
+    let e = fails(
+        f.set
+            .replace_value((f.id)("in1"), &rec(vec![("name", (f.text)("x")), p("p2")]))
+            .await,
+        "a replace moving the row outside the list must fail",
+    );
+    assert!(e.is_conflict(), "{e}");
+    let e = fails(
+        f.set.patch_value((f.id)("in1"), &rec(vec![p("p2")])).await,
+        "a patch moving the row outside the list must fail",
+    );
+    assert!(e.is_conflict(), "{e}");
+    assert!(has(
+        &row(f.all, (f.id)("in1")).await.unwrap(),
+        "parent",
+        &(f.text)("p1")
+    ));
+
+    f.set
+        .patch_value((f.id)("in1"), &rec(vec![p("p3")]))
+        .await
+        .expect("a patch to another listed value succeeds");
+    assert!(has(
+        &row(f.all, (f.id)("in1")).await.unwrap(),
+        "parent",
+        &(f.text)("p3")
+    ));
+    f.set
+        .insert_value((f.id)("n3"), &rec(vec![("name", (f.text)("x")), p("p3")]))
+        .await
+        .expect("an insert of a listed value succeeds");
+    assert!(
+        has(
+            &row(f.all, (f.id)("out1")).await.unwrap(),
+            "parent",
+            &(f.text)("p2")
+        ),
+        "a row outside the list stays untouched"
+    );
 }
 
 /// `set` holds a condition the backend can neither apply nor evaluate:

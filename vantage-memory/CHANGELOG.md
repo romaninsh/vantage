@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.0.2 — 2026-11-19
+
+- Tests: the typed table runs `contract::check_list_condition`.
+
 ## 4.0.1 — 2026-11-17
 
 - Fix: the id cell of a row keeps the id column's declared type. An id column declared `int`

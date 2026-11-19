@@ -95,6 +95,31 @@ typed_check!(typed_patch_is_confined, contract::check_patch);
 typed_check!(typed_replace_is_confined, contract::check_replace);
 
 #[tokio::test]
+async fn typed_list_condition_keeps_writes_in_the_list() {
+    use vantage_table::prelude::TableSource;
+    let db = MemoryDB::from_store(seeded());
+    let all = Table::<MemoryDB, EmptyEntity>::new("item", db.clone())
+        .with_id_column("id")
+        .with_column_of::<String>("name")
+        .with_column_of::<String>("parent");
+    let listed = db
+        .in_values_condition(
+            "parent",
+            vec![AnyMemoryType::from("p1"), AnyMemoryType::from("p3")],
+        )
+        .unwrap();
+    let set = all.clone().with_condition(listed);
+    contract::check_list_condition(&Fixture {
+        all: &all,
+        set: &set,
+        id: |s| s.to_string(),
+        text: |s| AnyMemoryType::from(s),
+        detects_outside: true,
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn vista_operator_condition_keeps_rows_in_set() {
     let store = MemoryStore::new();
     let t = store.table("item");

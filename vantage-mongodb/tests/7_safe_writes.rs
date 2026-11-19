@@ -250,3 +250,22 @@ async fn operator_condition_keeps_rows_in_set() {
     .await;
     teardown(&db).await;
 }
+
+#[tokio::test]
+async fn list_condition_keeps_writes_in_the_list() {
+    use vantage_table::traits::table_source::TableSource;
+    let (db, all, _) = fixture().await;
+    let listed = db
+        .in_values_condition("parent", vec![text("p1"), text("p3")])
+        .unwrap();
+    let set = all.clone().with_condition(listed);
+    contract::check_list_condition(&Fixture {
+        all: &all,
+        set: &set,
+        id: |s| MongoId::from(s),
+        text: |s| AnyMongoType::from(s),
+        detects_outside: true,
+    })
+    .await;
+    teardown(&db).await;
+}

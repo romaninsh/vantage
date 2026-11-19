@@ -50,6 +50,25 @@ macro_rules! safe_writes_tests {
         confined_check!(delete_all_is_confined, check_delete_all, $value);
 
         #[tokio::test]
+        async fn list_condition_keeps_writes_in_the_list() {
+            use vantage_table::traits::table_source::TableSource;
+            let (all, _) = fixture("list_condition_keeps_writes_in_the_list").await;
+            let listed = all
+                .data_source()
+                .in_values_condition("parent", vec!["p1".into(), "p3".into()])
+                .unwrap();
+            let set = all.clone().with_condition(listed);
+            contract::check_list_condition(&Fixture {
+                all: &all,
+                set: &set,
+                id: |s| s.to_string(),
+                text: |s| <$value>::from(s.to_string()),
+                detects_outside: true,
+            })
+            .await;
+        }
+
+        #[tokio::test]
         async fn operator_condition_keeps_rows_in_set() {
             let all = item("operator_condition_keeps_rows_in_set").await;
             all.insert_value(
