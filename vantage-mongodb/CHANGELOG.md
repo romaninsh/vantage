@@ -4,7 +4,9 @@
 
 - A sub-document written under the top of a nested column path holds only declared paths:
   with `city` stored at `address.city`, a write of `{"address": {"secret": 1}}` fails with
-  Forbidden "column is not declared on this table" instead of storing `address.secret`.
+  Forbidden "column is not declared on this table" instead of storing `address.secret`. A scalar,
+  array or null under `address`, which would replace the whole sub-document, is refused too, and
+  a vista import runs the same check.
 
 ## 4.0.0 — 2026-11-16
 

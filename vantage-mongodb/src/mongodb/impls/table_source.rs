@@ -200,8 +200,9 @@ fn record_to_doc(record: &Record<AnyMongoType>) -> bson::Document {
 
 /// A sub-document written under the top of a nested column path (`place`
 /// for a column stored at `place.venue_id`) holds only declared paths:
-/// `{place: {secret: 1}}` is refused like any undeclared column.
-fn refuse_undeclared_nested<E: Entity<AnyMongoType>>(
+/// `{place: {secret: 1}}` is refused like any undeclared column, and so is
+/// a scalar, array or null there, which would replace the whole sub-document.
+pub(crate) fn refuse_undeclared_nested<E: Entity<AnyMongoType>>(
     table: &Table<MongoDB, E>,
     record: &Record<AnyMongoType>,
 ) -> Result<()> {
@@ -217,8 +218,23 @@ fn refuse_undeclared_nested<E: Entity<AnyMongoType>>(
     for (key, value) in record.iter() {
         let exact = table.columns().contains_key(key)
             || table.columns().values().any(|c| c.alias() == Some(key));
-        if let (false, Bson::Document(doc)) = (exact, value.value()) {
-            nested_paths_declared(table.table_name(), key, doc, &paths)?;
+        let nested_root = paths.iter().any(|p| {
+            p.strip_prefix(key.as_str())
+                .is_some_and(|r| r.starts_with('.'))
+        });
+        if exact || !nested_root {
+            continue;
+        }
+        match value.value() {
+            Bson::Document(doc) => nested_paths_declared(table.table_name(), key, doc, &paths)?,
+            _ => {
+                return Err(error!(
+                    "column is not declared on this table",
+                    table = table.table_name(),
+                    column = key.as_str()
+                )
+                .mark_forbidden());
+            }
         }
     }
     Ok(())

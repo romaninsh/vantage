@@ -636,6 +636,8 @@ mongo:
             CborValue::Map(vec![("secret".into(), "x".into())]),
         ),
         ("address.street", CborValue::Text("Elm Street".into())),
+        ("address", CborValue::Null),
+        ("address", CborValue::Text("gone".into())),
     ] {
         let patch: Record<CborValue> = vec![(undeclared.0.to_string(), undeclared.1)]
             .into_iter()
