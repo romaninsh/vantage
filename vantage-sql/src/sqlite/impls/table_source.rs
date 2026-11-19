@@ -140,6 +140,20 @@ fn parse_rows<E: Entity<AnySqliteType>>(
     Ok(records)
 }
 
+/// A write as `INSERT OR ABORT` / `UPDATE OR ABORT`. Without it a UNIQUE
+/// column the schema declares `ON CONFLICT REPLACE` deletes the row that
+/// clashes with the write, and `ON CONFLICT IGNORE` drops the write silently.
+fn or_abort(expr: Expression<AnySqliteType>) -> Expression<AnySqliteType> {
+    let template = if let Some(rest) = expr.template.strip_prefix("INSERT ") {
+        format!("INSERT OR ABORT {rest}")
+    } else if let Some(rest) = expr.template.strip_prefix("UPDATE ") {
+        format!("UPDATE OR ABORT {rest}")
+    } else {
+        return expr;
+    };
+    Expression::new(template, expr.parameters)
+}
+
 #[async_trait]
 impl TableSource for SqliteDB {
     type Column<Type>
@@ -394,7 +408,7 @@ impl TableSource for SqliteDB {
             // after the record — a record-carried id (e.g. one a generator hook
             // filled) must not override the id the caller asked to write.
             .with_field(&id_field_name, AnySqliteType::from(id.clone()));
-        if let Err(e) = self.execute(&insert.expr()).await {
+        if let Err(e) = self.execute(&or_abort(insert.expr())).await {
             return settle_failed_insert(self, table, id, e).await;
         }
 
@@ -421,7 +435,7 @@ impl TableSource for SqliteDB {
             // after the record — a record-carried id (e.g. one a generator hook
             // filled) must not override the id the caller asked to write.
             .with_field(&id_field_name, AnySqliteType::from(id.clone()));
-        let replace_expr = upsert_on_id(insert.expr(), &id_field_name, record);
+        let replace_expr = upsert_on_id(or_abort(insert.expr()), &id_field_name, record);
         self.execute(&replace_expr).await?;
 
         self.get_table_value(table, id)
@@ -449,7 +463,7 @@ impl TableSource for SqliteDB {
         for condition in table.conditions() {
             update = update.with_condition(condition.clone());
         }
-        self.execute(&update.expr()).await?;
+        self.execute(&or_abort(update.expr())).await?;
 
         crate::table_writes::refetch_after_patch(self, table, id).await
     }
@@ -499,7 +513,7 @@ impl TableSource for SqliteDB {
         let insert =
             crate::sqlite::statements::SqliteInsert::new(table.table_name()).with_record(record);
 
-        let base = insert.expr();
+        let base = or_abort(insert.expr());
         let returning = expr_any!("{} RETURNING {}", (base), (ident(&id_field_name)));
         let result = self.execute(&returning).await?;
         let mut rows = parse_rows(table, result, &id_field_name)?;

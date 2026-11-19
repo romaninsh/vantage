@@ -8,6 +8,9 @@
   on SQLite (`INSERT OR REPLACE` drops every clashing row). It now fails with the duplicate-key
   error and leaves `b` alone, as Postgres already did. MySQL looks the id up and runs an `UPDATE`
   or an `INSERT`; SQLite uses `INSERT … ON CONFLICT (id) DO UPDATE`.
+- SQLite writes (insert, replace, patch) run as `INSERT OR ABORT` / `UPDATE OR ABORT`, so a
+  UNIQUE column the schema declares `ON CONFLICT REPLACE` fails the write instead of deleting
+  the row that holds the value.
 - On SQLite, a replace of a stored row keeps the stored value of a column the record leaves out,
   as on Postgres and MySQL. Before, `INSERT OR REPLACE` reset it to the column default.
 
