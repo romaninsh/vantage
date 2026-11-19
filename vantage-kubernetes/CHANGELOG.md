@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.5 — 2026-11-17
+
+- Lockfile follows the published feedback round-up crates; no code changes.
+
 ## 0.7.4 — 2026-11-16
 
 - Requires vantage-table 4.0.0.
