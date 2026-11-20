@@ -229,26 +229,29 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         self.shape_and_check(hooks, record, None, true).await
     }
 
-    /// The column a write key stands for, as its rules name it: a declared
-    /// column's name, the column whose stored name the key is (`city` for
-    /// `address.city`), or the contained relation's host column for a
-    /// dotted key under it (`address` for `address.city`). Any other key is
-    /// returned as it is.
-    pub(crate) fn column_of_key<'k>(&'k self, key: &'k str) -> &'k str {
-        if self.columns().contains_key(key) {
-            return key;
-        }
-        if let Some((name, _)) = self.columns().iter().find(|(_, c)| c.alias() == Some(key)) {
-            return name;
-        }
-        self.contained
-            .iter()
-            .map(|rel| rel.host_column())
-            .find(|host| {
-                key.strip_prefix(host)
-                    .is_some_and(|rest| rest.starts_with('.'))
-            })
-            .unwrap_or(key)
+    /// Every column a write key stands for, as rules name them: the key
+    /// itself, each column whose stored name the key is (`city` for
+    /// `address.city`), and each contained host it is a dotted key under
+    /// (`address` for `address.city`). A key can be several at once, and the
+    /// write reaches all of them, so a rule on any one covers it.
+    pub(crate) fn columns_of_key<'k>(&'k self, key: &'k str) -> Vec<&'k str> {
+        let mut columns = vec![key];
+        columns.extend(
+            self.columns()
+                .iter()
+                .filter(|(_, c)| c.alias() == Some(key))
+                .map(|(name, _)| name.as_str()),
+        );
+        columns.extend(
+            self.contained
+                .iter()
+                .map(|rel| rel.host_column())
+                .filter(|host| {
+                    key.strip_prefix(host)
+                        .is_some_and(|rest| rest.starts_with('.'))
+                }),
+        );
+        columns
     }
 
     /// A write names only declared columns and the id, so a physical column

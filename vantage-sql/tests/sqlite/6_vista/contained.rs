@@ -87,6 +87,19 @@ async fn a_dotted_contained_key_answers_to_the_host_rule() -> TestResult {
         .replace_value("p1", &one("address.city", "c"))
         .await?;
     assert_eq!(stored().await, r#"{"city":"b"}"#);
+
+    // A column aliased under the host (`town` read as `address.city`) doesn't
+    // hide the key from the host's rule: the write reaches both.
+    let aliased = locked.clone().with_column(
+        vantage_table::column::core::Column::<AnySqliteType>::new("town")
+            .with_alias("address.city"),
+    );
+    let err = aliased
+        .patch_value("p1", &one("address.city", "c"))
+        .await
+        .unwrap_err();
+    assert!(err.is_forbidden(), "{err}");
+    assert_eq!(stored().await, r#"{"city":"b"}"#);
     Ok(())
 }
 

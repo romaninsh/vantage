@@ -227,13 +227,11 @@ where
         // each keeps its stored value, so an unchanged round-trip saves and a
         // backend that rewrites the whole row doesn't erase it.
         // A key spelled as a stored name or dotted under a contained host
-        // answers to its column's rule (see `column_of_key`).
+        // answers to each such column's rule (see `columns_of_key`).
         record.retain(|name, _| {
-            self.denials().column_rule(name).is_none()
-                && self
-                    .denials()
-                    .column_rule(self.column_of_key(name))
-                    .is_none()
+            self.columns_of_key(name)
+                .into_iter()
+                .all(|column| self.denials().column_rule(column).is_none())
         });
         // A read-only contained host goes back after the contained check: its
         // stored value is the store's own, which may hold fields from before
