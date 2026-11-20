@@ -219,7 +219,7 @@ async fn test_datetime_date_is_refused_on_read() {
     };
     // DATETIME takes the date as midnight, but an instant comes back, and an
     // instant never reads as a date
-    t.replace(&"dt_d".to_string(), &orig).await.unwrap();
+    t.replace("dt_d", &orig).await.unwrap();
     assert!(t.get("dt_d").await.is_err());
 }
 
