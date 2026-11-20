@@ -7,6 +7,7 @@
   one request is waiting it now fails at once with the server's error. With several waiting the
   error is logged and they keep their deadline, since the others may still be applied. An error
   for an id nothing waits for is logged.
+- Drops the unused `paste` and `vantage-core` dependencies.
 
 ## 1.2.2 — 2026-11-16
 

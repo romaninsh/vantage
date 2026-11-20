@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.2 — 2026-11-20
+
+- Drops the unused `chrono` and `thiserror` dependencies. The `chrono` feature stays and enables
+  nothing, so feature lists that name it still build.
+
 ## 1.3.1 — 2026-11-16
 
 - Drops the unused `vantage-dataset` dependency.

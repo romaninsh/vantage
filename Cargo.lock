@@ -4796,7 +4796,6 @@ dependencies = [
  "futures-util",
  "hex",
  "indexmap 2.14.0",
- "paste",
  "reqwest",
  "rustls",
  "serde",
@@ -4807,7 +4806,6 @@ dependencies = [
  "tracing",
  "url",
  "uuid",
- "vantage-core",
  "vantage-types",
 ]
 
@@ -5837,9 +5835,8 @@ dependencies = [
 
 [[package]]
 name = "vantage-dataset"
-version = "1.3.0"
+version = "1.3.1"
 dependencies = [
- "anyhow",
  "async-stream",
  "async-trait",
  "csv",
@@ -5924,13 +5921,11 @@ dependencies = [
 
 [[package]]
 name = "vantage-expressions"
-version = "1.3.1"
+version = "1.3.2"
 dependencies = [
  "async-trait",
- "chrono",
  "serde",
  "serde_json",
- "thiserror 2.0.18",
  "tokio",
  "tokio-test",
  "vantage-core",

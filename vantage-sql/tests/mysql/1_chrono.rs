@@ -9,9 +9,9 @@ use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use vantage_sql::mysql::MysqlType;
 use vantage_sql::mysql::{AnyMysqlType, MysqlDB};
 use vantage_table::table::Table;
-use vantage_types::entity;
+use vantage_types::{TryIntoRecord, entity};
 
-use vantage_dataset::{ReadableDataSet, WritableDataSet};
+use vantage_dataset::{ReadableDataSet, WritableDataSet, WritableValueSet};
 
 const MYSQL_URL: &str = "mysql://vantage:vantage@localhost:3306/vantage_v5";
 
@@ -217,9 +217,10 @@ async fn test_datetime_date_is_refused_on_read() {
         name: "d".into(),
         value: date_val(),
     };
-    // DATETIME takes the date as midnight, but an instant comes back, and an
-    // instant never reads as a date
-    t.replace("dt_d", &orig).await.unwrap();
+    // DATETIME takes the date as midnight (the record write doesn't read an
+    // entity back), but an instant comes back, and an instant never reads as a date
+    let record = orig.clone().try_into_record().unwrap();
+    t.replace_value("dt_d", &record).await.unwrap();
     assert!(t.get("dt_d").await.is_err());
 }
 

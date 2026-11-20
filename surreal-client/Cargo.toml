@@ -26,6 +26,4 @@ futures = "0.3.32"
 url = "2.5.8"
 uuid = { version = "1.23", features = ["v4"] }
 vantage-types = { version = "1.0.0", path = "../vantage-types", features = ["serde"] }
-vantage-core = { version = "1.0.0", path = "../vantage-core" }
-paste = "1.0"
 indexmap = "2.14"
