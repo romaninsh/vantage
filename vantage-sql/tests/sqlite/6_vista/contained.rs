@@ -35,6 +35,89 @@ fn field(name: &str, value: CborValue) -> Record<CborValue> {
     r
 }
 
+/// A dotted key under a contained host is a write to the host: a rule that
+/// makes the host read-only refuses it on patch and drops it on replace. A
+/// contained record takes no `id` its table doesn't declare.
+#[tokio::test]
+async fn a_dotted_contained_key_answers_to_the_host_rule() -> TestResult {
+    use vantage_sql::sqlite::AnySqliteType;
+
+    let db = SqliteDB::connect("sqlite::memory:").await.unwrap();
+    sqlx::query("CREATE TABLE person (id TEXT PRIMARY KEY, address TEXT)")
+        .execute(db.pool())
+        .await?;
+    sqlx::query(r#"INSERT INTO person VALUES ('p1', '{"city":"a"}')"#)
+        .execute(db.pool())
+        .await?;
+    let people = Table::<SqliteDB, EmptyEntity>::new("person", db.clone())
+        .with_id_column("id")
+        .with_column_of::<String>("address")
+        .with_contained_one("address", "address", |db| {
+            Table::<SqliteDB, EmptyEntity>::new("address", db).with_column_of::<String>("city")
+        });
+    let one = |key: &str, value: &str| -> Record<AnySqliteType> {
+        [(key.to_string(), AnySqliteType::from(value.to_string()))]
+            .into_iter()
+            .collect()
+    };
+    let stored = || async {
+        let (address,): (String,) = sqlx::query_as("SELECT address FROM person WHERE id = 'p1'")
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
+        address
+    };
+
+    let err = people
+        .patch_value("p1", &one("address.id", "x"))
+        .await
+        .unwrap_err();
+    assert!(err.is_forbidden(), "{err}");
+    people.patch_value("p1", &one("address.city", "b")).await?;
+    assert_eq!(stored().await, r#"{"city":"b"}"#);
+
+    let mut locked = people.clone();
+    locked.deny_column("address", "policy/address-locked");
+    let err = locked
+        .patch_value("p1", &one("address.city", "c"))
+        .await
+        .unwrap_err();
+    assert!(err.is_forbidden(), "{err}");
+    locked
+        .replace_value("p1", &one("address.city", "c"))
+        .await?;
+    assert_eq!(stored().await, r#"{"city":"b"}"#);
+
+    // A column aliased under the host (`town` read as `address.city`) doesn't
+    // hide the key from the host's rule: the write reaches both.
+    let aliased = locked.clone().with_column(
+        vantage_table::column::core::Column::<AnySqliteType>::new("town")
+            .with_alias("address.city"),
+    );
+    let err = aliased
+        .patch_value("p1", &one("address.city", "c"))
+        .await
+        .unwrap_err();
+    assert!(err.is_forbidden(), "{err}");
+    assert_eq!(stored().await, r#"{"city":"b"}"#);
+
+    // A whole host value replaces the record, so it needs no read: a set
+    // that may update but not read still takes it.
+    use vantage_table::table::{Hook, SelectCx, select_hook};
+    let blind = people.clone().with_hook(Hook::BeforeSelect(select_hook(
+        |_cx: SelectCx<'_, SqliteDB>| Box::pin(async { Err(vantage_core::error!("no reads")) }),
+    )));
+    let whole: Record<AnySqliteType> = [(
+        "address".to_string(),
+        AnySqliteType::untyped(CborValue::Map(vec![("city".into(), "d".into())])),
+    )]
+    .into_iter()
+    .collect();
+    blind.patch_value("p1", &whole).await?;
+    assert_eq!(stored().await, r#"{"city":"d"}"#);
+    Ok(())
+}
+
 #[tokio::test]
 async fn contained_json_column_round_trips_on_sqlite() -> TestResult {
     let db = SqliteDB::connect("sqlite::memory:").await.unwrap();
@@ -140,5 +223,34 @@ contained:
         items2.get_value("1").await?.unwrap().get("sku"),
         Some(&CborValue::Text("b".into()))
     );
+
+    // A write to the host column goes through the line table: a field it
+    // doesn't declare is refused, and the stored JSON stays as it was.
+    let line = CborValue::Map(vec![
+        ("sku".into(), "c".into()),
+        ("secret".into(), "x".into()),
+    ]);
+    let patch: Record<CborValue> = [("items".to_string(), CborValue::Array(vec![line]))]
+        .into_iter()
+        .collect();
+    let err = vista
+        .patch_value("c1".to_string(), &patch)
+        .await
+        .expect_err("an undeclared line field is refused");
+    assert!(err.to_string().contains("secret"), "{err}");
+    let (stored,): (String,) = sqlx::query_as("SELECT items FROM cart_yaml WHERE id = 'c1'")
+        .fetch_one(db.pool())
+        .await?;
+    assert_eq!(stored, r#"[{"sku":"a","qty":1},{"sku":"b","qty":2}]"#);
+
+    // A contains_many collection has no single path for a dotted key.
+    let dotted: Record<CborValue> = [("items.qty".to_string(), CborValue::Integer(3.into()))]
+        .into_iter()
+        .collect();
+    let err = vista
+        .patch_value("c1".to_string(), &dotted)
+        .await
+        .expect_err("a dotted key into a contains_many is refused");
+    assert!(err.is_forbidden(), "{err}");
     Ok(())
 }

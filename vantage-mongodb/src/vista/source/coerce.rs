@@ -64,6 +64,8 @@ pub(crate) enum BsonKind {
     Date,
     Timestamp,
     Time,
+    /// YAML `json`: a map or an array, stored as one sub-document or array.
+    Json,
 }
 
 impl BsonKind {
@@ -81,6 +83,8 @@ impl BsonKind {
             Some(Self::Timestamp)
         } else if column_type == type_name::<NaiveTime>() {
             Some(Self::Time)
+        } else if column_type == type_name::<serde_json::Value>() {
+            Some(Self::Json)
         } else {
             None
         }
@@ -108,6 +112,7 @@ impl BsonKind {
             Self::Date => "date",
             Self::Timestamp => "timestamp",
             Self::Time => "time",
+            Self::Json => "json",
         }
     }
 
@@ -133,6 +138,15 @@ impl BsonKind {
             (Self::Decimal, CborValue::Float(f)) if f.is_finite() => decimal(&f.to_string()),
             (Self::Decimal, CborValue::Tag(4, fraction)) => decimal_fraction(fraction),
             (Self::Decimal, integer) => decimal(&integer_text(integer)?),
+            (Self::Json, CborValue::Map(_) | CborValue::Array(_)) => Some(cbor_to_bson(value)),
+            (Self::Json, CborValue::Text(s)) => {
+                match serde_json::from_str::<serde_json::Value>(s).ok()? {
+                    json @ (serde_json::Value::Object(_) | serde_json::Value::Array(_)) => {
+                        Some(cbor_to_bson(&vantage_types::cbor_json::json_to_cbor(json)))
+                    }
+                    _ => None,
+                }
+            }
             _ => None,
         }
     }
@@ -317,7 +331,8 @@ pub(crate) fn declared(column: &str, kind: BsonKind, value: &CborValue) -> Resul
     match value {
         CborValue::Null => Ok(Bson::Null),
         CborValue::Text(s) if s.is_empty() => Ok(Bson::Null),
-        CborValue::Array(items) => items
+        // A `json` array is one value, not a list of values.
+        CborValue::Array(items) if kind != BsonKind::Json => items
             .iter()
             .map(|item| declared(column, kind, item))
             .collect::<Result<Vec<_>>>()
@@ -344,6 +359,11 @@ pub(crate) fn declared_over(
     value: &CborValue,
 ) -> Result<Bson> {
     match (stored, value) {
+        // Over a stored value, a `json` map or array keeps the stored types
+        // of the parts it repeats.
+        (Some(old), CborValue::Map(_) | CborValue::Array(_)) if kind == BsonKind::Json => {
+            Ok(preserve(old, value))
+        }
         (Some(Bson::Array(old)), CborValue::Array(new)) if old.len() == new.len() => old
             .iter()
             .zip(new)

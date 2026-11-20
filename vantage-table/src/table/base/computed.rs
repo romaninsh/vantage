@@ -102,14 +102,18 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
 
     /// A patch is explicit intent per key, so a column it can't write is
     /// refused rather than dropped: one a rule made read-only, or an
-    /// expression or lazy column.
+    /// expression or lazy column. A key spelled as a column's stored name
+    /// (`address.city` for `city`), or dotted under a contained host
+    /// (`address.city` writes `address`), answers to each such column's rule.
     pub(in crate::table) fn refuse_read_only_columns(
         &self,
         partial: &Record<T::Value>,
     ) -> Result<()> {
         for name in partial.keys() {
-            if let Some(rule) = self.denials.column_rule(name) {
-                return forbidden_column(name, rule, self.table_name());
+            for column in self.columns_of_key(name) {
+                if let Some(rule) = self.denials.column_rule(column) {
+                    return forbidden_column(column, rule, self.table_name());
+                }
             }
             if self.is_expression_column(name) {
                 return forbidden_column(name, "expression column", self.table_name());

@@ -130,6 +130,53 @@ columns:
     Ok(())
 }
 
+/// A `json` column stores a map as one object and an array as one array, in
+/// a `TYPE object` field too, takes JSON text holding one, and refuses a
+/// scalar naming the column.
+#[tokio::test]
+async fn json_column_stores_a_map_or_an_array_as_one_value() -> TestResult {
+    let (db, _) = setup().await;
+    define(
+        &db,
+        "DEFINE TABLE doc SCHEMAFULL; \
+         DEFINE FIELD meta ON doc TYPE option<object> FLEXIBLE; \
+         DEFINE FIELD list ON doc TYPE option<array>;",
+    )
+    .await?;
+    let vista = db.vista_factory().from_yaml(
+        "name: doc\ncolumns:\n  id: { type: thing, flags: [id] }\n  \
+         meta: { type: json }\n  list: { type: json }\n",
+    )?;
+    // SurrealDB keeps an object's keys sorted.
+    let meta = CborValue::Map(vec![
+        (text("n"), CborValue::Integer(1.into())),
+        (text("tags"), CborValue::Array(vec![text("a")])),
+    ]);
+    vista
+        .insert_value(
+            "a",
+            &record(vec![("meta", meta.clone()), ("list", text(r#"[1, "b"]"#))]),
+        )
+        .await?;
+    let a = vista.get_value("a").await?.expect("inserted");
+    assert_eq!(a.get("meta"), Some(&meta));
+    assert_eq!(
+        a.get("list"),
+        Some(&CborValue::Array(vec![
+            CborValue::Integer(1.into()),
+            text("b")
+        ]))
+    );
+
+    let err = vista
+        .insert_value("b", &record(vec![("meta", CborValue::Integer(5.into()))]))
+        .await
+        .expect_err("a scalar is no json value");
+    assert!(err.is_invalid_value(), "{err:?}");
+    assert!(format!("{err:?}").contains("meta"), "{err:?}");
+    Ok(())
+}
+
 /// lender #3: on a `references:` column, `table:key` text and a bare key are
 /// written as a record link; a link to another table is refused; a plain
 /// text column keeps `table:key` as text.

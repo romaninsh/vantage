@@ -2,17 +2,19 @@
 //! columns, references, joined (dotted) columns and contained relations.
 
 use bson::Document;
+use indexmap::IndexMap;
 use vantage_core::{Context, Result, error};
 use vantage_table::column::core::Column as TableColumn;
+use vantage_table::references::ContainedRelation;
 use vantage_table::table::{BuildEnv, Table};
 use vantage_types::EmptyEntity;
-use vantage_vista::ColumnFlag;
+use vantage_vista::{ColumnFlag, ColumnSpec};
 
 use super::build_column;
 use crate::mongodb::impls::joins::table_joins;
 use crate::mongodb::{MongoDB, MongoView};
 use crate::types::AnyMongoType;
-use crate::vista::spec::{MongoBlock, MongoVistaSpec};
+use crate::vista::spec::{MongoBlock, MongoColumnExtras, MongoVistaSpec};
 
 /// Build a `Table<MongoDB, EmptyEntity>` from a spec. A spec without columns
 /// still gets an `_id` column, so the table knows its key. Each reference the
@@ -67,8 +69,115 @@ pub(crate) fn build_mongo_table(
         table.add_imported_column(name)?;
     }
     table_joins(&table)?;
-    let mut table = table.with_contained_specs(&spec.contained, build_column)?;
+    let table = table.with_contained_specs(&spec.contained, build_column)?;
+    let mut table = with_nested_path_relations(table, spec)?;
     env.inject(&spec.name, &mut table, build_mongo_table)?;
+    Ok(table)
+}
+
+/// A nested column's path below the table, and its leaf column, named for
+/// the path's last segment.
+type NestedColumn = (Vec<String>, TableColumn<AnyMongoType>);
+
+/// `nested_path` columns are sugar for contained relations: the columns
+/// under one root (`address.city`, `address.zip`) make a `contains_one`
+/// `address` whose table declares `city` and `zip`, and a deeper path
+/// (`address.geo.lat`) nests another `contains_one` (`geo`) in it. A write
+/// to them so goes through that table, and merges into the stored
+/// sub-document. Reads still walk each column's path.
+fn with_nested_path_relations(
+    table: Table<MongoDB, EmptyEntity>,
+    spec: &MongoVistaSpec,
+) -> Result<Table<MongoDB, EmptyEntity>> {
+    let mut nested = Vec::new();
+    for (name, col) in &spec.columns {
+        let Some(block) = col.driver.mongo.as_ref() else {
+            continue;
+        };
+        let Some(path) = block.resolved_path(name)? else {
+            continue;
+        };
+        if path.len() > 1 {
+            let mut leaf: ColumnSpec<MongoColumnExtras> = col.clone();
+            leaf.driver.mongo = None;
+            let column = build_column(&path[path.len() - 1], &leaf)?;
+            nested.push((path, column));
+        }
+    }
+    add_nested_relations(table, nested)
+}
+
+/// The same sugar for a typed table wrapped as a vista (`from_table`): each
+/// column whose alias is a dotted path (`with_alias("address.city")`). A
+/// root the table already declares as a column or a contained relation is
+/// left as it is.
+pub(crate) fn with_alias_path_relations(
+    table: Table<MongoDB, EmptyEntity>,
+) -> Result<Table<MongoDB, EmptyEntity>> {
+    let nested: Vec<NestedColumn> = table
+        .columns()
+        .values()
+        .filter_map(|col| col.alias())
+        .filter(|alias| alias.contains('.'))
+        .map(|alias| alias.split('.').map(str::to_string).collect::<Vec<_>>())
+        .filter(|path| {
+            !table.columns().contains_key(&path[0])
+                && table.contained_relation(&path[0]).is_none()
+                && !table
+                    .vista_contained()
+                    .iter()
+                    .any(|r| r.host_column.as_deref() == Some(path[0].as_str()))
+        })
+        .map(|path| {
+            let leaf = TableColumn::<AnyMongoType>::new(path[path.len() - 1].clone());
+            (path, leaf)
+        })
+        .collect();
+    add_nested_relations(table, nested)
+}
+
+fn add_nested_relations(
+    mut table: Table<MongoDB, EmptyEntity>,
+    nested: Vec<NestedColumn>,
+) -> Result<Table<MongoDB, EmptyEntity>> {
+    let mut by_root: IndexMap<String, Vec<NestedColumn>> = IndexMap::new();
+    for (path, col) in nested {
+        by_root
+            .entry(path[0].clone())
+            .or_default()
+            .push((path[1..].to_vec(), col));
+    }
+    for (root, members) in by_root {
+        let hosted = table
+            .vista_contained()
+            .iter()
+            .any(|r| r.host_column.as_deref() == Some(root.as_str()));
+        if table.columns().contains_key(&root)
+            || table.contained_relation(&root).is_some()
+            || hosted
+        {
+            return Err(error!(
+                "a nested_path root is also a column or a contained relation of the table",
+                table = table.table_name(),
+                root = root.as_str()
+            ));
+        }
+        let db = table.data_source().clone();
+        let mut target = Table::<MongoDB, EmptyEntity>::new(root.clone(), db);
+        let mut deeper = Vec::new();
+        for (rest, col) in members {
+            if rest.len() == 1 {
+                target.add_column(col);
+            } else {
+                deeper.push((rest, col));
+            }
+        }
+        let target = add_nested_relations(target, deeper)?;
+        // Sugar: it checks writes to `root`, and isn't listed as a relation.
+        table = table.with_contained(
+            ContainedRelation::one(root.clone(), root.clone(), move |_| target.clone()).unlisted(),
+        );
+    }
     Ok(table)
 }
 

@@ -31,7 +31,8 @@ vantage_type_system! {
         Date,       // DATE
         Time,       // TIME
         Uuid,       // UUID
-        Blob        // BYTEA
+        Blob,       // BYTEA
+        Json        // JSONB, JSON (and TEXT, through the assignment cast)
     ]
 }
 
@@ -62,6 +63,7 @@ mod bool;
 mod bytes;
 mod chrono;
 mod decimal;
+mod json;
 mod numbers;
 mod string;
 mod value;

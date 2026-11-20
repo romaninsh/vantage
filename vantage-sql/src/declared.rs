@@ -35,6 +35,7 @@ macro_rules! sql_declared_types {
                 ["time"] => chrono::NaiveTime as "time",
                 ["datetime"] => chrono::NaiveDateTime as "datetime",
                 ["timestamp"] => chrono::DateTime<chrono::Utc> as "timestamp",
+                ["json"] => serde_json::Value as "json",
             }
             rust {
                 Vec<u8> as "binary",

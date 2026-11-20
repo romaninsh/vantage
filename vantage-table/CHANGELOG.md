@@ -1,5 +1,31 @@
 # Changelog
 
+## 4.2.0 — 2026-11-20
+
+- Every insert, replace and patch that touches a contained relation's host column goes through the
+  contained table, after the parent's Normalize and Populate hooks (so a host value a hook sets is
+  checked too): its hooks, its column check and its typing, with no read or write. A whole value
+  (`lines: [...]`, `address: {...}`) replaces what is stored and `null` clears it, and needs no
+  read of the row; a dotted key into a `contains_one` (`address.city`) is checked alone and merged
+  into the stored record, so fields stored beside it stay, and the contained table's update hooks
+  get that stored record under the host row's id. A field the contained table doesn't declare is
+  refused with Forbidden; so is a dotted key into a `contains_many`. Before, any value written to
+  the host column was stored as it came. A dotted patch reads, merges and writes the whole host
+  back, so a concurrent change to another field of the same record can be lost.
+- New `TableSource::contained_records` and `contained_host` decode and encode a host column's
+  value. Both default to refusing the write, so a backend without them never stores an unchecked
+  host value.
+- The root of a column's stored name is no longer a declared column: with `city` stored at
+  `address.city`, a write keyed `address` fails with Forbidden. Before, it passed, and on SQL wrote
+  an `address` column the table never declared. The full stored name and a contained relation's
+  host column are still declared.
+- A column rule (`deny_column`) answers for every spelling of a write to its column: the column's
+  stored name (`address.city` for `city`) and a dotted key under a contained host (`address.city`
+  writes `address`) are refused on patch and dropped on replace like the column itself. A contained
+  record takes an `id` only when its table declares one.
+- `ContainedRelation::unlisted` keeps a relation out of the table's vista references while it still
+  checks writes (a driver's sugar); `Table::with_contained` declares a relation built that way.
+
 ## 4.1.0 — 2026-11-19
 
 - A write (insert, replace, patch, upsert) may only name columns the table declares, plus the id,

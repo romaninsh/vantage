@@ -210,6 +210,33 @@ which is trivial for the small collections this targets.
 The flip side: the whole collection is re-serialized and written each time. A contained relation is
 for line items and embedded objects, not for a thousand-element array mutated in a tight loop.
 
+### Every host write goes through the contained table
+
+The sub-Vista isn't the only way into the host column: a script, an API or a form can write
+`lines: [...]` on the parent row directly. So `Table` checks every insert, replace and patch that
+touches a host column before the parent's own hooks run:
+
+- the change is decoded into records with `TableSource::contained_records`;
+- each record goes through the contained table's write steps (its hooks, its strict column check,
+  its column typing) with no read or write of its own;
+- the result goes back into the host column with `TableSource::contained_host`, and the column's
+  declared type stores it.
+
+A whole value (`lines: [...]`, `address: {...}`) replaces what is stored. On a `contains_one`, a
+dotted key (`address.city`) is a partial record: it is checked alone and merged into the stored
+record, which the patch reads first, so fields stored beside it stay, including ones the contained
+table doesn't declare. A contained table can hold contained relations of its own, and a dotted key
+two levels down (`place.geo.lat`) merges at each level.
+
+Both codec methods default to refusing the write, so a backend that doesn't implement them can't
+store a host value nobody checked. The native backends map objects to records directly; the SQL
+drivers decode JSON text or a parsed map, and SQLite encodes back to JSON text because it binds no
+nested value.
+
+Why check the change and not the merged record? A stored record may hold fields from before the
+contained table existed, or from another writer. Refusing every patch because of them would make
+the row unwritable; checking what this write adds keeps old data readable and new data clean.
+
 ### Sharp edges
 
 **Declare the host column.** This is the bug every backend hits. If `lines` isn't a declared column,
@@ -236,7 +263,7 @@ Contained relations are declarable in a YAML spec too, in a `contained:` section
 name: order
 columns:
   id: { type: string, flags: [id] }
-  lines: { type: string }          # the host column: declare it so it's selected
+  lines: { type: json }            # the host column: declare it so it's selected
 sqlite:
   table: order
 contained:

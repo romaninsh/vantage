@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.15.0 — 2026-11-21
+
+- YAML column type `json`: a map or an array as one value, unchecked inside. A write takes the map
+  or array, or JSON text holding one; a scalar is refused. SQLite and MySQL store JSON text,
+  PostgreSQL binds `jsonb` (so a `jsonb` column stores it natively and a text column its JSON
+  text), MySQL `JSON` columns store it natively. A read gives back the map or array: text in a
+  `json` column is parsed, and text that isn't a JSON object or array fails the read naming the
+  column and the text's length, not the text. PostgreSQL gains a `Json` type variant.
+- Contained relations: writes to a host column go through the contained table (vantage-table
+  4.2.0). The drivers decode JSON text or a parsed map into its records; SQLite writes the host back
+  as JSON text, MySQL and PostgreSQL as a JSON value.
+- Requires vantage-table 4.2.0.
+
 ## 0.14.0 — 2026-11-20
 
 - PostgreSQL reads dates, times and instants in the carrier forms of `vantage_types::temporal`:

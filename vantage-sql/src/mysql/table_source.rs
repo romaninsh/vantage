@@ -11,6 +11,7 @@ use vantage_expressions::traits::expressive::ExpressiveEnum;
 use vantage_expressions::{Expression, Expressive, Selectable};
 use vantage_table::column::core::{Column, ColumnType};
 use vantage_table::table::Table;
+use vantage_table::traits::column_like::ColumnLike as _;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 use vantage_vista::Transaction;
@@ -78,7 +79,10 @@ fn update_in_set<E: Entity<AnyMysqlType>>(
     update.expr()
 }
 
-pub(super) fn parse_rows(
+/// The rows of a read, keyed by id. A `json` column's JSON text reads as the
+/// map or array it holds.
+pub(super) fn parse_rows<E: Entity<AnyMysqlType>>(
+    table: &Table<MysqlDB, E>,
     result: AnyMysqlType,
     id_field_name: &str,
 ) -> Result<IndexMap<String, Record<AnyMysqlType>>> {
@@ -122,6 +126,15 @@ pub(super) fn parse_rows(
                     other => Some(format!("{other:?}")),
                 };
             }
+            let v = match table.columns().get(&key) {
+                Some(declared) => crate::types::read_json_cell(
+                    table.table_name(),
+                    &key,
+                    crate::declared::without_option(declared.get_type()),
+                    v,
+                )?,
+                None => v,
+            };
             record.insert(key, AnyMysqlType::untyped(v));
         }
 
@@ -217,6 +230,22 @@ impl TableSource for MysqlDB {
         coerce_column(table, column, value)
     }
 
+    fn contained_records(&self, host: &AnyMysqlType) -> Result<Option<Vec<Record<AnyMysqlType>>>> {
+        crate::types::contained_records(host.value(), AnyMysqlType::untyped)
+    }
+
+    fn contained_host(
+        &self,
+        records: Vec<Record<AnyMysqlType>>,
+        many: bool,
+    ) -> Result<AnyMysqlType> {
+        Ok(AnyMysqlType::untyped(crate::types::contained_host(
+            records,
+            many,
+            AnyMysqlType::into_value,
+        )))
+    }
+
     fn transaction(&self) -> Option<Transaction> {
         self.tx.as_ref().and_then(|tx| tx.transaction())
     }
@@ -307,7 +336,7 @@ impl TableSource for MysqlDB {
         let select = table.try_select()?;
         let result = self.execute(&row_query(table, &select)).await?;
 
-        parse_rows(result, &id_field_name)
+        parse_rows(table, result, &id_field_name)
     }
 
     async fn get_table_value<E>(
@@ -327,7 +356,7 @@ impl TableSource for MysqlDB {
         let select = table.try_select()?.with_condition(condition);
         let result = self.execute(&row_query(table, &select)).await?;
 
-        let mut rows = parse_rows(result, &id_field_name)?;
+        let mut rows = parse_rows(table, result, &id_field_name)?;
         Ok(rows.swap_remove(id))
     }
 
@@ -344,7 +373,7 @@ impl TableSource for MysqlDB {
         select.set_limit(Some(1), None);
         let result = self.execute(&row_query(table, &select)).await?;
 
-        let mut rows = parse_rows(result, &id_field_name)?;
+        let mut rows = parse_rows(table, result, &id_field_name)?;
         Ok(rows.swap_remove_index(0))
     }
 

@@ -85,7 +85,9 @@ async fn typed_events(_suffix: &str) -> (SqliteDB, String) {
             amount NUMERIC,
             qty INTEGER,
             starts TIME,
-            size INTEGER
+            size INTEGER,
+            meta TEXT,
+            doc TEXT
         )",
     )
     .execute(db.pool())

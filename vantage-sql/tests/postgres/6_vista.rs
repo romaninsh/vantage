@@ -136,7 +136,9 @@ async fn typed_events(suffix: &str) -> (PostgresDB, String) {
             amount NUMERIC(10, 2),
             qty BIGINT,
             starts TIME,
-            size BIGINT
+            size BIGINT,
+            meta TEXT,
+            doc JSONB
         )"
     )))
     .execute(db.pool())

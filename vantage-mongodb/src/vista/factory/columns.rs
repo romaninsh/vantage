@@ -50,6 +50,7 @@ fn column_for_type(name: &str, ty: &str) -> Result<TableColumn<AnyMongoType>> {
         "date" => TableColumn::from_column(TableColumn::<NaiveDate>::new(name)),
         "timestamp" => TableColumn::from_column(TableColumn::<DateTime<Utc>>::new(name)),
         "decimal" => TableColumn::from_column(TableColumn::<bson::Decimal128>::new(name)),
+        "json" => TableColumn::from_column(TableColumn::<serde_json::Value>::new(name)),
         other => {
             return Err(error!(
                 "Unknown YAML column type",

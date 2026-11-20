@@ -9,6 +9,7 @@ use vantage_expressions::traits::expressive::ExpressiveEnum;
 use vantage_expressions::{Expression, Expressive, Selectable};
 use vantage_table::column::core::{Column, ColumnType};
 use vantage_table::table::Table;
+use vantage_table::traits::column_like::ColumnLike as _;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 use vantage_vista::Transaction;
@@ -67,7 +68,9 @@ where
 }
 
 /// Parse the CBOR array result from execute() into an IndexMap of id -> Record.
-fn parse_rows(
+/// A `json` column's JSON text reads as the map or array it holds.
+fn parse_rows<E: Entity<AnyPostgresType>>(
+    table: &Table<PostgresDB, E>,
     result: AnyPostgresType,
     id_field_name: &str,
 ) -> Result<IndexMap<String, Record<AnyPostgresType>>> {
@@ -112,6 +115,15 @@ fn parse_rows(
                     other => Some(format!("{other:?}")),
                 };
             }
+            let v = match table.columns().get(&key) {
+                Some(declared) => crate::types::read_json_cell(
+                    table.table_name(),
+                    &key,
+                    crate::declared::without_option(declared.get_type()),
+                    v,
+                )?,
+                None => v,
+            };
             record.insert(key, AnyPostgresType::untyped(v));
         }
 
@@ -197,6 +209,25 @@ impl TableSource for PostgresDB {
         E: Entity<AnyPostgresType>,
     {
         coerce_column(table, column, value)
+    }
+
+    fn contained_records(
+        &self,
+        host: &AnyPostgresType,
+    ) -> Result<Option<Vec<Record<AnyPostgresType>>>> {
+        crate::types::contained_records(host.value(), AnyPostgresType::untyped)
+    }
+
+    fn contained_host(
+        &self,
+        records: Vec<Record<AnyPostgresType>>,
+        many: bool,
+    ) -> Result<AnyPostgresType> {
+        Ok(AnyPostgresType::untyped(crate::types::contained_host(
+            records,
+            many,
+            AnyPostgresType::into_value,
+        )))
     }
 
     fn transaction(&self) -> Option<Transaction> {
@@ -292,7 +323,7 @@ impl TableSource for PostgresDB {
         let select = table.try_select()?;
         let result = self.execute(&row_query(table, &select)).await?;
 
-        parse_rows(result, &id_field_name)
+        parse_rows(table, result, &id_field_name)
     }
 
     async fn get_table_value<E>(
@@ -312,7 +343,7 @@ impl TableSource for PostgresDB {
         let select = table.try_select()?.with_condition(condition);
         let result = self.execute(&row_query(table, &select)).await?;
 
-        let mut rows = parse_rows(result, &id_field_name)?;
+        let mut rows = parse_rows(table, result, &id_field_name)?;
         Ok(rows.swap_remove(id))
     }
 
@@ -329,7 +360,7 @@ impl TableSource for PostgresDB {
         select.set_limit(Some(1), None);
         let result = self.execute(&row_query(table, &select)).await?;
 
-        let mut rows = parse_rows(result, &id_field_name)?;
+        let mut rows = parse_rows(table, result, &id_field_name)?;
         Ok(rows.swap_remove_index(0))
     }
 
@@ -517,7 +548,7 @@ impl TableSource for PostgresDB {
         let base = insert.expr();
         let returning = expr_any!("{} RETURNING {}", (base), (ident(&id_field_name)));
         let result = self.execute(&returning).await?;
-        let mut rows = parse_rows(result, &id_field_name)?;
+        let mut rows = parse_rows(table, result, &id_field_name)?;
         rows.swap_remove_index(0).map(|(id, _)| id).ok_or_else(|| {
             error!(
                 "insert returned no usable id — the row's id came back NULL; \

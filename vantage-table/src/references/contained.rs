@@ -26,6 +26,10 @@ pub struct ContainedRelation<T: TableSource> {
     /// and [`many`](ContainedRelation::many) set it.
     kind: ReferenceKind,
     id_column: Option<String>,
+    /// Whether the relation is in the table's vista references. An unlisted
+    /// one (a driver's sugar, such as Mongo `nested_path` columns) still
+    /// checks every write to its host column.
+    listed: bool,
     build_target: Arc<dyn Fn(T) -> Table<T, EmptyEntity> + Send + Sync>,
 }
 
@@ -36,6 +40,7 @@ impl<T: TableSource> Clone for ContainedRelation<T> {
             host_column: self.host_column.clone(),
             kind: self.kind,
             id_column: self.id_column.clone(),
+            listed: self.listed,
             build_target: self.build_target.clone(),
         }
     }
@@ -53,6 +58,7 @@ impl<T: TableSource + 'static> ContainedRelation<T> {
             host_column: host_column.into(),
             kind: ReferenceKind::ContainsOne,
             id_column: None,
+            listed: true,
             build_target: Arc::new(build_target),
         }
     }
@@ -70,8 +76,20 @@ impl<T: TableSource + 'static> ContainedRelation<T> {
             host_column: host_column.into(),
             kind: ReferenceKind::ContainsMany,
             id_column,
+            listed: true,
             build_target: Arc::new(build_target),
         }
+    }
+
+    /// This relation left out of the table's vista references: it checks
+    /// writes to its host column, but no consumer lists or traverses it.
+    pub fn unlisted(mut self) -> Self {
+        self.listed = false;
+        self
+    }
+
+    pub fn is_listed(&self) -> bool {
+        self.listed
     }
 
     pub fn name(&self) -> &str {

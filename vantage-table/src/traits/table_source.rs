@@ -208,6 +208,31 @@ pub trait TableSource: DataSource + Clone + 'static {
         Ok(value)
     }
 
+    /// The records a contained relation keeps in `host`, its host column's
+    /// value: the one object of a `contains_one`, each object of a
+    /// `contains_many` array. `None` for no value. `Table` reads them to merge
+    /// a write into, so every value a host column stores has passed the
+    /// contained table. Default: refused, so a backend that can't read them
+    /// never stores a host value unchecked.
+    fn contained_records(&self, host: &Self::Value) -> Result<Option<Vec<Record<Self::Value>>>> {
+        let _ = host;
+        Err(
+            vantage_core::error!("this backend can't write a contained relation")
+                .mark_unsupported(),
+        )
+    }
+
+    /// The host column's value holding `records`: one object for a
+    /// `contains_one` (`many` false), an array for a `contains_many`. The
+    /// column's own declared type then stores it. Default: refused.
+    fn contained_host(&self, records: Vec<Record<Self::Value>>, many: bool) -> Result<Self::Value> {
+        let _ = (records, many);
+        Err(
+            vantage_core::error!("this backend can't write a contained relation")
+                .mark_unsupported(),
+        )
+    }
+
     /// The transaction this datasource runs its statements on, when it is
     /// in transaction mode. Default `None`.
     fn transaction(&self) -> Option<Transaction> {

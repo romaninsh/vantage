@@ -46,7 +46,8 @@ where
         self.require_confined_writes("replace")?;
         let id = id.into();
         let needs_former = self.kept_columns().next().is_some()
-            || self.denials().rule_for(Capability::Insert).is_some();
+            || self.denials().rule_for(Capability::Insert).is_some()
+            || self.merges_contained(record);
         let former = self.former_for_update(&id, needs_former).await?;
         self.replace_over(id, record, former).await
     }
@@ -72,7 +73,11 @@ where
         self.refuse_read_only_columns(partial)?;
         let erased = self.as_entity_erased();
         let mut partial = partial.clone();
-        let former = self.former_for_update(&id, false).await?;
+        // A dotted key under a contained relation merges into the stored
+        // record, so the row is read for it.
+        let former = self
+            .former_for_update(&id, self.merges_contained(&partial))
+            .await?;
         // The row was read for the hooks and the set doesn't hold it: the
         // source would refuse the patch anyway, so the hooks don't see it.
         let read = !self.before_update_hooks().is_empty() || !self.after_update_hooks().is_empty();
@@ -221,11 +226,25 @@ where
         // A whole row read and saved back carries the read-only columns too:
         // each keeps its stored value, so an unchanged round-trip saves and a
         // backend that rewrites the whole row doesn't erase it.
-        record.retain(|name, _| self.denials().column_rule(name).is_none());
+        // A key spelled as a stored name or dotted under a contained host
+        // answers to each such column's rule (see `columns_of_key`).
+        record.retain(|name, _| {
+            self.columns_of_key(name)
+                .into_iter()
+                .all(|column| self.denials().column_rule(column).is_none())
+        });
+        // A read-only contained host goes back after the contained check: its
+        // stored value is the store's own, which may hold fields from before
+        // the contained table, so it isn't checked again.
+        let mut kept_hosts = Vec::new();
         if let Some(former) = &former {
             for name in self.kept_columns() {
                 if let Some(value) = former.get(name) {
-                    record.insert(name.to_string(), value.clone());
+                    if self.contained.iter().any(|rel| rel.host_column() == name) {
+                        kept_hosts.push((name.to_string(), value.clone()));
+                    } else {
+                        record.insert(name.to_string(), value.clone());
+                    }
                 }
             }
         }
@@ -236,6 +255,10 @@ where
         };
         self.before_write(self.before_update_hooks(), &mut record, Some(update))
             .await?;
+        for (name, value) in kept_hosts {
+            let value = self.data_source().coerce_column_value(self, &name, value)?;
+            record.insert(name, value);
+        }
         enforce_invariants(&mut record, &self.typed_invariants())?;
         let result = self
             .data_source()
