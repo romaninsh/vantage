@@ -16,6 +16,10 @@
   `address.city`, a write keyed `address` fails with Forbidden. Before, it passed, and on SQL wrote
   an `address` column the table never declared. The full stored name and a contained relation's
   host column are still declared.
+- A column rule (`deny_column`) answers for every spelling of a write to its column: the column's
+  stored name (`address.city` for `city`) and a dotted key under a contained host (`address.city`
+  writes `address`) are refused on patch and dropped on replace like the column itself. A contained
+  record takes an `id` only when its table declares one.
 - `ContainedRelation::unlisted` keeps a relation out of the table's vista references while it still
   checks writes (a driver's sugar); `Table::with_contained` declares a relation built that way.
 

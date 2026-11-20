@@ -261,7 +261,8 @@ async fn vista_timestamp_column_filters_and_orders() -> TestResult {
 }
 
 /// SQLite keeps a `json` column as JSON text, keys in the order written, and
-/// stored text that isn't a JSON object or array fails the read.
+/// stored text that isn't a JSON object or array fails the read, naming the
+/// column but not the text, which may be anything a writer left.
 #[tokio::test]
 async fn vista_json_column_stores_json_text() -> TestResult {
     let db = setup().await;
@@ -282,14 +283,15 @@ async fn vista_json_column_stores_json_text() -> TestResult {
         .await?;
     assert_eq!(text, r#"{"tags":["a"],"n":1}"#);
 
-    sqlx::query("INSERT INTO docs VALUES ('bad', 'not json')")
+    sqlx::query("INSERT INTO docs VALUES ('bad', 'card 4111 1111')")
         .execute(db.pool())
         .await?;
     let err = vista
         .get_value("bad")
         .await
         .expect_err("unreadable text refused");
-    assert!(format!("{err:?}").contains("not json"), "{err:?}");
+    let text = format!("{err:?}");
+    assert!(text.contains("meta") && !text.contains("4111"), "{text}");
     Ok(())
 }
 

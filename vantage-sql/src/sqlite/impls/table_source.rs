@@ -54,7 +54,8 @@ fn read_column<E: Entity<AnySqliteType>>(
     } else if declared_type == type_name::<DateTime<Utc>>() {
         stored::<DateTime<Utc>>(text).ok_or("timestamp")
     } else if declared_type == type_name::<serde_json::Value>() {
-        stored_json(text).ok_or("json")
+        let cell = crate::types::read_json_cell(table.table_name(), column, declared_type, value)?;
+        return Ok(AnySqliteType::untyped(cell));
     } else {
         return Ok(AnySqliteType::untyped(value));
     };
@@ -79,15 +80,6 @@ fn stored<T: SqliteType>(text: &str) -> Option<AnySqliteType> {
         return Some(AnySqliteType::untyped(CborValue::Null));
     }
     T::coerce_cbor(CborValue::Text(text.to_string())).map(AnySqliteType::new)
-}
-
-/// A `json` cell's text as the map or array it holds; `""` is no value.
-fn stored_json(text: &str) -> Option<AnySqliteType> {
-    if text.is_empty() {
-        return Some(AnySqliteType::untyped(CborValue::Null));
-    }
-    crate::types::json_document(CborValue::Text(text.to_string()))
-        .map(|json| AnySqliteType::untyped(crate::types::json_to_cbor(json)))
 }
 
 /// Parse the CBOR array result from execute() into an IndexMap of id → Record.

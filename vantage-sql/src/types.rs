@@ -129,12 +129,16 @@ pub(crate) fn read_json_cell(
     }
     match json_document(value.clone()) {
         Some(json) => Ok(json_to_cbor(json)),
+        // The stored text may be anything a writer left; the error names
+        // its length, not its content.
         None => Err(vantage_core::error!(
-            format!("`{column}` of `{table}` holds {text:?}, which is not a `json`"),
+            format!(
+                "`{column}` of `{table}` holds {} characters of text that is not a JSON object or array",
+                text.chars().count()
+            ),
             table = table,
             column = column,
-            expected = "json",
-            value = text
+            expected = "json"
         )),
     }
 }

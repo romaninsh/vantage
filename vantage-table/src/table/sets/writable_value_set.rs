@@ -226,11 +226,27 @@ where
         // A whole row read and saved back carries the read-only columns too:
         // each keeps its stored value, so an unchanged round-trip saves and a
         // backend that rewrites the whole row doesn't erase it.
-        record.retain(|name, _| self.denials().column_rule(name).is_none());
+        // A key spelled as a stored name or dotted under a contained host
+        // answers to its column's rule (see `column_of_key`).
+        record.retain(|name, _| {
+            self.denials().column_rule(name).is_none()
+                && self
+                    .denials()
+                    .column_rule(self.column_of_key(name))
+                    .is_none()
+        });
+        // A read-only contained host goes back after the contained check: its
+        // stored value is the store's own, which may hold fields from before
+        // the contained table, so it isn't checked again.
+        let mut kept_hosts = Vec::new();
         if let Some(former) = &former {
             for name in self.kept_columns() {
                 if let Some(value) = former.get(name) {
-                    record.insert(name.to_string(), value.clone());
+                    if self.contained.iter().any(|rel| rel.host_column() == name) {
+                        kept_hosts.push((name.to_string(), value.clone()));
+                    } else {
+                        record.insert(name.to_string(), value.clone());
+                    }
                 }
             }
         }
@@ -241,6 +257,10 @@ where
         };
         self.before_write(self.before_update_hooks(), &mut record, Some(update))
             .await?;
+        for (name, value) in kept_hosts {
+            let value = self.data_source().coerce_column_value(self, &name, value)?;
+            record.insert(name, value);
+        }
         enforce_invariants(&mut record, &self.typed_invariants())?;
         let result = self
             .data_source()

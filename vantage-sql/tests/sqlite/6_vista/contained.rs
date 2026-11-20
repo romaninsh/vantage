@@ -35,6 +35,61 @@ fn field(name: &str, value: CborValue) -> Record<CborValue> {
     r
 }
 
+/// A dotted key under a contained host is a write to the host: a rule that
+/// makes the host read-only refuses it on patch and drops it on replace. A
+/// contained record takes no `id` its table doesn't declare.
+#[tokio::test]
+async fn a_dotted_contained_key_answers_to_the_host_rule() -> TestResult {
+    use vantage_sql::sqlite::AnySqliteType;
+
+    let db = SqliteDB::connect("sqlite::memory:").await.unwrap();
+    sqlx::query("CREATE TABLE person (id TEXT PRIMARY KEY, address TEXT)")
+        .execute(db.pool())
+        .await?;
+    sqlx::query(r#"INSERT INTO person VALUES ('p1', '{"city":"a"}')"#)
+        .execute(db.pool())
+        .await?;
+    let people = Table::<SqliteDB, EmptyEntity>::new("person", db.clone())
+        .with_id_column("id")
+        .with_column_of::<String>("address")
+        .with_contained_one("address", "address", |db| {
+            Table::<SqliteDB, EmptyEntity>::new("address", db).with_column_of::<String>("city")
+        });
+    let one = |key: &str, value: &str| -> Record<AnySqliteType> {
+        [(key.to_string(), AnySqliteType::from(value.to_string()))]
+            .into_iter()
+            .collect()
+    };
+    let stored = || async {
+        let (address,): (String,) = sqlx::query_as("SELECT address FROM person WHERE id = 'p1'")
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
+        address
+    };
+
+    let err = people
+        .patch_value("p1", &one("address.id", "x"))
+        .await
+        .unwrap_err();
+    assert!(err.is_forbidden(), "{err}");
+    people.patch_value("p1", &one("address.city", "b")).await?;
+    assert_eq!(stored().await, r#"{"city":"b"}"#);
+
+    let mut locked = people.clone();
+    locked.deny_column("address", "policy/address-locked");
+    let err = locked
+        .patch_value("p1", &one("address.city", "c"))
+        .await
+        .unwrap_err();
+    assert!(err.is_forbidden(), "{err}");
+    locked
+        .replace_value("p1", &one("address.city", "c"))
+        .await?;
+    assert_eq!(stored().await, r#"{"city":"b"}"#);
+    Ok(())
+}
+
 #[tokio::test]
 async fn contained_json_column_round_trips_on_sqlite() -> TestResult {
     let db = SqliteDB::connect("sqlite::memory:").await.unwrap();

@@ -78,22 +78,25 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         update: Option<UpdateOf<'_, T>>,
     ) -> Result<()> {
         Box::pin(self.write_contained(record, update.and_then(|u| u.stored))).await?;
-        self.shape_and_check(hooks, record, update).await
+        self.shape_and_check(hooks, record, update, false).await
     }
 
     /// [`Self::before_write`] after the contained records: the hooks, the
-    /// column check, stripping and typing.
+    /// column check, stripping and typing. `contained`: this is a contained
+    /// table checking a record for its host, so an id it doesn't declare is
+    /// no column.
     async fn shape_and_check(
         &self,
         hooks: &[(Phase, BeforeFn<T>)],
         record: &mut Record<T::Value>,
         update: Option<UpdateOf<'_, T>>,
+        contained: bool,
     ) -> Result<()> {
         let (shaping, validating) =
             hooks.split_at(hooks.partition_point(|(phase, _)| *phase < Phase::Validate));
         let erased = self.as_entity_erased();
         run_before(shaping, record, update, erased).await?;
-        self.refuse_undeclared_columns(record)?;
+        self.refuse_undeclared_columns(record, contained)?;
         self.strip_imported_columns(record);
         self.strip_expression_columns(record);
         self.coerce_record(record)?;
@@ -223,7 +226,29 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             self.before_insert_hooks()
         };
         self.write_contained(record, stored).await?;
-        self.shape_and_check(hooks, record, None).await
+        self.shape_and_check(hooks, record, None, true).await
+    }
+
+    /// The column a write key stands for, as its rules name it: a declared
+    /// column's name, the column whose stored name the key is (`city` for
+    /// `address.city`), or the contained relation's host column for a
+    /// dotted key under it (`address` for `address.city`). Any other key is
+    /// returned as it is.
+    pub(crate) fn column_of_key<'k>(&'k self, key: &'k str) -> &'k str {
+        if self.columns().contains_key(key) {
+            return key;
+        }
+        if let Some((name, _)) = self.columns().iter().find(|(_, c)| c.alias() == Some(key)) {
+            return name;
+        }
+        self.contained
+            .iter()
+            .map(|rel| rel.host_column())
+            .find(|host| {
+                key.strip_prefix(host)
+                    .is_some_and(|rest| rest.starts_with('.'))
+            })
+            .unwrap_or(key)
     }
 
     /// A write names only declared columns and the id, so a physical column
@@ -236,11 +261,13 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// `fullName` or `place.venue_id`), never only the top of one: `place`
     /// alone would write the whole sub-document, on SQL an undeclared column.
     /// A contained relation's host column is declared: its value was just
-    /// built by [`Self::write_contained`].
-    fn refuse_undeclared_columns(&self, record: &Record<T::Value>) -> Result<()> {
+    /// built by [`Self::write_contained`]. A `contained` record takes an id
+    /// only when its table declares one.
+    fn refuse_undeclared_columns(&self, record: &Record<T::Value>, contained: bool) -> Result<()> {
         let id_field = self.id_field_name();
+        let id_declared = !contained || self.id_field().is_some();
         let declared = |key: &str| {
-            key == id_field
+            (key == id_field && id_declared)
                 || self.columns().contains_key(key)
                 // Computed and imported columns are declared; the steps
                 // after this drop them from a row read and saved back.
