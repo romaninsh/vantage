@@ -63,8 +63,17 @@ jobs:
           sed -i 's/^# manifest-dir = "."/manifest-dir = "."/' book.toml
           sed -i 's/^# build\.packages = /build.packages = /' book.toml
 
+      # mdbook-rustdoc-links 3.0.2 can't use what cargo 1.100 writes to its
+      # build directory: rustdoc reports "can't find crate" for the docs crate.
+      # The link check builds with 1.99 until a release of the preprocessor
+      # supports 1.100; everything else stays on stable.
+      - name: Rust for the link check
+        run: rustup toolchain install 1.99.0 --profile minimal
+
       - name: Build
         working-directory: ./docs4
+        env:
+          RUSTUP_TOOLCHAIN: 1.99.0
         run: mdbook build
 
       - name: Generate llms.txt and markdown chapters
