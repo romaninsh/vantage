@@ -83,7 +83,8 @@ async fn vista_insert_without_id_reads_back_the_stored_row() -> TestResult {
 }
 
 /// Rhai's `now()` and the audit logger hand over `Tag(0, rfc3339)`, which
-/// SurrealDB refuses; the vista writes it as a datetime, nested ones too.
+/// SurrealDB refuses; the vista writes it as a datetime, nested ones too, and
+/// reads each back as a carrier instant.
 #[tokio::test]
 async fn vista_writes_tag0_datetimes_as_datetimes() -> TestResult {
     let (db, table_name) = setup().await;
@@ -94,16 +95,11 @@ async fn vista_writes_tag0_datetimes_as_datetimes() -> TestResult {
         .with_column_of::<AnySurrealType>("history");
     let vista = db.vista_factory().from_table(table)?;
     let tag0 = || CborValue::Tag(0, Box::new(CborValue::Text("2026-01-02T03:04:05Z".into())));
-    let tag12 = CborValue::Tag(
-        12,
-        Box::new(CborValue::Array(vec![
-            CborValue::Integer(1767323045i64.into()),
-            CborValue::Integer(0i64.into()),
-        ])),
+    let read = CborValue::Tag(
+        0,
+        Box::new(CborValue::Text("2026-01-02T03:04:05.000000Z".into())),
     );
-    let is_datetime = |stored: &Record<CborValue>, key: &str| {
-        matches!(stored.get(key), Some(CborValue::Tag(12, _)))
-    };
+    let is_datetime = |stored: &Record<CborValue>, key: &str| stored.get(key) == Some(&read);
 
     let record: Record<CborValue> = [
         ("ran_at".to_string(), tag0()),
@@ -130,10 +126,13 @@ async fn vista_writes_tag0_datetimes_as_datetimes() -> TestResult {
         a.get("meta"),
         Some(&CborValue::Map(vec![(
             CborValue::Text("at".into()),
-            tag12.clone()
+            read.clone()
         )]))
     );
-    assert_eq!(a.get("history"), Some(&CborValue::Array(vec![tag12])));
+    assert_eq!(
+        a.get("history"),
+        Some(&CborValue::Array(vec![read.clone()]))
+    );
     Ok(())
 }
 

@@ -89,14 +89,16 @@ where
     }
 
     /// `condition` with the operand [`apply_condition`](Self::apply_condition)
-    /// sends, so rows held in memory are judged as the database judged them.
+    /// sends, so rows held in memory are judged as the database judged them;
+    /// in the carrier forms rows are read in.
     /// `Like` matches the value's own text, so it stays as given.
     pub(super) fn typed_condition(&self, condition: &Condition) -> Condition {
         if condition.op == FilterOp::Like {
             return condition.clone();
         }
         let mut typed = condition.clone();
-        typed.value = self.operand(&condition.column, &condition.value);
+        let kind = super::declared_kind(&self.table, &condition.column);
+        typed.value = super::comparable(kind, self.operand(&condition.column, &condition.value));
         typed
     }
 
@@ -211,12 +213,12 @@ where
         table
             .get_value(thing.clone())
             .await?
-            .map(super::to_cbor_record)
+            .map(|record| super::to_cbor_record(&self.table, record))
             .ok_or_else(|| {
                 error!(
                     "inserted row can't be read back through the set",
                     id = thing.to_string()
                 )
-            })
+            })?
     }
 }

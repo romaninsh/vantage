@@ -6,14 +6,10 @@
 //! at midnight UTC, and a `NaiveTime` is text.
 
 use crate::types::{SurrealType, SurrealTypeDateTimeMarker, SurrealTypeStringMarker};
-use chrono::{DateTime, NaiveDate, NaiveTime, SecondsFormat, Timelike, Utc};
+use chrono::{DateTime, NaiveDate, NaiveTime, SecondsFormat, Utc};
 use ciborium::Value as CborValue;
 use vantage_types::cbor_json::{rfc3339_to_tag12, tag12_to_rfc3339};
-
-// Date and time-of-day text tags (vantage-types' lenient forms, RFC 8943).
-const TAG_DATE: u64 = 100;
-const TAG_DATE_TEXT: u64 = 1004;
-const TAG_TIME: u64 = 101;
+use vantage_types::temporal;
 
 impl SurrealType for DateTime<Utc> {
     type Target = SurrealTypeDateTimeMarker;
@@ -47,45 +43,21 @@ impl SurrealType for NaiveDate {
     }
 
     fn from_cbor(cbor: CborValue) -> Option<Self> {
-        match cbor {
-            CborValue::Tag(TAG_DATE | TAG_DATE_TEXT, inner) => match *inner {
-                CborValue::Text(s) => NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok(),
-                _ => None,
-            },
-            tag12 @ CborValue::Tag(12, _) => {
-                let instant = DateTime::<Utc>::from_cbor(tag12)?;
-                (instant.time() == NaiveTime::MIN).then(|| instant.date_naive())
-            }
-            _ => None,
-        }
+        temporal::as_date(&cbor).or_else(|| temporal::midnight_date(&cbor))
     }
 }
 
-/// Text, `HH:MM:SS` with a fraction when there is one; `HH:MM` decodes too.
+/// Text in the carrier form, `HH:MM:SS.ffffff`, so text order is time
+/// order; `HH:MM` and a tagged time decode too.
 impl SurrealType for NaiveTime {
     type Target = SurrealTypeStringMarker;
 
     fn to_cbor(&self) -> CborValue {
-        let format = if self.nanosecond() == 0 {
-            "%H:%M:%S"
-        } else {
-            "%H:%M:%S%.f"
-        };
-        CborValue::Text(self.format(format).to_string())
+        CborValue::Text(temporal::format_time(self))
     }
 
     fn from_cbor(cbor: CborValue) -> Option<Self> {
-        let text = match cbor {
-            CborValue::Text(s) => s,
-            CborValue::Tag(TAG_TIME, inner) => match *inner {
-                CborValue::Text(s) => s,
-                _ => return None,
-            },
-            _ => return None,
-        };
-        NaiveTime::parse_from_str(&text, "%H:%M:%S%.f")
-            .or_else(|_| NaiveTime::parse_from_str(&text, "%H:%M"))
-            .ok()
+        temporal::as_time(&cbor)
     }
 }
 

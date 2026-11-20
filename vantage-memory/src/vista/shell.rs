@@ -18,7 +18,7 @@ use vantage_vista::{
     VistaChangeStream, VistaMetadata,
 };
 
-use super::affinity::{Affinity, conform_record};
+use super::affinity::{Affinity, conform_record, read_record};
 use super::{MemoryTableShell, watch};
 use crate::store::Row;
 use crate::typed::convert::{from_cbor_record, table_query, to_cbor_record};
@@ -26,28 +26,37 @@ use crate::{AnyMemoryType, MemoryDB};
 
 type Rec = Record<CborValue>;
 
-fn cbor_rows<C: FromIterator<(String, Rec)>>(rows: IndexMap<String, Record<AnyMemoryType>>) -> C {
-    rows.into_iter()
-        .map(|(id, row)| (id, to_cbor_record(&row)))
-        .collect()
-}
-
 impl MemoryTableShell {
-    /// `record` with every cell in its stored form (see `affinity`), so a
-    /// written row compares like a seeded one.
-    fn stored_form(&self, record: &Rec) -> Rec {
-        let mut row = record.clone();
-        conform_record(&self.metadata, self.id_column_name(), &mut row);
-        row
+    /// A stored row as a read returns it: temporal cells in their carrier
+    /// form, whoever wrote them.
+    fn read_form(&self, row: &Record<AnyMemoryType>) -> Result<Rec> {
+        read_record(&self.metadata, self.id_column_name(), to_cbor_record(row))
     }
 
-    fn native(&self, record: &Rec) -> Record<AnyMemoryType> {
-        from_cbor_record(&self.stored_form(record))
+    fn cbor_rows<C: FromIterator<(String, Rec)>>(
+        &self,
+        rows: IndexMap<String, Record<AnyMemoryType>>,
+    ) -> Result<C> {
+        rows.into_iter()
+            .map(|(id, row)| Ok((id, self.read_form(&row)?)))
+            .collect()
+    }
+
+    /// `record` with every cell in its stored form (see `affinity`), so a
+    /// written row compares like a seeded one.
+    fn stored_form(&self, record: &Rec) -> Result<Rec> {
+        let mut row = record.clone();
+        conform_record(&self.metadata, self.id_column_name(), &mut row)?;
+        Ok(row)
+    }
+
+    fn native(&self, record: &Rec) -> Result<Record<AnyMemoryType>> {
+        Ok(from_cbor_record(&self.stored_form(record)?))
     }
 
     /// `record` as row `id`, carrying an integer id cell when the id column
     /// is declared integer (the store keeps the key as text either way).
-    fn native_as(&self, id: &str, record: &Rec) -> Record<AnyMemoryType> {
+    fn native_as(&self, id: &str, record: &Rec) -> Result<Record<AnyMemoryType>> {
         let mut row = record.clone();
         let id_column = self.id_column_name();
         if Affinity::of(&self.metadata, id_column, id_column) == Affinity::Integer {
@@ -63,7 +72,7 @@ impl MemoryTableShell {
         let row = db.store_table(&self.table).await?.get(id).ok_or_else(|| {
             error!("Row not found", table = self.handle.name(), id = id).mark_not_found()
         })?;
-        Ok(to_cbor_record(&db.returned(&self.table, id, row).await?))
+        self.read_form(&db.returned(&self.table, id, row).await?)
     }
 
     /// Every record whose id is new, through the table. Nothing is written
@@ -112,14 +121,14 @@ impl MemoryTableShell {
                 let store = db.store_table(table).await?;
                 let mut fitted = Vec::new();
                 for (id, record) in records.iter().filter(|(id, _)| store.get(id).is_none()) {
-                    let mut row = self.stored_form(record);
+                    let mut row = self.stored_form(record)?;
                     conform(&mut row, &invariants)?;
                     let mut id_cell = Rec::new();
                     id_cell.insert(
                         self.id_column_name().to_string(),
                         CborValue::Text(id.clone()),
                     );
-                    row.extend(self.stored_form(&id_cell));
+                    row.extend(self.stored_form(&id_cell)?);
                     // Checked with its roll-ups filled, as insert does.
                     if db.fit(table, id, Row::new(row.clone())).await?.is_none() {
                         return Err(MemoryDB::misfit(self.handle.name(), id));
@@ -181,12 +190,12 @@ impl TableShell for MemoryTableShell {
     }
 
     async fn list(&self) -> Result<IndexMap<String, Rec>> {
-        Ok(cbor_rows(self.table.list_values().await?))
+        self.cbor_rows(self.table.list_values().await?)
     }
 
     async fn get(&self, id: &str) -> Result<Option<Rec>> {
         let row = self.table.get_value(id.to_string()).await?;
-        Ok(row.map(|row| to_cbor_record(&row)))
+        row.map(|row| self.read_form(&row)).transpose()
     }
 
     async fn count(&self) -> Result<i64> {
@@ -199,7 +208,7 @@ impl TableShell for MemoryTableShell {
     async fn fetch_window(&self, offset: usize, limit: usize) -> Result<Page> {
         let mut window = self.table.clone();
         window.set_pagination(Some(Pagination::window(offset as i64, limit as i64)));
-        let rows: Vec<(String, Rec)> = cbor_rows(window.list_values().await?);
+        let rows: Vec<(String, Rec)> = self.cbor_rows(window.list_values().await?)?;
         Ok(Page::new(rows).with_total(self.count().await?))
     }
 
@@ -217,7 +226,10 @@ impl TableShell for MemoryTableShell {
             return Ok(watch::invalidations(&tables));
         }
         let query = table_query(db, &self.table).await?;
-        Ok(watch::stream(self.handle.clone(), query))
+        let (metadata, id_column) = (self.metadata.clone(), self.id_column_name().to_string());
+        Ok(watch::stream(self.handle.clone(), query, move |row| {
+            read_record(&metadata, &id_column, row)
+        }))
     }
 
     fn add_condition(&mut self, condition: &Condition) -> Result<()> {
@@ -237,33 +249,33 @@ impl TableShell for MemoryTableShell {
     }
 
     async fn insert(&self, id: Option<&str>, record: &Rec) -> Result<(String, Rec)> {
-        let native = self.native(record);
         let Some(id) = id else {
+            let native = self.native(record)?;
             let id = self.table.insert_return_id_value(&native).await?;
             let inserted = self.inserted(&id).await?;
             return Ok((id, inserted));
         };
-        let native = self.native_as(id, record);
+        let native = self.native_as(id, record)?;
         let inserted = self.table.insert_value(id.to_string(), &native).await?;
-        Ok((id.to_string(), to_cbor_record(&inserted)))
+        Ok((id.to_string(), self.read_form(&inserted)?))
     }
 
     async fn replace(&self, id: &str, record: &Rec) -> Result<Rec> {
-        let native = self.native_as(id, record);
+        let native = self.native_as(id, record)?;
         let replaced = self.table.replace_value(id.to_string(), &native).await?;
-        Ok(to_cbor_record(&replaced))
+        self.read_form(&replaced)
     }
 
     async fn upsert(&self, id: &str, record: &Rec) -> Result<Rec> {
-        let native = self.native_as(id, record);
+        let native = self.native_as(id, record)?;
         let upserted = self.table.upsert_value(id.to_string(), &native).await?;
-        Ok(to_cbor_record(&upserted))
+        self.read_form(&upserted)
     }
 
     async fn patch(&self, id: &str, partial: &Rec) -> Result<Rec> {
-        let native = self.native(partial);
+        let native = self.native(partial)?;
         let patched = self.table.patch_value(id.to_string(), &native).await?;
-        Ok(to_cbor_record(&patched))
+        self.read_form(&patched)
     }
 
     async fn delete(&self, id: &str) -> Result<()> {

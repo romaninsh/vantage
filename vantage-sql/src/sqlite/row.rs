@@ -94,7 +94,7 @@ fn bind_by_cbor<'q>(
         CborValue::Text(s) => query.bind(s.as_str()),
         CborValue::Bytes(b) => query.bind(b.as_slice()),
         // Decimal, datetime, date, time: their text.
-        CborValue::Tag(0 | 10 | 100 | 101, inner) => match inner.as_ref() {
+        CborValue::Tag(0 | 10 | 100 | 101 | 1004, inner) => match inner.as_ref() {
             CborValue::Text(s) => query.bind(s.as_str()),
             _ => return Err(unbindable(cbor)),
         },

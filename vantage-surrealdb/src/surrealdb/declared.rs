@@ -14,7 +14,7 @@ use vantage_core::{Result, error};
 use vantage_table::column::core::Column;
 use vantage_table::table::Table;
 use vantage_table::traits::column_like::ColumnLike;
-use vantage_types::Entity;
+use vantage_types::{Entity, temporal};
 
 use crate::surrealdb::SurrealDB;
 use crate::thing::Thing;
@@ -70,9 +70,9 @@ declared_types! {
     ["bool", "boolean"] => bool as "bool" by typed::<bool>,
     ["string", "text", "str"] => String as "string" by keep,
     ["thing", "record", "record_id"] => Thing as "record" by record,
-    ["timestamp", "datetime"] => DateTime<Utc> as "timestamp" by typed::<DateTime<Utc>>,
+    ["timestamp", "datetime"] => DateTime<Utc> as "timestamp" by instant,
     ["date"] => NaiveDate as "date" by date,
-    ["time"] => NaiveTime as "time" by typed::<NaiveTime>,
+    ["time"] => NaiveTime as "time" by time,
     ["duration"] => std::time::Duration as "duration" by typed::<std::time::Duration>,
     #[cfg(feature = "decimal")]
     ["decimal", "numeric"] => rust_decimal::Decimal as "decimal" by typed::<rust_decimal::Decimal>,
@@ -149,16 +149,44 @@ fn typed<T: SurrealType>(
     }
 }
 
-/// A `date` column. A stored datetime (tag 12) passes as it is, midnight or
-/// not: it is the store's own value (seed data, another writer), so a row
-/// read and written back stays unchanged. Text and tagged dates are typed,
-/// and refused when they carry a time of day.
+/// A `timestamp` column, stored as a datetime. Any instant form
+/// [`temporal::as_instant`] reads is typed, and a date stands for its
+/// midnight UTC. A time of day, or text that is neither, is refused.
+fn instant(column: &str, expected: &str, value: AnySurrealType) -> Result<AnySurrealType> {
+    let raw = value.value();
+    if is_absent(raw) {
+        return Ok(AnySurrealType::new(None::<DateTime<Utc>>));
+    }
+    temporal::as_instant(raw)
+        .or_else(|| temporal::as_date(raw).map(|day| day.and_time(NaiveTime::MIN).and_utc()))
+        .map(AnySurrealType::new)
+        .ok_or_else(|| invalid(column, expected, &value))
+}
+
+/// A `date` column, stored as the datetime at midnight UTC. A date, or an
+/// instant at midnight UTC, is typed; anything carrying a time of day is
+/// refused, since a read could not return it as a date.
 fn date(column: &str, expected: &str, value: AnySurrealType) -> Result<AnySurrealType> {
     let raw = value.value();
-    if matches!(raw, CborValue::Tag(12, _)) && DateTime::<Utc>::from_cbor(raw.clone()).is_some() {
-        return Ok(value);
+    if is_absent(raw) {
+        return Ok(AnySurrealType::new(None::<NaiveDate>));
     }
-    typed::<NaiveDate>(column, expected, value)
+    temporal::as_date(raw)
+        .or_else(|| temporal::midnight_date(raw))
+        .map(AnySurrealType::new)
+        .ok_or_else(|| invalid(column, expected, &value))
+}
+
+/// A `time` column, stored as text in the carrier form (`HH:MM:SS.ffffff`),
+/// so text order is time order. `HH:MM` and a tagged time are typed.
+fn time(column: &str, expected: &str, value: AnySurrealType) -> Result<AnySurrealType> {
+    let raw = value.value();
+    if is_absent(raw) {
+        return Ok(AnySurrealType::new(None::<NaiveTime>));
+    }
+    temporal::as_time(raw)
+        .map(AnySurrealType::new)
+        .ok_or_else(|| invalid(column, expected, &value))
 }
 
 /// A `thing` column: a record id passes (an integer key too), `table:key`

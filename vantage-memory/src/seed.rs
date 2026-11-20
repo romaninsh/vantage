@@ -16,15 +16,16 @@ pub fn load(
     table: &MemoryTable,
     rows: impl IntoIterator<Item = serde_json::Value>,
 ) -> vantage_core::Result<usize> {
-    load_with(table, rows, |_| {})
+    load_with(table, rows, |_| Ok(()))
 }
 
 /// [`load`], passing each row through `prepare` before it is stored (the
-/// Vista factory conforms cells to their declared column types here).
+/// Vista factory conforms cells to their declared column types here). A row
+/// `prepare` refuses fails the load.
 pub(crate) fn load_with(
     table: &MemoryTable,
     rows: impl IntoIterator<Item = serde_json::Value>,
-    mut prepare: impl FnMut(&mut Record<CborValue>),
+    mut prepare: impl FnMut(&mut Record<CborValue>) -> vantage_core::Result<()>,
 ) -> vantage_core::Result<usize> {
     let mut n = 0;
     for (i, value) in rows.into_iter().enumerate() {
@@ -39,7 +40,7 @@ pub(crate) fn load_with(
             return Err(error!("Seed row is not an object", position = i));
         };
         let mut record: Record<CborValue> = cbor.into();
-        prepare(&mut record);
+        prepare(&mut record)?;
         match crate::store::ids::supplied_id(record.get(table.id_column())) {
             Some(id) => {
                 table.upsert(&id, record);
@@ -56,14 +57,14 @@ pub(crate) fn load_with(
 /// Load rows from a `.json`, `.yaml` or `.yml` file at `path`. Rows are
 /// stored as given.
 pub fn load_file(table: &MemoryTable, path: &Path) -> vantage_core::Result<usize> {
-    load_file_with(table, path, |_| {})
+    load_file_with(table, path, |_| Ok(()))
 }
 
 /// [`load_file`], passing each row through `prepare` as [`load_with`] does.
 pub(crate) fn load_file_with(
     table: &MemoryTable,
     path: &Path,
-    prepare: impl FnMut(&mut Record<CborValue>),
+    prepare: impl FnMut(&mut Record<CborValue>) -> vantage_core::Result<()>,
 ) -> vantage_core::Result<usize> {
     let content = std::fs::read_to_string(path).map_err(|e| {
         error!(

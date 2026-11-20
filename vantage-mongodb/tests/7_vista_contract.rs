@@ -4,14 +4,23 @@
 
 #![cfg(feature = "vista")]
 
-use std::sync::Arc;
+use std::panic::AssertUnwindSafe;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
+use async_trait::async_trait;
 use bson::oid::ObjectId;
+use bson::{Bson, DateTime as BsonDateTime, Document, doc};
+use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use ciborium::Value as CborValue;
+use futures_util::FutureExt;
 use indexmap::IndexMap;
+use vantage_core::error;
 use vantage_mongodb::vista::MongoVistaSpec;
 use vantage_mongodb::{MongoDB, MongoVistaFactory};
-use vantage_vista::{SpecResolver, VistaFactory, contract};
+use vantage_types::temporal;
+use vantage_vista::contract::{Foreign, Precision, Stored, TemporalFixture};
+use vantage_vista::{SpecResolver, Vista, VistaFactory, contract};
 
 fn mongo_url() -> String {
     std::env::var("MONGODB_URL").unwrap_or_else(|_| "mongodb://localhost:27017".into())
@@ -120,4 +129,141 @@ async fn mongo_contract_clone() {
     let orders = factory.build_from_spec(spec(ORDER)).unwrap();
     contract::check_clone(&orders, "client_id", CborValue::Text("c1".into())).await;
     teardown(&db).await;
+}
+
+fn temporal_spec(collection: &str) -> MongoVistaSpec {
+    spec(&format!(
+        r#"
+name: event
+columns:
+  _id: {{ type: string, flags: [id, orderable] }}
+  d: {{ type: date, flags: [orderable] }}
+  t: {{ type: time, flags: [orderable] }}
+  ts: {{ type: timestamp, flags: [orderable] }}
+mongo:
+  collection: {collection}
+"#
+    ))
+}
+
+/// Each `fresh()` opens a new collection; `stored` and `seed_foreign` reach
+/// the last one with the driver.
+struct Temporal {
+    db: MongoDB,
+    next: AtomicUsize,
+    collection: Mutex<String>,
+}
+
+impl Temporal {
+    fn new(db: MongoDB) -> Self {
+        Self {
+            db,
+            next: AtomicUsize::new(0),
+            collection: Mutex::new(String::new()),
+        }
+    }
+
+    fn collection(&self) -> mongodb::Collection<Document> {
+        self.db.doc_collection(&self.collection.lock().unwrap())
+    }
+}
+
+#[async_trait]
+impl TemporalFixture for Temporal {
+    async fn fresh(&self) -> Vista {
+        let name = format!("events_{}", self.next.fetch_add(1, Ordering::Relaxed));
+        *self.collection.lock().unwrap() = name.clone();
+        self.db
+            .vista_factory()
+            .build_from_spec(temporal_spec(&name))
+            .expect("temporal vista")
+    }
+
+    fn precision(&self) -> Precision {
+        Precision::Millis
+    }
+
+    async fn stored(&self, _vista: &Vista, id: &str, column: &str) -> vantage_core::Result<Stored> {
+        let row = self
+            .collection()
+            .find_one(doc! { "_id": id })
+            .await
+            .map_err(|e| error!(format!("find {id}: {e}")))?
+            .ok_or_else(|| error!(format!("{id} is not stored")))?;
+        match row.get(column) {
+            Some(Bson::DateTime(at)) => {
+                let at = DateTime::<Utc>::from_timestamp_millis(at.timestamp_millis())
+                    .ok_or_else(|| error!(format!("{column} of {id} is out of chrono's range")))?;
+                let canonical = if column == "d" {
+                    temporal::format_date(&at.date_naive())
+                } else {
+                    temporal::format_instant(&at)
+                };
+                Ok(Stored::Native {
+                    kind: "date".into(),
+                    canonical,
+                })
+            }
+            Some(Bson::String(s)) => Ok(Stored::Text(s.clone())),
+            other => Err(error!(format!("{column} of {id} is stored as {other:?}"))),
+        }
+    }
+
+    async fn seed_foreign(&self, _vista: &Vista) -> vantage_core::Result<Vec<Foreign>> {
+        let moment = DateTime::parse_from_rfc3339("2026-11-19T16:01:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let day = NaiveDate::from_ymd_opt(2026, 11, 19).unwrap();
+        let midnight = day.and_hms_opt(0, 0, 0).unwrap().and_utc();
+        let minute = NaiveTime::from_hms_opt(16, 1, 0).unwrap();
+        let bson_at =
+            |at: &DateTime<Utc>| Bson::DateTime(BsonDateTime::from_millis(at.timestamp_millis()));
+        let foreign: Vec<(&'static str, Bson, CborValue)> = vec![
+            ("ts", bson_at(&moment), temporal::instant(&moment)),
+            (
+                "ts",
+                Bson::String("2026-11-19T16:01:00Z".into()),
+                temporal::instant(&moment),
+            ),
+            ("d", bson_at(&midnight), temporal::date(&day)),
+            ("d", Bson::String("2026-11-19".into()), temporal::date(&day)),
+            ("t", Bson::String("16:01".into()), temporal::time(&minute)),
+        ];
+        let docs: Vec<Document> = foreign
+            .iter()
+            .enumerate()
+            .map(|(i, (column, written, _))| {
+                let mut row = Document::new();
+                row.insert("_id", format!("f{i}"));
+                row.insert(*column, written.clone());
+                row
+            })
+            .collect();
+        self.collection()
+            .insert_many(docs)
+            .await
+            .map_err(|e| error!(format!("seed foreign rows: {e}")))?;
+        Ok(foreign
+            .into_iter()
+            .map(|(column, written, reads_as)| {
+                Foreign::new(column, format!("{written:?}"), reads_as)
+            })
+            .collect())
+    }
+}
+
+#[tokio::test]
+async fn mongodb_temporal_contract() {
+    let db_name = format!("vantage_vista_temporal_{}", ObjectId::new().to_hex());
+    let db = MongoDB::connect(&mongo_url(), &db_name)
+        .await
+        .expect("connect mongo");
+    let fixture = Temporal::new(db.clone());
+    let outcome = AssertUnwindSafe(contract::check_temporal(&fixture))
+        .catch_unwind()
+        .await;
+    teardown(&db).await;
+    if let Err(panic) = outcome {
+        std::panic::resume_unwind(panic);
+    }
 }

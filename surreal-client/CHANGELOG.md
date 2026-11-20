@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.3 — 2026-11-20
+
+- Fix: an error reply the server can't tie to a request (it couldn't decode the request, so it
+  couldn't read its id) used to be dropped, leaving the request to wait out its deadline. It now
+  fails every request still waiting, with the server's error. An error for an id nothing waits
+  for is logged.
+
 ## 1.2.2 — 2026-11-16
 
 - Drops the unused `bincode`, `mobc` and `rust_decimal` dependencies, and the `pool` and

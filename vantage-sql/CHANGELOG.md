@@ -10,8 +10,15 @@
 - PostgreSQL binds any accepted form of a date, time or instant as the real type (offsets, naive
   text, `HH:MM`, `Tag(100)` and `Tag(1004)` dates, SurrealDB's `Tag(12)`), and the chrono types
   read and write the carrier forms.
+- SQLite stores dates, times and instants as the fixed-width carrier text, so conditions and
+  `ORDER BY` compare by value: `ts > "16:01:00"` used to select nothing, and `…00.500Z` sorted
+  before `…00Z`. It reads every text form another program may have left (`T` or a space,
+  offsets, short fractions, `HH:MM`) in the carrier forms; a `DateTime<FixedOffset>` reads back
+  as its UTC instant.
+- MySQL reads and binds the carrier forms the same way, binding real chrono values instead of
+  text; `DATETIME` and `TIMESTAMP` hold UTC (the session runs at `+00:00`).
 - Tests: PostgreSQL runs `contract::check_temporal` over a `timestamp without time zone` and a
-  `timestamptz` column.
+  `timestamptz` column, SQLite and MySQL over their own types.
 
 ## 0.13.2 — 2026-11-19
 

@@ -7,6 +7,7 @@ use vantage_table::column::core::Column;
 use vantage_table::traits::column_like::ColumnLike;
 use vantage_types::Record;
 
+use crate::temporal::Temporal;
 use crate::type_system::{AnyCsvType, CsvTypeVariants, parse_with_type, variant_from_type_name};
 
 /// CSV backend for Vantage — reads data from CSV files.
@@ -66,11 +67,13 @@ impl Csv {
 
         let mut key_for: Vec<String> = headers.iter().map(|h| h.to_string()).collect();
         let mut variant_for: Vec<Option<CsvTypeVariants>> = vec![None; headers.len()];
+        let mut temporal_for: Vec<Option<Temporal>> = vec![None; headers.len()];
         for (name, col) in columns {
             let csv_header = col.alias().unwrap_or(name);
             if let Some(idx) = headers.iter().position(|h| h == csv_header) {
                 key_for[idx] = name.clone();
                 variant_for[idx] = variant_from_type_name(col.get_type());
+                temporal_for[idx] = Temporal::of_type(col.get_type());
             }
         }
 
@@ -94,8 +97,13 @@ impl Csv {
             let mut record = Record::new();
             for (i, field) in csv_record.iter().enumerate() {
                 if let Some(key) = key_for.get(i) {
-                    let variant = variant_for.get(i).copied().flatten();
-                    record.insert(key.clone(), parse_with_type(field, variant));
+                    let value = match temporal_for.get(i).copied().flatten() {
+                        Some(kind) if !field.is_empty() => {
+                            AnyCsvType::new(kind.cell_text(key, field)?)
+                        }
+                        _ => parse_with_type(field, variant_for.get(i).copied().flatten()),
+                    };
+                    record.insert(key.clone(), value);
                 }
             }
 

@@ -246,13 +246,12 @@ impl WsCborEngine {
                                         continue;
                                     }
 
-                                    if let Some(id) = top_id.as_ref().and_then(cbor_id_key) {
-                                        let tx = {
-                                            let mut pending = pending_requests.lock().await;
-                                            pending.remove(&id)
-                                        };
-
-                                        if let Some(tx) = tx {
+                                    let tx = match top_id.as_ref().and_then(cbor_id_key) {
+                                        Some(id) => pending_requests.lock().await.remove(&id),
+                                        None => None,
+                                    };
+                                    match (tx, error) {
+                                        (Some(tx), error) => {
                                             let reply = match (error, result) {
                                                 (Some(err), _) => Err(server_error(&err)),
                                                 (None, Some(res)) => Ok(res),
@@ -260,6 +259,18 @@ impl WsCborEngine {
                                             };
                                             let _ = tx.send(reply);
                                         }
+                                        // An error tied to no waiting request: the server
+                                        // couldn't decode a request, so it couldn't read its
+                                        // id. Which request it was is unknown, so every one
+                                        // still waiting fails with it rather than waiting out
+                                        // its deadline.
+                                        (None, Some(err)) if top_id.is_none() => {
+                                            fail_waiting(&pending_requests, &err).await;
+                                        }
+                                        (None, Some(err)) => {
+                                            warn!(id = ?top_id, error = ?err, "SurrealDB error for a request nothing waits for");
+                                        }
+                                        (None, None) => {}
                                     }
                                 }
                                 Ok(_) => {}
@@ -287,6 +298,15 @@ impl WsCborEngine {
             }
             .in_current_span(),
         )
+    }
+}
+
+/// Fail every request still waiting for a reply with a server error that names no request.
+async fn fail_waiting(pending_requests: &PendingRequests, err: &CborValue) {
+    let waiting: Vec<_> = pending_requests.lock().await.drain().collect();
+    warn!(error = ?err, waiting = waiting.len(), "SurrealDB error tied to no request");
+    for (_, tx) in waiting {
+        let _ = tx.send(Err(server_error(err)));
     }
 }
 

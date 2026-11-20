@@ -95,6 +95,9 @@ mod mysql {
     #[path = "6_vista_rhai_refs.rs"]
     mod vista_rhai_refs;
     #[cfg(feature = "vista")]
+    #[path = "6_vista_temporal.rs"]
+    mod vista_temporal;
+    #[cfg(feature = "vista")]
     #[path = "6_vista_transactions.rs"]
     mod vista_transactions;
 }

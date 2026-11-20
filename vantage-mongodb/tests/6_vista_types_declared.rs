@@ -17,7 +17,7 @@ use indexmap::IndexMap;
 use vantage_dataset::prelude::*;
 use vantage_mongodb::MongoDB;
 use vantage_mongodb::vista::MongoVistaSpec;
-use vantage_types::Record;
+use vantage_types::{Record, temporal};
 use vantage_vista::{Condition, FilterOp, Vista, VistaFactory, VistaMetadata};
 
 type TestResult = std::result::Result<(), Box<dyn Error>>;
@@ -143,7 +143,8 @@ async fn declared_types_coerce_on_insert() -> TestResult {
     Ok(())
 }
 
-/// BSON has no time-of-day: `time` is text. `bytes` is a byte count.
+/// BSON has no time-of-day: `time` is stored as carrier text and reads back
+/// as `Tag(101)`. `bytes` is a byte count.
 #[tokio::test]
 async fn declared_time_is_text_and_bytes_an_integer() -> TestResult {
     let (db, name) = setup().await;
@@ -163,8 +164,13 @@ mongo:
     row.insert("size".into(), CborValue::Integer(1536i64.into()));
     vista.insert_value("e1", &row).await?;
     let stored = raw(&db, "e1").await;
-    assert_eq!(stored.get("starts"), Some(&Bson::String("09:30:00".into())));
+    assert_eq!(
+        stored.get("starts"),
+        Some(&Bson::String("09:30:00.000000".into()))
+    );
     assert_eq!(stored.get("size"), Some(&Bson::Int64(1536)));
+    let read = vista.get_value("e1").await?.expect("e1");
+    assert_eq!(read.get("starts"), Some(&tag(101, text("09:30:00.000000"))));
 
     teardown(&db, &name).await;
     Ok(())
@@ -544,6 +550,15 @@ fn instant(rfc3339: &str) -> Bson {
     Bson::DateTime(DateTime::parse_rfc3339_str(rfc3339).unwrap())
 }
 
+/// The carrier form a read returns for an instant given as RFC 3339 text.
+fn read_instant(rfc3339: &str) -> CborValue {
+    temporal::instant(&temporal::parse_instant(rfc3339).unwrap())
+}
+
+fn read_date(day: &str) -> CborValue {
+    tag(temporal::TAG_DATE, text(day))
+}
+
 /// The text forms SQLite's `date` and `timestamp` columns take. Naive text
 /// is UTC; a date is stored as midnight UTC.
 #[tokio::test]
@@ -576,8 +591,8 @@ async fn declared_date_and_timestamp_store_datetimes_and_read_typed() -> TestRes
         );
 
         let row = vista.get_value(id.as_str()).await?.expect("row");
-        assert_eq!(row.get("at"), Some(&tag(0, text(utc))), "{written}");
-        assert_eq!(row.get("due"), Some(&tag(100, text("2026-12-10"))));
+        assert_eq!(row.get("at"), Some(&read_instant(utc)), "{written}");
+        assert_eq!(row.get("due"), Some(&read_date("2026-12-10")));
 
         // Written back as read, the stored values stay.
         vista.replace_value(id.as_str(), &row).await?;
@@ -596,7 +611,7 @@ async fn declared_date_and_timestamp_store_datetimes_and_read_typed() -> TestRes
     // Every row lists typed too.
     for (id, row) in vista.list_values().await? {
         assert!(
-            matches!(row.get("due"), Some(CborValue::Tag(100, _))),
+            matches!(row.get("due"), Some(CborValue::Tag(temporal::TAG_DATE, _))),
             "{id}"
         );
         assert!(matches!(row.get("at"), Some(CborValue::Tag(0, _))), "{id}");
@@ -685,8 +700,8 @@ async fn declared_date_and_timestamp_read_stored_text_typed() -> TestResult {
 
     for (id, due, at, utc) in legacy {
         let row = vista.get_value(id).await?.expect("row");
-        assert_eq!(row.get("due"), Some(&tag(100, text(due))), "{id}");
-        assert_eq!(row.get("at"), Some(&tag(0, text(utc))), "{id}");
+        assert_eq!(row.get("due"), Some(&read_date(due)), "{id}");
+        assert_eq!(row.get("at"), Some(&read_instant(utc)), "{id}");
 
         // Neither the read nor writing the row back as read rewrites it.
         vista.replace_value(id, &row).await?;

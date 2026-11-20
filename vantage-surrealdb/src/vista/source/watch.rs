@@ -51,7 +51,7 @@ where
                     Action::Create | Action::Update => {
                         match table.get_value(thing.clone()).await? {
                             Some(record) => {
-                                let value = to_cbor_record(record);
+                                let value = to_cbor_record(&table, record)?;
                                 if note.action == Action::Create {
                                     yield VistaChange::Inserted { id, value };
                                 } else {

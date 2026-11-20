@@ -2,6 +2,7 @@
 //! `VistaFactory` trait impl. CSV is read-only, so the factory advertises
 //! no write capability.
 
+use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use vantage_core::{Result, error};
 use vantage_table::column::core::Column as TableColumn;
 use vantage_table::table::{BuildEnv, Table, TableInjector, VistaMetadataOptions};
@@ -133,10 +134,14 @@ pub(crate) fn column_for_type(name: &str, ty: &str) -> Result<TableColumn<AnyCsv
             TableColumn::from_column(TableColumn::<f64>::new(name))
         }
         "bool" | "boolean" => TableColumn::from_column(TableColumn::<bool>::new(name)),
-        // CSV has no date or byte-count cell: the display types read as text.
-        "string" | "text" | "str" | "date" | "time" | "timestamp" | "bytes" => {
+        // CSV has no byte-count cell: it reads as text.
+        "string" | "text" | "str" | "bytes" => {
             TableColumn::from_column(TableColumn::<String>::new(name))
         }
+        // Text in any accepted form, read as the carrier value (see `crate::temporal`).
+        "date" => TableColumn::from_column(TableColumn::<NaiveDate>::new(name)),
+        "time" => TableColumn::from_column(TableColumn::<NaiveTime>::new(name)),
+        "timestamp" => TableColumn::from_column(TableColumn::<DateTime<Utc>>::new(name)),
         "json" => TableColumn::from_column(TableColumn::<serde_json::Value>::new(name)),
         other => {
             return Err(error!(

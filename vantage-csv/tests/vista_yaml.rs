@@ -168,35 +168,54 @@ csv:
     Ok(())
 }
 
-/// CSV has no date or byte-count cell: the display types read the cell as
-/// text.
+/// CSV has no byte-count cell: `bytes` reads the cell as text.
 #[tokio::test]
-async fn yaml_display_types_read_as_text() -> Result<()> {
+async fn yaml_bytes_reads_as_text() -> Result<()> {
     let csv = Csv::new(data_dir());
     let yaml = r#"
 name: client
 columns:
   id: { type: string, flags: [id] }
-  name: { type: date }
-  email: { type: time }
-  contact_details: { type: timestamp }
   is_paying_client: { type: bytes }
 csv:
   path: client.csv
 "#;
     let vista = csv.vista_factory().from_yaml(yaml)?;
     let rows = vista.list_values().await?;
-    for (column, cell) in [
-        ("name", "Marty McFly"),
-        ("email", "marty@gmail.com"),
-        ("contact_details", "555-1955"),
-        ("is_paying_client", "true"),
+    assert_eq!(
+        rows["marty"].get("is_paying_client"),
+        Some(&CborValue::Text("true".to_string()))
+    );
+    Ok(())
+}
+
+/// A cell that isn't its column's declared date, time or timestamp fails the read, naming the
+/// column and the cell, instead of reading as text.
+#[tokio::test]
+async fn yaml_temporal_column_refuses_a_cell_of_another_kind() -> Result<()> {
+    let csv = Csv::new(data_dir());
+    for (ty, column, cell) in [
+        ("date", "name", "Marty McFly"),
+        ("time", "email", "marty@gmail.com"),
+        ("timestamp", "contact_details", "555-1955"),
     ] {
-        assert_eq!(
-            rows["marty"].get(column),
-            Some(&CborValue::Text(cell.to_string())),
-            "{column}"
+        let yaml = format!(
+            r#"
+name: client
+columns:
+  id: {{ type: string, flags: [id] }}
+  {column}: {{ type: {ty} }}
+csv:
+  path: client.csv
+"#
         );
+        let vista = csv.vista_factory().from_yaml(&yaml)?;
+        let err = vista
+            .list_values()
+            .await
+            .expect_err("a cell of another kind must fail the read")
+            .to_string();
+        assert!(err.contains(column) && err.contains(cell), "{ty}: {err}");
     }
     Ok(())
 }

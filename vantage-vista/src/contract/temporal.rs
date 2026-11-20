@@ -63,6 +63,11 @@ pub trait TemporalFixture: Send + Sync {
     fn zone_aware(&self) -> bool {
         false
     }
+    /// Whether `tz` holds the whole edge range (1969 to 9999). MySQL's `TIMESTAMP` stops at
+    /// 1970–2038, so its fixture says no and the edge probe writes `tz` only in that range.
+    fn zone_aware_full_range(&self) -> bool {
+        true
+    }
     fn precision(&self) -> Precision {
         Precision::Micros
     }
@@ -300,7 +305,10 @@ async fn edges_round_trip(fx: &impl TemporalFixture) -> Result<()> {
     ];
     let mut broken = Vec::new();
     for (id, d, t, ts) in cases {
-        let row = row(fx, &[("d", date(d)), ("t", time(t))], instant(ts));
+        let mut row = row(fx, &[("d", date(d)), ("t", time(t))], instant(ts));
+        if id != "e1" && !fx.zone_aware_full_range() {
+            row.shift_remove("tz");
+        }
         if let Err(e) = v.insert_value(id, &row).await {
             broken.push(format!("{d} / {t} / {ts} is refused: {e}"));
             continue;

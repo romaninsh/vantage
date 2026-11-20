@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.5.0 — 2026-11-20
+
+- Fix: writing a `time` value hung until the request deadline. The carrier's `Tag(101)` reached
+  the server, which can't decode it and so answered without a request id. `time` is now stored
+  as text in the carrier form, and a query parameter carrying a tag SurrealDB doesn't decode is
+  refused at once as `InvalidValue`, naming the tag.
+- Vista reads give the carrier forms of `vantage_types::temporal` by declared column type: a
+  `timestamp` (and any other datetime, nested ones too) reads as `Tag(0,
+  "…T16:01:00.000000Z")` instead of `Tag(12)`, a `date` as `Tag(1004)`, a `time` as `Tag(101)`;
+  NONE in those columns reads as null. A stored value that isn't its column's kind fails the
+  read, naming the column; a `date` column refuses a datetime with a time of day on write.
+- Conditions on those columns compare in the same forms.
+- Tests: SurrealDB runs `contract::check_temporal`.
+
 ## 2.4.4 — 2026-11-19
 
 - Tests: run `contract::check_list_condition`.

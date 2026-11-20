@@ -7,7 +7,8 @@
   written in; they are stored the driver's way (`TemporalFixture::stored`); rows another program
   wrote read the same way (`seed_foreign`); the driver's precision is kept; nulls clear; and
   conditions and order compare by value. A table without inserts gets only the foreign-read
-  probe. Each driver's contract test runs it on a disposable fixture.
+  probe. A fixture whose zone-aware column holds a narrower range (MySQL's `TIMESTAMP`) says so
+  with `zone_aware_full_range`. Each driver's contract test runs it on a disposable fixture.
 
 ## 2.12.2 — 2026-11-19
 

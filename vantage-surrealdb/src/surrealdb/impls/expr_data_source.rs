@@ -48,6 +48,14 @@ async fn run_query(
     query_str: &str,
     params_cbor: CborValue,
 ) -> Result<AnySurrealType> {
+    if let Some(tag) = unknown_tag(&params_cbor) {
+        return Err(vantage_core::error!(
+            "SurrealDB can't decode a parameter carrying this CBOR tag",
+            tag = tag,
+            expression = query_str.to_string()
+        )
+        .mark_invalid_value());
+    }
     let sent = match txn {
         None => client.query_cbor(query_str, params_cbor).await,
         Some(txn) => client.query_cbor_in(txn, query_str, params_cbor).await,
@@ -127,5 +135,27 @@ async fn run_query(
             query_error = error_message,
             error_type = "query_execution"
         ))
+    }
+}
+
+/// The CBOR tags SurrealDB's RPC decoder takes: NONE, table, record id,
+/// uuid, decimal, datetime, duration, future, range and its bounds,
+/// geometries.
+const SURREAL_TAGS: &[u64] = &[
+    6, 7, 8, 9, 10, 12, 13, 14, 15, 37, 49, 50, 51, 88, 89, 90, 91, 92, 93, 94,
+];
+
+/// The first tag in `value` SurrealDB can't decode. The server answers such
+/// a request with an error that carries no request id, so the request would
+/// wait out its deadline instead of failing.
+fn unknown_tag(value: &CborValue) -> Option<u64> {
+    match value {
+        CborValue::Tag(tag, _) if !SURREAL_TAGS.contains(tag) => Some(*tag),
+        CborValue::Tag(_, inner) => unknown_tag(inner),
+        CborValue::Array(items) => items.iter().find_map(unknown_tag),
+        CborValue::Map(entries) => entries
+            .iter()
+            .find_map(|(k, v)| unknown_tag(k).or_else(|| unknown_tag(v))),
+        _ => None,
     }
 }

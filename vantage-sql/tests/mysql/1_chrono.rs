@@ -147,13 +147,14 @@ async fn test_date_date() {
 
 #[tokio::test]
 async fn test_date_time() {
-    // TIME into DATE column — MySQL rejects the insert
+    // TIME into DATE column — MySQL either rejects the insert or fills in
+    // today's date; a date never reads back as a time
     let t = table_for!("chrono_date", db().await, ValTime);
     let orig = ValTime {
         name: "t".into(),
         value: time_val(),
     };
-    assert!(t.replace("da_t", &orig).await.is_err());
+    assert!(try_round_trip(&t, "da_t", &orig).await.is_err());
 }
 
 #[tokio::test]
@@ -217,8 +218,8 @@ async fn test_datetime_date() {
         name: "d".into(),
         value: date_val(),
     };
-    // NaiveDate into DATETIME — DateTime variant returned, NaiveDate can't
-    // parse "2025-06-15 00:00:00" with %Y-%m-%d alone
+    // NaiveDate into DATETIME — an instant comes back, and an instant never
+    // reads as a date
     assert!(try_round_trip(&t, "dt_d", &orig).await.is_err());
 }
 
@@ -234,7 +235,7 @@ async fn test_timestamp_date() {
         name: "d".into(),
         value: date_val(),
     };
-    // Same as datetime_date — NaiveDate can't parse datetime string from Tag(0)
+    // Same as datetime_date — an instant never reads as a date
     assert!(try_round_trip(&t, "ts_d", &orig).await.is_err());
 }
 
@@ -454,7 +455,7 @@ fn fixed_val() -> DateTime<FixedOffset> {
         .unwrap()
 }
 
-// ── VARCHAR — offset preserved exactly ──────────────────────────────────
+// ── VARCHAR — offset normalized to UTC (typed bind) ─────────────────────
 
 #[tokio::test]
 async fn test_varchar_fixed() {
@@ -464,29 +465,22 @@ async fn test_varchar_fixed() {
         value: fixed_val(),
     };
     let fetched = try_round_trip(&t, "vc_fix", &orig).await.unwrap();
-    assert_eq!(fetched, orig);
-    // Offset preserved as +05:30
-    assert_eq!(fetched.value.offset().local_minus_utc(), 5 * 3600 + 30 * 60);
+    // Same instant but offset lost — the bind sends the UTC wall clock
+    assert_eq!(fetched.value, orig.value.with_timezone(&Utc).fixed_offset());
+    assert_eq!(fetched.value.offset().local_minus_utc(), 0);
 }
 
 // ── DATETIME / TIMESTAMP — offset lost, converted to UTC ───────────
 
 #[tokio::test]
 async fn test_datetime_fixed() {
-    let db = db().await;
-    let t = table_for_fixed!("chrono_datetime", db.clone());
+    let t = table_for_fixed!("chrono_datetime", db().await);
     let orig = ValFixed {
         name: "india".into(),
         value: fixed_val(),
     };
-    let result = try_round_trip(&t, "dt_fix", &orig).await;
-    if super::is_mariadb(&db).await {
-        // MariaDB has no UTC-offset datetime literals; MySQL 8 converts to UTC
-        let err = result.expect_err("MariaDB rejects an offset datetime");
-        assert!(err.contains("Incorrect datetime value"), "{err}");
-        return;
-    }
-    let fetched = result.unwrap();
+    // The bind sends the UTC wall clock, which MySQL and MariaDB both take
+    let fetched = try_round_trip(&t, "dt_fix", &orig).await.unwrap();
     // Same instant but offset normalized to +00:00 (MySQL drops tz)
     assert_eq!(fetched.value, orig.value.with_timezone(&Utc).fixed_offset());
     assert_eq!(fetched.value.offset().local_minus_utc(), 0);

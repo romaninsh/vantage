@@ -14,6 +14,7 @@ use vantage_surrealdb::surreal_expr;
 use vantage_surrealdb::surrealdb::SurrealDB;
 use vantage_surrealdb::vista::SurrealVistaSpec;
 use vantage_table::table::{BuildKind, RollupOp, Table, TableInjector};
+use vantage_types::temporal::{TAG_DATE, TAG_INSTANT, TAG_TIME};
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{SpecResolver, VistaFactory};
 
@@ -30,14 +31,12 @@ fn text(s: &str) -> CborValue {
     CborValue::Text(s.into())
 }
 
-fn tag12(seconds: i64) -> CborValue {
-    CborValue::Tag(
-        12,
-        Box::new(CborValue::Array(vec![
-            CborValue::Integer(seconds.into()),
-            CborValue::Integer(0.into()),
-        ])),
-    )
+fn instant(at: &str) -> CborValue {
+    CborValue::Tag(TAG_INSTANT, Box::new(text(at)))
+}
+
+fn date(day: &str) -> CborValue {
+    CborValue::Tag(TAG_DATE, Box::new(text(day)))
 }
 
 fn link(table: &str, key: &str) -> CborValue {
@@ -52,13 +51,14 @@ async fn define(db: &SurrealDB, sql: &str) -> TestResult {
     Ok(())
 }
 
-// 2026-12-10T00:00:00Z and 2026-12-10T10:00:00Z.
-const DEC_10: i64 = 1_796_860_800;
-const DEC_10_AT_10: i64 = DEC_10 + 36_000;
+const DEC_10: &str = "2026-12-10";
+const DEC_10_AT_0: &str = "2026-12-10T00:00:00.000000Z";
+const DEC_10_AT_10: &str = "2026-12-10T10:00:00.000000Z";
 
 /// lender #1: `type: date` / `type: timestamp` text reaches a `TYPE datetime`
-/// field as a datetime; a date column refuses a time of day, and text that
-/// isn't a date is `InvalidValue` naming the column.
+/// field as a datetime, and reads back as a date or an instant; a date column
+/// refuses a time of day, and text that isn't a date is `InvalidValue` naming
+/// the column.
 #[tokio::test]
 async fn date_and_timestamp_text_is_written_as_a_datetime() -> TestResult {
     let (db, _) = setup().await;
@@ -99,10 +99,10 @@ columns:
         .await?;
     let a = vista.get_value("a").await?.expect("inserted");
     let b = vista.get_value("b").await?.expect("inserted");
-    assert_eq!(a.get("due_date"), Some(&tag12(DEC_10)));
-    assert_eq!(a.get("funded_at"), Some(&tag12(DEC_10_AT_10)));
-    assert_eq!(b.get("due_date"), Some(&tag12(DEC_10)));
-    assert_eq!(b.get("funded_at"), Some(&tag12(DEC_10)));
+    assert_eq!(a.get("due_date"), Some(&date(DEC_10)));
+    assert_eq!(a.get("funded_at"), Some(&instant(DEC_10_AT_10)));
+    assert_eq!(b.get("due_date"), Some(&date(DEC_10)));
+    assert_eq!(b.get("funded_at"), Some(&instant(DEC_10_AT_0)));
 
     let later = record(vec![("due_date", text("2026-12-10T10:00:00Z"))]);
     let err = vista
@@ -117,16 +117,16 @@ columns:
     assert!(err.is_invalid_value(), "{err:?}");
     assert!(format!("{err:?}").contains("funded_at"), "{err:?}");
 
-    // A datetime another writer stored at 10:00 is the store's own value:
-    // the row read and written back unchanged stays unchanged.
+    // A datetime another writer stored at 10:00 in the date column is no
+    // date: reading it is an error naming the column and the value.
     db.execute(&surreal_expr!(
         "CREATE loan:c SET due_date = d'2026-12-10T10:00:00Z', funded_at = d'2026-12-10T10:00:00Z'"
     ))
     .await?;
-    let c = vista.get_value("c").await?.expect("created");
-    assert_eq!(c.get("due_date"), Some(&tag12(DEC_10_AT_10)));
-    vista.replace_value("c", &c).await?;
-    assert_eq!(vista.get_value("c").await?, Some(c));
+    let err = vista.get_value("c").await.expect_err("not a date");
+    let shown = err.to_string();
+    assert!(shown.contains("`due_date` of `loan`"), "{shown}");
+    assert!(shown.contains("2026-12-10T10:00:00"), "{shown}");
     Ok(())
 }
 
@@ -228,7 +228,7 @@ columns:
         )
         .await?;
     let set = vista.get_value("a").await?.expect("patched");
-    assert_eq!(set.get("closed_at"), Some(&tag12(DEC_10)));
+    assert_eq!(set.get("closed_at"), Some(&instant(DEC_10_AT_0)));
     assert_eq!(
         set.get("amount"),
         Some(&CborValue::Tag(10, Box::new(text("10.5"))))
@@ -266,7 +266,7 @@ columns:
         .patch_value("a", &record(vec![("closed_at", text("2026-12-10"))]))
         .await?;
     let set = vista.get_value("a").await?.expect("patched");
-    assert_eq!(set.get("closed_at"), Some(&tag12(DEC_10)));
+    assert_eq!(set.get("closed_at"), Some(&instant(DEC_10_AT_0)));
     Ok(())
 }
 
@@ -310,7 +310,10 @@ columns:
         )
         .await?;
     let patched = vista.get_value("a").await?.expect("patched");
-    assert_eq!(patched.get("t"), Some(&text("09:15")));
+    assert_eq!(
+        patched.get("t"),
+        Some(&CborValue::Tag(TAG_TIME, Box::new(text("09:15:00.000000"))))
+    );
     assert!(
         matches!(patched.get("dur"), Some(CborValue::Tag(14, _))),
         "{:?}",

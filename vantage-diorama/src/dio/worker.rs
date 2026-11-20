@@ -135,28 +135,19 @@ async fn route(dio: &Dio, flash: ChangeFlash) -> Result<FlashOutcome> {
 async fn default_write(dio: &Dio, flash: ChangeFlash) -> Result<FlashOutcome> {
     let master = dio.master();
     let applied = FlashOutcome::applied();
+    // Every row write reports the record as the master stored it, which the
+    // settle adopts over the staged value: the master may have normalised a
+    // value, filled a default or (on an insert) moved the id.
+    let stored = |stored| FlashOutcome::applied().with_record(stored);
     let written = match (flash.kind(), flash.id()) {
-        // The insert is the one write whose id can move: the record the
-        // master stored carries the id it settled on.
-        (FlashKind::Insert, Some(id)) => master
-            .insert_value(id, flash.patch())
-            .await
-            .map(|stored| applied.with_record(stored)),
+        (FlashKind::Insert, Some(id)) => master.insert_value(id, flash.patch()).await.map(stored),
         (FlashKind::Insert, None) => master
             .insert_return_id_value(flash.patch())
             .await
             .map(|id| applied.with_id(id)),
-        (FlashKind::Replace, Some(id)) => master
-            .replace_value(id, flash.patch())
-            .await
-            .map(|_| applied),
-        (FlashKind::Upsert, Some(id)) => master
-            .upsert_value(id, flash.patch())
-            .await
-            .map(|_| applied),
-        (FlashKind::Patch, Some(id)) => {
-            master.patch_value(id, flash.patch()).await.map(|_| applied)
-        }
+        (FlashKind::Replace, Some(id)) => master.replace_value(id, flash.patch()).await.map(stored),
+        (FlashKind::Upsert, Some(id)) => master.upsert_value(id, flash.patch()).await.map(stored),
+        (FlashKind::Patch, Some(id)) => master.patch_value(id, flash.patch()).await.map(stored),
         (FlashKind::Delete, Some(id)) => master.delete(id).await.map(|()| applied),
         (FlashKind::Clear, _) => master.delete_all().await.map(|()| applied),
         (kind, None) => Err(error!(

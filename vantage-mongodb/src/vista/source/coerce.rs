@@ -24,46 +24,38 @@
 //! DateTime has millisecond precision: finer fractions in RFC 3339 text or
 //! epoch seconds are dropped.
 //!
-//! `date` and `timestamp` columns are stored as a DateTime as well, but they
-//! take more text than RFC 3339 and read back typed, not as text:
+//! `date`, `timestamp` and `time` columns take every input form of
+//! [`vantage_types::temporal`] and read back in its carrier forms:
 //!
-//! - a write takes a date (`2026-12-10`, midnight UTC), a naive datetime
-//!   with a `T` or a space, seconds optional, a fraction allowed (UTC is
-//!   assumed), RFC 3339 text with `Z` or an offset, CBOR tag 0 or 100 around
-//!   any of those, and tag 1 epoch seconds. A `date` column stores midnight
-//!   UTC and refuses an instant with a time of day;
-//! - a read returns `Tag(100, "YYYY-MM-DD")` for `date` (the UTC date of the
-//!   stored DateTime) and `Tag(0, RFC 3339 in UTC with Z)` for `timestamp`
-//!   ([`read`]). Text stored in such a column reads through the write's
-//!   parser and is not rewritten; anything that is no date fails the read.
-//!   The round-trip rule above compares against this typed rendering;
-//! - a condition value is typed as a write is ([`declared`]).
+//! - `timestamp` stores a DateTime. A write takes any instant the `as_instant`
+//!   reader takes, tag 1 epoch seconds, or a date (its midnight UTC);
+//! - `date` stores a DateTime at midnight UTC. A write takes any date the
+//!   `as_date` reader takes, an instant at exactly midnight UTC, or tag 1
+//!   epoch seconds at midnight; an instant with a time of day is refused;
+//! - `time` stores the carrier text `HH:MM:SS.ffffff`, cut to milliseconds
+//!   like a DateTime. BSON has no time of day;
+//! - a read returns `Tag(0)` instants, `Tag(1004)` dates (only from a DateTime
+//!   at exactly midnight UTC; a time of day fails the read) and `Tag(101)` times ([`read`]). Text another program
+//!   stored in such a column reads through the write's parser and is not
+//!   rewritten; anything that does not parse fails the read. The round-trip
+//!   rule above compares against this typed rendering;
+//! - a condition value is typed as a write is ([`declared`]), so it compares
+//!   by value: a DateTime, or the fixed-width time text.
 
 use std::any::type_name;
 use std::str::FromStr;
 
 use bson::oid::ObjectId;
 use bson::{Bson, DateTime, Decimal128, Document};
-use chrono::{NaiveDate, NaiveDateTime, SecondsFormat, Utc};
+use chrono::{NaiveDate, NaiveTime, Timelike, Utc};
 use ciborium::Value as CborValue;
 use vantage_core::{Result, error};
+use vantage_types::temporal;
 
 use crate::vista::cbor::{bson_to_cbor, cbor_to_bson};
 
-const DAY_MILLIS: i64 = 86_400_000;
-
-/// Naive datetime text; SQLite's `timestamp` column takes the same forms.
-const NAIVE_FORMATS: [&str; 6] = [
-    "%Y-%m-%dT%H:%M:%S",
-    "%Y-%m-%dT%H:%M:%S%.f",
-    "%Y-%m-%d %H:%M:%S",
-    "%Y-%m-%d %H:%M:%S%.f",
-    "%Y-%m-%dT%H:%M",
-    "%Y-%m-%d %H:%M",
-];
-
 /// The column types a write parses values into: the BSON types the CBOR
-/// surface reads as text, and the two that read back typed.
+/// surface reads as text, and the three that read back typed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum BsonKind {
     ObjectId,
@@ -71,6 +63,7 @@ pub(crate) enum BsonKind {
     Decimal,
     Date,
     Timestamp,
+    Time,
 }
 
 impl BsonKind {
@@ -86,6 +79,8 @@ impl BsonKind {
             Some(Self::Date)
         } else if column_type == type_name::<chrono::DateTime<Utc>>() {
             Some(Self::Timestamp)
+        } else if column_type == type_name::<NaiveTime>() {
+            Some(Self::Time)
         } else {
             None
         }
@@ -93,7 +88,7 @@ impl BsonKind {
 
     /// Whether a read returns this kind typed (see [`read`]).
     pub(crate) fn reads_typed(self) -> bool {
-        matches!(self, Self::Date | Self::Timestamp)
+        matches!(self, Self::Date | Self::Timestamp | Self::Time)
     }
 
     fn of_stored(value: &Bson) -> Option<Self> {
@@ -112,13 +107,15 @@ impl BsonKind {
             Self::Decimal => "decimal",
             Self::Date => "date",
             Self::Timestamp => "timestamp",
+            Self::Time => "time",
         }
     }
 
     /// `value` as this kind. ObjectId: hex text. DateTime: RFC 3339 text,
     /// CBOR tag 0 (date text) or tag 1 (epoch seconds). Decimal128: numeric
     /// text, a number, CBOR tag 2/3 (bignum) or tag 4 (decimal fraction).
-    /// Date and Timestamp: see [`instant_millis`].
+    /// Date, Timestamp and Time: see [`date_of`], [`instant_of`] and the
+    /// `as_time` reader.
     fn parse(self, value: &CborValue) -> Option<Bson> {
         match (self, value) {
             (Self::ObjectId, CborValue::Text(s)) => s.parse().ok().map(Bson::ObjectId),
@@ -128,10 +125,10 @@ impl BsonKind {
                 _ => None,
             },
             (Self::DateTime, CborValue::Tag(1, inner)) => epoch_millis(inner).map(datetime),
-            (Self::Date, value) => instant_millis(value)
-                .filter(|millis| millis.rem_euclid(DAY_MILLIS) == 0)
-                .map(datetime),
-            (Self::Timestamp, value) => instant_millis(value).map(datetime),
+            (Self::Date, value) => date_of(value).map(|day| datetime(midnight_millis(day))),
+            (Self::Timestamp, value) => instant_of(value).map(|at| datetime(at.timestamp_millis())),
+            (Self::Time, value) => temporal::as_time(value)
+                .map(|time| Bson::String(temporal::format_time(&to_millis(time)))),
             (Self::Decimal, CborValue::Text(s)) => decimal(s.trim()),
             (Self::Decimal, CborValue::Float(f)) if f.is_finite() => decimal(&f.to_string()),
             (Self::Decimal, CborValue::Tag(4, fraction)) => decimal_fraction(fraction),
@@ -140,31 +137,39 @@ impl BsonKind {
         }
     }
 
-    /// `value` as a read returns it for a `date` or `timestamp` column;
-    /// `None` when it is neither a DateTime, text a write would take, nor
-    /// no value (null, `""`).
+    /// `value` as a read returns it for a `date`, `timestamp` or `time`
+    /// column; `None` when it is neither a DateTime (`date`, `timestamp`),
+    /// text a write would take, nor no value (null, `""`).
     fn typed(self, value: &Bson) -> Option<CborValue> {
-        let millis = match value {
-            Bson::Null | Bson::Undefined => return Some(CborValue::Null),
-            Bson::String(s) if s.is_empty() => return Some(CborValue::Null),
-            Bson::Array(items) => {
-                return items
-                    .iter()
-                    .map(|item| self.typed(item))
-                    .collect::<Option<Vec<_>>>()
-                    .map(CborValue::Array);
+        match (self, value) {
+            (_, Bson::Null | Bson::Undefined) => Some(CborValue::Null),
+            (_, Bson::String(s)) if s.is_empty() => Some(CborValue::Null),
+            (_, Bson::Array(items)) => items
+                .iter()
+                .map(|item| self.typed(item))
+                .collect::<Option<Vec<_>>>()
+                .map(CborValue::Array),
+            (Self::Date, Bson::DateTime(stored)) => {
+                let at = chrono::DateTime::<Utc>::from_timestamp_millis(stored.timestamp_millis())?;
+                temporal::midnight_date(&temporal::instant(&at)).map(|day| temporal::date(&day))
             }
-            Bson::DateTime(stored) => stored.timestamp_millis(),
-            Bson::String(s) => text_millis(s)
-                .filter(|millis| self != Self::Date || millis.rem_euclid(DAY_MILLIS) == 0)?,
-            _ => return None,
-        };
-        let instant = chrono::DateTime::<Utc>::from_timestamp_millis(millis)?;
-        let (tag, text) = match self {
-            Self::Date => (100, instant.format("%Y-%m-%d").to_string()),
-            _ => (0, instant.to_rfc3339_opts(SecondsFormat::AutoSi, true)),
-        };
-        Some(CborValue::Tag(tag, Box::new(CborValue::Text(text))))
+            (Self::Timestamp, Bson::DateTime(stored)) => {
+                let at = chrono::DateTime::<Utc>::from_timestamp_millis(stored.timestamp_millis())?;
+                Some(temporal::instant(&at))
+            }
+            (Self::Date, Bson::String(s)) => {
+                date_of(&CborValue::Text(s.clone())).map(|day| temporal::date(&day))
+            }
+            (Self::Timestamp, Bson::String(s)) => {
+                let at = instant_of(&CborValue::Text(s.clone()))?;
+                let at = chrono::DateTime::<Utc>::from_timestamp_millis(at.timestamp_millis())?;
+                Some(temporal::instant(&at))
+            }
+            (Self::Time, Bson::String(s)) => {
+                temporal::parse_time(s).map(|time| temporal::time(&to_millis(time)))
+            }
+            _ => None,
+        }
     }
 }
 
@@ -210,34 +215,43 @@ fn datetime(millis: i64) -> Bson {
     Bson::DateTime(DateTime::from_millis(millis))
 }
 
-/// The instant `value` names, in epoch milliseconds: text, CBOR tag 0 or 100
-/// around text, or tag 1 epoch seconds.
-fn instant_millis(value: &CborValue) -> Option<i64> {
+/// The instant a `timestamp` write names: any instant the `as_instant` reader
+/// takes, tag 1 epoch seconds, or a date at its midnight UTC.
+fn instant_of(value: &CborValue) -> Option<chrono::DateTime<Utc>> {
+    temporal::as_instant(value)
+        .or_else(|| epoch_instant(value))
+        .or_else(|| temporal::as_date(value).map(|day| day.and_time(NaiveTime::MIN).and_utc()))
+}
+
+/// The date a `date` write names: any date the `as_date` reader takes, or an
+/// instant (tag 1 epoch seconds included) at exactly midnight UTC.
+fn date_of(value: &CborValue) -> Option<NaiveDate> {
+    temporal::as_date(value)
+        .or_else(|| temporal::midnight_date(value))
+        .or_else(|| {
+            let at = epoch_instant(value)?;
+            (at.time() == NaiveTime::MIN).then(|| at.date_naive())
+        })
+}
+
+/// Tag 1 epoch seconds.
+fn epoch_instant(value: &CborValue) -> Option<chrono::DateTime<Utc>> {
     match value {
-        CborValue::Text(s) => text_millis(s),
-        CborValue::Tag(0 | 100, inner) => match inner.as_ref() {
-            CborValue::Text(s) => text_millis(s),
-            _ => None,
-        },
-        CborValue::Tag(1, inner) => epoch_millis(inner),
+        CborValue::Tag(1, inner) => {
+            chrono::DateTime::<Utc>::from_timestamp_millis(epoch_millis(inner)?)
+        }
         _ => None,
     }
 }
 
-/// Text with `Z` or an offset, a naive datetime, or a date: the last two are
-/// UTC, a date its midnight.
-fn text_millis(s: &str) -> Option<i64> {
-    if let Ok(instant) = s.parse::<chrono::DateTime<Utc>>() {
-        return Some(instant.timestamp_millis());
-    }
-    let naive = NAIVE_FORMATS
-        .iter()
-        .find_map(|format| NaiveDateTime::parse_from_str(s, format).ok())
-        .or_else(|| {
-            let date = NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()?;
-            (s.len() == 10).then_some(date)?.and_hms_opt(0, 0, 0)
-        })?;
-    Some(naive.and_utc().timestamp_millis())
+fn midnight_millis(day: NaiveDate) -> i64 {
+    day.and_time(NaiveTime::MIN).and_utc().timestamp_millis()
+}
+
+/// `time` cut to milliseconds, the precision a DateTime keeps.
+fn to_millis(time: NaiveTime) -> NaiveTime {
+    time.with_nanosecond(time.nanosecond() / 1_000_000 * 1_000_000)
+        .unwrap_or(time)
 }
 
 fn decimal(s: &str) -> Option<Bson> {

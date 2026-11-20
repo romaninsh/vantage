@@ -57,7 +57,7 @@ async fn setup() -> Table<SqliteDB, Event> {
 }
 
 // ═════════════════════════════════════════════════════════════════════════
-// DateTime<FixedOffset> — TEXT preserves timezone offset
+// DateTime<FixedOffset> — TEXT keeps the instant, in UTC
 // ═════════════════════════════════════════════════════════════════════════
 
 use chrono::FixedOffset;
@@ -114,8 +114,8 @@ async fn test_chrono_text_fixed_offset() {
 
     let fetched = table.get("fix1").await.unwrap().expect("row exists");
     assert_eq!(fetched, original);
-    // Offset preserved as +05:30
-    assert_eq!(fetched.value.offset().local_minus_utc(), 5 * 3600 + 30 * 60);
+    // Same instant, stored and read back in UTC: the offset isn't kept.
+    assert_eq!(fetched.value.offset().local_minus_utc(), 0);
 }
 
 // ═════════════════════════════════════════════════════════════════════════

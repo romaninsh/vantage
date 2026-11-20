@@ -517,7 +517,7 @@ columns:
 async fn a_date_column_stores_one_form_from_any_write() {
     let (_s, f) = setup();
     let v = f.from_yaml(LOAN).unwrap();
-    let day = CborValue::Tag(100, Box::new(text("2026-12-16")));
+    let day = CborValue::Tag(1004, Box::new(text("2026-12-16")));
     let rfc = |s: &str| CborValue::Tag(0, Box::new(text(s)));
 
     v.insert_value("l1", &record(&[("due", text("2026-12-16"))]))
