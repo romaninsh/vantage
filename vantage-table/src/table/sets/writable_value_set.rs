@@ -46,7 +46,8 @@ where
         self.require_confined_writes("replace")?;
         let id = id.into();
         let needs_former = self.kept_columns().next().is_some()
-            || self.denials().rule_for(Capability::Insert).is_some();
+            || self.denials().rule_for(Capability::Insert).is_some()
+            || self.touches_contained(record);
         let former = self.former_for_update(&id, needs_former).await?;
         self.replace_over(id, record, former).await
     }
@@ -72,7 +73,11 @@ where
         self.refuse_read_only_columns(partial)?;
         let erased = self.as_entity_erased();
         let mut partial = partial.clone();
-        let former = self.former_for_update(&id, false).await?;
+        // A dotted key under a contained relation merges into the stored
+        // record, so the row is read for it.
+        let former = self
+            .former_for_update(&id, self.touches_contained(&partial))
+            .await?;
         // The row was read for the hooks and the set doesn't hold it: the
         // source would refuse the patch anyway, so the hooks don't see it.
         let read = !self.before_update_hooks().is_empty() || !self.after_update_hooks().is_empty();

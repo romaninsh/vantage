@@ -53,9 +53,21 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// The contained relations declared on this table as Vista references of
     /// a contained kind, for driver factories to fold into `VistaMetadata`.
     /// The records' schema is derived at traversal from each relation's
-    /// `build_target` closure.
+    /// `build_target` closure. An [unlisted](ContainedRelation::unlisted)
+    /// relation is left out.
     pub fn vista_contained(&self) -> Vec<vantage_vista::Reference> {
-        self.contained.iter().map(|c| c.reference()).collect()
+        self.contained
+            .iter()
+            .filter(|c| c.is_listed())
+            .map(|c| c.reference())
+            .collect()
+    }
+
+    /// Declare `relation` as it is built, such as an
+    /// [unlisted](ContainedRelation::unlisted) one.
+    pub fn with_contained(mut self, relation: ContainedRelation<T>) -> Self {
+        self.contained.push(relation);
+        self
     }
 
     /// Look up a contained relation by name (for the driver's traversal).

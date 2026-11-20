@@ -236,6 +236,7 @@ fn fits(declared: &Declared, kind: &str) -> bool {
             "bool" => kind == "bool",
             "duration" => kind == "duration",
             "time" => kind == "string",
+            "json" => kind == "object" || kind == "array" || kind.starts_with("array<"),
             // A column without `type:` is a string column too, so objects,
             // arrays and other shapes a string column may hold are left alone.
             "string" => {

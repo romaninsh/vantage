@@ -211,6 +211,8 @@ run that target spec's `modify:` script or its reference scripts.
 
 YAML column types include `object_id`, `datetime` (aliases `date`, `timestamp`) and `decimal`. Typed
 columns parse written text back into ObjectId, DateTime or Decimal128, and reject text that doesn't parse.
+A `json` column holds a sub-document or an array as one value, unchecked inside; it takes JSON text
+too and refuses a scalar.
 
 ## YAML Vistas: `pipeline:`, `rhai:` and `modify:`
 

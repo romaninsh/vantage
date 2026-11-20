@@ -1,5 +1,22 @@
 # Changelog
 
+## 4.2.0 — 2026-11-21
+
+- YAML column type `json`: a sub-document or an array as one value, unchecked inside. It takes JSON
+  text too, refuses a scalar, and over a stored value keeps the stored types of the parts a write
+  repeats.
+- `nested_path` columns are sugar for contained relations: the columns under one root
+  (`address.city`, `address.zip`) form an unlisted `contains_one` whose table declares `city` and
+  `zip`, nested again for a deeper path (`place.geo.lat`). The vista writes each column as its
+  dotted key, and the table merges it into the stored sub-document, so fields stored beside it
+  stay on insert, replace and patch alike. A sub-document written whole takes only the declared
+  paths; `address: null` clears it.
+- Removed the driver's own check of keys inside a nested root (`refuse_undeclared_nested`): the
+  contained table now does it for every write, and on import.
+- Contained relations: `contained_records` / `contained_host` map a host column's sub-document or
+  array of sub-documents to records and back.
+- Requires vantage-table 4.2.0.
+
 ## 4.1.0 — 2026-11-20
 
 - Dates, times and instants in the carrier forms of `vantage_types::temporal`: a `date` reads

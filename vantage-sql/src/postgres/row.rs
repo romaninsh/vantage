@@ -103,6 +103,13 @@ pub(crate) fn bind_postgres_value<'q>(
             CborValue::Text(s) => query.bind(s.as_bytes()),
             _ => return Err(refused()),
         },
+        PostgresTypeVariants::Json => match cbor {
+            CborValue::Null => query.bind(None::<serde_json::Value>),
+            CborValue::Map(_) | CborValue::Array(_) => {
+                query.bind(crate::types::cbor_to_json(cbor.clone()))
+            }
+            _ => return Err(refused()),
+        },
     })
 }
 

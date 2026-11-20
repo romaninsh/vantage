@@ -628,16 +628,15 @@ mongo:
         &bson::doc! { "city": "Hill Valley", "zip": "1986", "street": "Lyon Drive" }
     );
 
-    // The sub-document takes only declared paths: `address.street` and
-    // `address.secret` aren't columns, however they are spelled.
+    // The sub-document goes through the `contains_one` its columns make: it
+    // takes only declared fields, however they are spelled, and only a
+    // document.
     for undeclared in [
         (
             "address",
             CborValue::Map(vec![("secret".into(), "x".into())]),
         ),
         ("address.street", CborValue::Text("Elm Street".into())),
-        ("address", CborValue::Null),
-        ("address", CborValue::Text("gone".into())),
     ] {
         let patch: Record<CborValue> = vec![(undeclared.0.to_string(), undeclared.1)]
             .into_iter()
@@ -648,6 +647,14 @@ mongo:
             .unwrap_err();
         assert!(err.is_forbidden(), "{err}");
     }
+    let scalar: Record<CborValue> = vec![("address".to_string(), CborValue::Text("gone".into()))]
+        .into_iter()
+        .collect();
+    let err = vista
+        .patch_value(marty_id.clone(), &scalar)
+        .await
+        .unwrap_err();
+    assert!(err.is_invalid_value(), "{err}");
     let raw = db
         .collection::<bson::Document>("clients")
         .find_one(bson::doc! { "_id": ObjectId::parse_str(&marty_id)? })
@@ -659,8 +666,8 @@ mongo:
     );
     assert!(raw.get_document("address")?.get("secret").is_none());
 
-    // A null parent can't take a dotted `$set`: the patch writes the
-    // sub-document whole, built from the leaves it sets.
+    // A null parent: the patch writes the sub-document whole, built from the
+    // leaves it sets.
     let lorraine = ObjectId::new();
     db.collection::<bson::Document>("clients")
         .insert_one(bson::doc! { "_id": lorraine, "fullName": "Lorraine", "address": null })
@@ -715,6 +722,102 @@ mongo:
         Some(&CborValue::Text("Biff Tannen".into()))
     );
     assert_eq!(read.get("zip"), Some(&CborValue::Text("2015".into())));
+
+    // `address: null` writes the whole sub-record as none: it is cleared.
+    let clear: Record<CborValue> = vec![("address".to_string(), CborValue::Null)]
+        .into_iter()
+        .collect();
+    vista.patch_value(new_id.clone(), &clear).await?;
+    let raw = db
+        .collection::<bson::Document>("clients")
+        .find_one(bson::doc! { "_id": ObjectId::parse_str(&new_id)? })
+        .await?
+        .expect("cleared doc present");
+    assert_eq!(raw.get("address"), Some(&bson::Bson::Null));
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+/// A path two levels deep (`place.geo.lat`) makes a `contains_one` inside a
+/// `contains_one`: a patch merges into the stored `place.geo`, fields stored
+/// beside it at either level stay, an insert builds the nested documents,
+/// and an undeclared field at the inner level is refused.
+#[tokio::test]
+async fn a_two_level_nested_path_merges_at_each_level() -> TestResult {
+    let (db, name) = setup().await;
+    db.collection::<bson::Document>("venues")
+        .insert_one(bson::doc! {
+            "_id": "v1",
+            "place": { "name": "Arena", "extra": 1, "geo": { "lat": 1.0, "lng": 2.0, "alt": 3.0 } },
+        })
+        .await?;
+    let yaml = r#"
+name: venue
+columns:
+  _id: { type: string, flags: [id] }
+  venue: { type: string, mongo: { nested_path: place.name } }
+  lat: { type: float, mongo: { nested_path: place.geo.lat } }
+  lng: { type: float, mongo: { nested_path: place.geo.lng } }
+mongo:
+  collection: venues
+"#;
+    let vista = db.vista_factory().from_yaml(yaml)?;
+    // The `contains_one` relations are sugar, not listed as references.
+    assert!(
+        vista.references().is_empty(),
+        "{:?}",
+        vista.references().keys()
+    );
+    let row = |pairs: Vec<(&str, CborValue)>| -> Record<CborValue> {
+        pairs.into_iter().map(|(k, v)| (k.to_string(), v)).collect()
+    };
+    let raw = |id: &'static str| {
+        let db = db.clone();
+        async move {
+            db.collection::<bson::Document>("venues")
+                .find_one(bson::doc! { "_id": id })
+                .await
+                .unwrap()
+                .expect("venue")
+        }
+    };
+
+    vista
+        .patch_value("v1".to_string(), &row(vec![("lat", CborValue::Float(5.0))]))
+        .await?;
+    assert_eq!(
+        raw("v1").await.get_document("place")?,
+        &bson::doc! { "name": "Arena", "extra": 1, "geo": { "lat": 5.0, "lng": 2.0, "alt": 3.0 } }
+    );
+
+    vista
+        .insert_value(
+            "v2",
+            &row(vec![
+                ("venue", CborValue::Text("Hall".into())),
+                ("lat", CborValue::Float(7.0)),
+                ("lng", CborValue::Float(8.0)),
+            ]),
+        )
+        .await?;
+    assert_eq!(
+        raw("v2").await.get_document("place")?,
+        &bson::doc! { "name": "Hall", "geo": { "lat": 7.0, "lng": 8.0 } }
+    );
+    assert_eq!(
+        vista.get_value("v2").await?.unwrap()["lat"],
+        CborValue::Float(7.0)
+    );
+
+    let err = vista
+        .patch_value(
+            "v1".to_string(),
+            &row(vec![("place.geo.alt", CborValue::Float(9.0))]),
+        )
+        .await
+        .expect_err("an undeclared inner field is refused");
+    assert!(err.is_forbidden(), "{err}");
 
     teardown(&db, &name).await;
     Ok(())
@@ -1001,6 +1104,139 @@ async fn contained_array_round_trips_on_mongo() -> TestResult {
         lines3.get_value("0").await?.unwrap().get("qty"),
         Some(&CborValue::Integer(99i64.into()))
     );
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+/// A write to a contained relation's host column goes through the contained
+/// table: a line with a field the line table doesn't declare is refused, so
+/// is a line that isn't a document, and the document stays as stored.
+#[tokio::test]
+async fn a_contained_host_takes_only_records_its_table_declares() -> TestResult {
+    let (db, name) = setup().await;
+    db.collection::<bson::Document>("orders")
+        .insert_one(bson::doc! { "_id": "o1", "lines": [ { "sku": "a", "qty": 1 } ] })
+        .await?;
+    let yaml = r#"
+name: orders
+columns:
+  _id: { type: string, flags: [id] }
+  lines: { type: json }
+mongo:
+  collection: orders
+contained:
+  lines:
+    host_column: lines
+    kind: contains_many
+    columns:
+      sku: { type: string }
+      qty: { type: int }
+"#;
+    let vista = db.vista_factory().from_yaml(yaml)?;
+    let line = |extra: Option<(&str, CborValue)>| {
+        let mut pairs = vec![
+            (CborValue::Text("sku".into()), CborValue::Text("b".into())),
+            (CborValue::Text("qty".into()), CborValue::Integer(2.into())),
+        ];
+        pairs.extend(extra.map(|(k, v)| (CborValue::Text(k.into()), v)));
+        CborValue::Map(pairs)
+    };
+    let lines = |items: Vec<CborValue>| -> Record<CborValue> {
+        [("lines".to_string(), CborValue::Array(items))]
+            .into_iter()
+            .collect()
+    };
+
+    let err = vista
+        .patch_value(
+            "o1".to_string(),
+            &lines(vec![line(Some(("secret", CborValue::Text("x".into()))))]),
+        )
+        .await
+        .expect_err("an undeclared line field is refused");
+    assert!(err.to_string().contains("secret"), "{err}");
+    vista
+        .patch_value("o1".to_string(), &lines(vec![CborValue::Text("b".into())]))
+        .await
+        .expect_err("a line that isn't a document is refused");
+    let stored = db
+        .collection::<bson::Document>("orders")
+        .find_one(bson::doc! { "_id": "o1" })
+        .await?
+        .expect("order");
+    assert_eq!(stored.get_array("lines")?.len(), 1);
+
+    vista
+        .patch_value("o1".to_string(), &lines(vec![line(None)]))
+        .await?;
+    let stored = db
+        .collection::<bson::Document>("orders")
+        .find_one(bson::doc! { "_id": "o1" })
+        .await?
+        .expect("order");
+    // The seed's `qty` is an Int32; the rewrite keeps the stored type.
+    assert_eq!(
+        stored.get_array("lines")?,
+        &vec![bson::Bson::Document(bson::doc! { "sku": "b", "qty": 2i32 })]
+    );
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+/// A dotted key under a `contains_one` host (`address.city`) is checked by
+/// the contained table and merged into the stored record: its other fields,
+/// a field the table doesn't declare included, stay as stored. The dotted
+/// key itself must be declared there.
+#[tokio::test]
+async fn a_dotted_contained_key_merges_into_the_stored_record() -> TestResult {
+    let (db, name) = setup().await;
+    db.collection::<bson::Document>("clients")
+        .insert_one(bson::doc! {
+            "_id": "c1",
+            "address": { "city": "Hill Valley", "zip": "1985", "street": "Lyon Drive" },
+        })
+        .await?;
+    let yaml = r#"
+name: clients
+columns:
+  _id: { type: string, flags: [id] }
+  address: { type: json }
+mongo:
+  collection: clients
+contained:
+  address:
+    host_column: address
+    kind: contains_one
+    columns:
+      city: { type: string }
+      zip: { type: string }
+"#;
+    let vista = db.vista_factory().from_yaml(yaml)?;
+    let one = |key: &str, value: &str| -> Record<CborValue> {
+        [(key.to_string(), CborValue::Text(value.into()))]
+            .into_iter()
+            .collect()
+    };
+    vista
+        .patch_value("c1".to_string(), &one("address.city", "Twin Pines"))
+        .await?;
+    let stored = db
+        .collection::<bson::Document>("clients")
+        .find_one(bson::doc! { "_id": "c1" })
+        .await?
+        .expect("client");
+    assert_eq!(
+        stored.get_document("address")?,
+        &bson::doc! { "city": "Twin Pines", "zip": "1985", "street": "Lyon Drive" }
+    );
+
+    let err = vista
+        .patch_value("c1".to_string(), &one("address.secret", "x"))
+        .await
+        .expect_err("an undeclared contained field is refused");
+    assert!(err.to_string().contains("secret"), "{err}");
 
     teardown(&db, &name).await;
     Ok(())

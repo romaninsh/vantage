@@ -176,6 +176,65 @@ impl TableSource for SurrealDB {
         coerce_column(table, column, value)
     }
 
+    /// A contained record is an object; a `contains_many` host holds an
+    /// array of them.
+    fn contained_records(
+        &self,
+        host: &AnySurrealType,
+    ) -> Result<Option<Vec<Record<AnySurrealType>>>> {
+        use ciborium::Value as CborValue;
+        let refused = || {
+            error!("a contained relation's host holds an object or an array of them")
+                .mark_invalid_value()
+        };
+        let record = |pairs: &[(CborValue, CborValue)]| -> Result<Record<AnySurrealType>> {
+            pairs
+                .iter()
+                .map(|(k, v)| match k {
+                    CborValue::Text(k) => Ok((k.clone(), AnySurrealType::from(v.clone()))),
+                    _ => Err(refused()),
+                })
+                .collect()
+        };
+        match host.value() {
+            CborValue::Null | CborValue::Tag(6, _) => Ok(None),
+            CborValue::Map(pairs) => Ok(Some(vec![record(pairs)?])),
+            CborValue::Array(items) => items
+                .iter()
+                .map(|item| match item {
+                    CborValue::Map(pairs) => record(pairs),
+                    _ => Err(refused()),
+                })
+                .collect::<Result<Vec<_>>>()
+                .map(Some),
+            _ => Err(refused()),
+        }
+    }
+
+    fn contained_host(
+        &self,
+        records: Vec<Record<AnySurrealType>>,
+        many: bool,
+    ) -> Result<AnySurrealType> {
+        use ciborium::Value as CborValue;
+        let mut maps: Vec<CborValue> = records
+            .into_iter()
+            .map(|record| {
+                CborValue::Map(
+                    record
+                        .into_iter()
+                        .map(|(k, v)| (CborValue::Text(k), v.into_value()))
+                        .collect(),
+                )
+            })
+            .collect();
+        Ok(AnySurrealType::from(if many {
+            CborValue::Array(maps)
+        } else {
+            maps.pop().unwrap_or(CborValue::Null)
+        }))
+    }
+
     fn condition_equality(&self, condition: &Self::Condition) -> Option<(String, Self::Value)> {
         vantage_table::conditions::literal_equality(condition)
     }

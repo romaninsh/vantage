@@ -4,7 +4,8 @@
 //! `vista` module supplies `async fn typed_events(suffix: &str) -> (DB,
 //! String)`: an empty table with nullable columns `due` (date), `at`
 //! (timestamp), `amount` (decimal, 2 places), `qty` (big integer), `starts`
-//! (time) and `size` (bytes: an integer byte count), keyed by text `id`. `vista_tests!` invokes
+//! (time), `size` (bytes: an integer byte count), `meta` (text) and `doc`
+//! (the dialect's native JSON type, text on SQLite), keyed by text `id`. `vista_tests!` invokes
 //! it with the dialect's YAML driver key.
 
 macro_rules! vista_typed_writes_tests {
@@ -31,6 +32,8 @@ columns:
   qty: {{ type: int }}
   starts: {{ type: time }}
   size: {{ type: bytes }}
+  meta: {{ type: json }}
+  doc: {{ type: json }}
 {block}:
   table: {name}
 "#
@@ -227,6 +230,64 @@ columns:
                 vista.replace_value("t5", &back).await?;
                 let second = vista.get_value("t5").await?.expect("replaced");
                 assert_eq!(first, second);
+                Ok(())
+            }
+
+            /// `value` with every map's keys in sorted order: a native JSON
+            /// column (MySQL `JSON`, Postgres `jsonb`) keeps no key order, nor
+            /// does a Postgres text column, which stores the `jsonb` it's
+            /// bound as.
+            fn keys_sorted(value: &CborValue) -> CborValue {
+                match value {
+                    CborValue::Map(pairs) => {
+                        let mut pairs: Vec<_> = pairs
+                            .iter()
+                            .map(|(k, v)| (k.clone(), keys_sorted(v)))
+                            .collect();
+                        pairs.sort_by_key(|(k, _)| format!("{k:?}"));
+                        CborValue::Map(pairs)
+                    }
+                    CborValue::Array(items) => {
+                        CborValue::Array(items.iter().map(keys_sorted).collect())
+                    }
+                    other => other.clone(),
+                }
+            }
+
+            /// A `json` column takes a map or an array as one value and reads
+            /// it back unchanged, stored as text (`meta`) or in the native JSON
+            /// type (`doc`); a scalar is refused.
+            #[tokio::test]
+            async fn typed_write_json_round_trips_a_map() -> TestResult {
+                let vista = events("json").await;
+                let meta = CborValue::Map(vec![
+                    (text("tags"), CborValue::Array(vec![text("a")])),
+                    (text("n"), CborValue::Integer(1.into())),
+                ]);
+                let list = CborValue::Array(vec![CborValue::Integer(2.into()), text("b")]);
+                vista
+                    .insert_value("j1", &row(&[("meta", meta.clone()), ("doc", list.clone())]))
+                    .await?;
+                let stored = vista.get_value("j1").await?.expect("inserted");
+                assert_eq!(keys_sorted(&stored["meta"]), keys_sorted(&meta));
+                assert_eq!(stored["doc"], list);
+
+                vista
+                    .patch_value(
+                        "j1".to_string(),
+                        &row(&[("meta", list.clone()), ("doc", meta.clone())]),
+                    )
+                    .await?;
+                let patched = vista.get_value("j1").await?.expect("patched");
+                assert_eq!(patched["meta"], list);
+                assert_eq!(keys_sorted(&patched["doc"]), keys_sorted(&meta));
+
+                for scalar in [CborValue::Integer(5.into()), text("plain")] {
+                    vista
+                        .insert_value("j2", &row(&[("meta", scalar.clone())]))
+                        .await
+                        .expect_err("a scalar is no json value");
+                }
                 Ok(())
             }
 

@@ -260,6 +260,39 @@ async fn vista_timestamp_column_filters_and_orders() -> TestResult {
     Ok(())
 }
 
+/// SQLite keeps a `json` column as JSON text, keys in the order written, and
+/// stored text that isn't a JSON object or array fails the read.
+#[tokio::test]
+async fn vista_json_column_stores_json_text() -> TestResult {
+    let db = setup().await;
+    sqlx::query("CREATE TABLE docs (id TEXT PRIMARY KEY, meta TEXT)")
+        .execute(db.pool())
+        .await?;
+    let yaml = "name: docs\ncolumns:\n  id: { type: string, flags: [id] }\n  \
+                meta: { type: json }\nsqlite:\n  table: docs\n";
+    let vista = db.vista_factory().from_yaml(yaml)?;
+    let meta = CborValue::Map(vec![
+        ("tags".into(), CborValue::Array(vec!["a".into()])),
+        ("n".into(), 1.into()),
+    ]);
+    let record: Record<CborValue> = [("meta".to_string(), meta)].into_iter().collect();
+    vista.insert_value("d1", &record).await?;
+    let (text,): (String,) = sqlx::query_as("SELECT meta FROM docs WHERE id = 'd1'")
+        .fetch_one(db.pool())
+        .await?;
+    assert_eq!(text, r#"{"tags":["a"],"n":1}"#);
+
+    sqlx::query("INSERT INTO docs VALUES ('bad', 'not json')")
+        .execute(db.pool())
+        .await?;
+    let err = vista
+        .get_value("bad")
+        .await
+        .expect_err("unreadable text refused");
+    assert!(format!("{err:?}").contains("not json"), "{err:?}");
+    Ok(())
+}
+
 /// The YAML flags with a typed counterpart reach the vista column through
 /// the typed table. An id flagged `auto` makes the vista id auto, so scripted
 /// inserts may leave the id to the database.

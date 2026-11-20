@@ -29,9 +29,10 @@ use vantage_expressions::expr_any;
 sql_declared_types!(sql_coerce_fn!(SqliteDB, SqliteType, AnySqliteType));
 
 /// A stored cell as `column` of `table` declares it: the read side of
-/// `coerce_column`. SQLite keeps a date, time or timestamp as text, which its
-/// storage class can't tell from a string, so the declared type decides.
-/// Every other cell stays as the row decoded it.
+/// `coerce_column`. SQLite keeps a date, time, timestamp or `json` value as
+/// text, which its storage class can't tell from a string, so the declared
+/// type decides; a `json` cell reads as the map or array it holds. Every
+/// other cell stays as the row decoded it.
 fn read_column<E: Entity<AnySqliteType>>(
     table: &Table<SqliteDB, E>,
     column: &str,
@@ -52,6 +53,8 @@ fn read_column<E: Entity<AnySqliteType>>(
         stored::<NaiveDateTime>(text).ok_or("datetime")
     } else if declared_type == type_name::<DateTime<Utc>>() {
         stored::<DateTime<Utc>>(text).ok_or("timestamp")
+    } else if declared_type == type_name::<serde_json::Value>() {
+        stored_json(text).ok_or("json")
     } else {
         return Ok(AnySqliteType::untyped(value));
     };
@@ -76,6 +79,15 @@ fn stored<T: SqliteType>(text: &str) -> Option<AnySqliteType> {
         return Some(AnySqliteType::untyped(CborValue::Null));
     }
     T::coerce_cbor(CborValue::Text(text.to_string())).map(AnySqliteType::new)
+}
+
+/// A `json` cell's text as the map or array it holds; `""` is no value.
+fn stored_json(text: &str) -> Option<AnySqliteType> {
+    if text.is_empty() {
+        return Some(AnySqliteType::untyped(CborValue::Null));
+    }
+    crate::types::json_document(CborValue::Text(text.to_string()))
+        .map(|json| AnySqliteType::untyped(crate::types::json_to_cbor(json)))
 }
 
 /// Parse the CBOR array result from execute() into an IndexMap of id → Record.
@@ -206,6 +218,27 @@ impl TableSource for SqliteDB {
         E: Entity<AnySqliteType>,
     {
         coerce_column(table, column, value)
+    }
+
+    fn contained_records(
+        &self,
+        host: &AnySqliteType,
+    ) -> Result<Option<Vec<Record<AnySqliteType>>>> {
+        crate::types::contained_records(host.value(), AnySqliteType::untyped)
+    }
+
+    /// JSON text: SQLite binds no map or array, and a text or `json` host
+    /// column both take the text.
+    fn contained_host(
+        &self,
+        records: Vec<Record<AnySqliteType>>,
+        many: bool,
+    ) -> Result<AnySqliteType> {
+        let host = crate::types::contained_host(records, many, AnySqliteType::into_value);
+        Ok(AnySqliteType::untyped(match host {
+            CborValue::Null => CborValue::Null,
+            host => CborValue::Text(crate::types::cbor_to_json(host).to_string()),
+        }))
     }
 
     fn transaction(&self) -> Option<Transaction> {

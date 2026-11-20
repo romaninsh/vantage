@@ -140,5 +140,24 @@ contained:
         items2.get_value("1").await?.unwrap().get("sku"),
         Some(&CborValue::Text("b".into()))
     );
+
+    // A write to the host column goes through the line table: a field it
+    // doesn't declare is refused, and the stored JSON stays as it was.
+    let line = CborValue::Map(vec![
+        ("sku".into(), "c".into()),
+        ("secret".into(), "x".into()),
+    ]);
+    let patch: Record<CborValue> = [("items".to_string(), CborValue::Array(vec![line]))]
+        .into_iter()
+        .collect();
+    let err = vista
+        .patch_value("c1".to_string(), &patch)
+        .await
+        .expect_err("an undeclared line field is refused");
+    assert!(err.to_string().contains("secret"), "{err}");
+    let (stored,): (String,) = sqlx::query_as("SELECT items FROM cart_yaml WHERE id = 'c1'")
+        .fetch_one(db.pool())
+        .await?;
+    assert_eq!(stored, r#"[{"sku":"a","qty":1},{"sku":"b","qty":2}]"#);
     Ok(())
 }

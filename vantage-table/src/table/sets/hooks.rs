@@ -1,5 +1,7 @@
 //! Fire a table's lifecycle hooks around a write.
 //!
+//! First, each contained record the write touches goes through its contained
+//! table and back into its host column (see `write_contained`).
 //! Before-write hooks run on the record about to be written, in phase order,
 //! just ahead of set-invariant enforcement, with the source typing the
 //! record between the Populate and Validate bands; an error cancels the
@@ -64,11 +66,24 @@ where
 
 impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// What every insert, replace and patch does to `record` before the
-    /// set's invariants: the Normalize and Populate hooks, refusing a column
-    /// the table doesn't declare, dropping imported and expression columns,
-    /// typing the declared columns through the source, then the Validate
-    /// hooks, which so see the record as stored.
+    /// set's invariants: each contained record the write touches checked
+    /// through its contained table, the Normalize and Populate hooks, refusing
+    /// a column the table doesn't declare, dropping imported and expression
+    /// columns, typing the declared columns through the source, then the
+    /// Validate hooks, which so see the record as stored.
     pub(crate) async fn before_write(
+        &self,
+        hooks: &[(Phase, BeforeFn<T>)],
+        record: &mut Record<T::Value>,
+        update: Option<UpdateOf<'_, T>>,
+    ) -> Result<()> {
+        Box::pin(self.write_contained(record, update.and_then(|u| u.stored))).await?;
+        self.shape_and_check(hooks, record, update).await
+    }
+
+    /// [`Self::before_write`] after the contained records: the hooks, the
+    /// column check, stripping and typing.
+    async fn shape_and_check(
         &self,
         hooks: &[(Phase, BeforeFn<T>)],
         record: &mut Record<T::Value>,
@@ -85,15 +100,143 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         run_before(validating, record, update, erased).await
     }
 
+    /// Whether `record` writes a contained relation: its host column, or a
+    /// dotted key under it (`address.city`). Such a patch needs the stored row
+    /// to merge into.
+    pub(crate) fn touches_contained(&self, record: &Record<T::Value>) -> bool {
+        self.contained.iter().any(|rel| {
+            let host = rel.host_column();
+            record.keys().any(|key| {
+                key == host
+                    || key
+                        .strip_prefix(host)
+                        .is_some_and(|rest| rest.starts_with('.'))
+            })
+        })
+    }
+
+    /// Put each contained record the write touches through its contained
+    /// table, then back into the host column as one value. The change alone is
+    /// checked (the host's whole value, or the dotted keys as a partial
+    /// record): its columns are the contained table's (strict), its hooks run,
+    /// and nothing is read or written. A partial record is merged into the
+    /// stored one (`stored`, the row as it stands), so fields stored there
+    /// before stay as they are; a dotted key two levels down (`a.b.c`)
+    /// merges into the stored `a.b` the same way.
+    async fn write_contained(
+        &self,
+        record: &mut Record<T::Value>,
+        stored: Option<&Record<T::Value>>,
+    ) -> Result<()> {
+        for rel in &self.contained {
+            let host = rel.host_column();
+            let many = rel.kind() == vantage_vista::ReferenceKind::ContainsMany;
+            let whole = record.shift_remove(host);
+            let dotted_keys: Vec<String> = record
+                .keys()
+                .filter(|key| {
+                    key.strip_prefix(host)
+                        .is_some_and(|rest| rest.starts_with('.'))
+                })
+                .cloned()
+                .collect();
+            if whole.is_none() && dotted_keys.is_empty() {
+                continue;
+            }
+            if whole.is_some() && !dotted_keys.is_empty() {
+                return Err(vantage_core::error!(
+                    "a write gives a contained record both whole and by dotted keys",
+                    table = self.table_name(),
+                    relation = rel.name()
+                ));
+            }
+            if many && !dotted_keys.is_empty() {
+                return Err(vantage_core::error!(
+                    "a contains_many relation is written as its whole array, not by dotted keys",
+                    table = self.table_name(),
+                    relation = rel.name(),
+                    column = dotted_keys[0].as_str()
+                ));
+            }
+            let target = rel.build_target(self.data_source().clone());
+            let records = match whole {
+                Some(value) => {
+                    let mut records = self
+                        .data_source()
+                        .contained_records(&value)?
+                        .unwrap_or_default();
+                    if !many && records.len() > 1 {
+                        return Err(vantage_core::error!(
+                            "a contains_one relation holds one record",
+                            table = self.table_name(),
+                            relation = rel.name()
+                        ));
+                    }
+                    for change in records.iter_mut() {
+                        Box::pin(target.check_contained(change, None)).await?;
+                    }
+                    records
+                }
+                None => {
+                    let mut change: Record<T::Value> = Record::new();
+                    for key in &dotted_keys {
+                        if let Some(value) = record.shift_remove(key) {
+                            change.insert(key[host.len() + 1..].to_string(), value);
+                        }
+                    }
+                    let stored = match stored.and_then(|row| row.get(host)) {
+                        Some(value) => self
+                            .data_source()
+                            .contained_records(value)?
+                            .unwrap_or_default(),
+                        None => Vec::new(),
+                    };
+                    let mut base = stored.into_iter().next();
+                    Box::pin(target.check_contained(&mut change, base.as_ref())).await?;
+                    let merged = base.get_or_insert_with(Record::new);
+                    for (key, value) in change {
+                        merged.insert(key, value);
+                    }
+                    base.into_iter().collect()
+                }
+            };
+            record.insert(
+                host.to_string(),
+                self.data_source().contained_host(records, many)?,
+            );
+        }
+        Ok(())
+    }
+
+    /// One contained record, or the changed part of the `stored` one,
+    /// through this contained table's write steps with no read or write: its
+    /// own contained records, the insert hooks for a new record or the update
+    /// hooks for a change, the strict column check and the column typing.
+    async fn check_contained(
+        &self,
+        record: &mut Record<T::Value>,
+        stored: Option<&Record<T::Value>>,
+    ) -> Result<()> {
+        let hooks = if stored.is_some() {
+            self.before_update_hooks()
+        } else {
+            self.before_insert_hooks()
+        };
+        self.write_contained(record, stored).await?;
+        self.shape_and_check(hooks, record, None).await
+    }
+
     /// A write names only declared columns and the id, so a physical column
     /// the entity leaves out (`is_admin`), or a case variant of a declared
     /// one (`Salary` for `salary`) that a case-insensitive database would
     /// write, is refused, and so is one a hook set. A table with no columns
     /// accepts only the id.
     ///
-    /// A key may also be a column's stored name (its alias, `fullName`) or
-    /// the top of a stored nested path (`place` for `place.venue_id`); the
-    /// backend checks the keys inside such a nested value.
+    /// A key may also be a column's stored name in full (its alias,
+    /// `fullName` or `place.venue_id`), never only the top of one: `place`
+    /// alone would write the whole sub-document, on SQL an undeclared column.
+    /// A contained relation's host column is declared: its value was just
+    /// built by [`Self::write_contained`].
     fn refuse_undeclared_columns(&self, record: &Record<T::Value>) -> Result<()> {
         let id_field = self.id_field_name();
         let declared = |key: &str| {
@@ -103,14 +246,8 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
                 // after this drop them from a row read and saved back.
                 || self.is_expression_column(key)
                 || self.is_imported_column(key)
-                || self.columns().values().any(|c| {
-                    c.alias().is_some_and(|alias| {
-                        alias == key
-                            || alias
-                                .strip_prefix(key)
-                                .is_some_and(|rest| rest.starts_with('.'))
-                    })
-                })
+                || self.contained.iter().any(|rel| rel.host_column() == key)
+                || self.columns().values().any(|c| c.alias() == Some(key))
         };
         match record.keys().find(|k| !declared(k.as_str())) {
             Some(column) => Err(vantage_core::error!(

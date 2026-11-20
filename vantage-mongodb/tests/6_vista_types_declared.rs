@@ -423,6 +423,59 @@ async fn declared_object_id_refusal_names_the_column_and_type() -> TestResult {
     Ok(())
 }
 
+/// A `json` column stores a map as one sub-document and an array as one
+/// array (JSON text too), reads either back unchanged, keeps the stored
+/// types of the parts a write repeats, and refuses a scalar.
+#[tokio::test]
+async fn declared_json_stores_a_map_or_an_array_as_one_value() -> TestResult {
+    let (db, name) = setup().await;
+    let yaml = "name: event\ncolumns:\n  _id: { flags: [id] }\n  meta: { type: json }\n\
+                mongo:\n  collection: events\n";
+    let spec: MongoVistaSpec = serde_yaml_ng::from_str(yaml)?;
+    let vista = db.vista_factory().build_from_spec(spec)?;
+    let only = |value: CborValue| -> Record<CborValue> {
+        [("meta".to_string(), value)].into_iter().collect()
+    };
+    let meta = CborValue::Map(vec![
+        (text("tags"), CborValue::Array(vec![text("a")])),
+        (text("n"), int(1)),
+    ]);
+    vista.insert_value("j1", &only(meta.clone())).await?;
+    assert_eq!(
+        raw(&db, "j1").await.get_document("meta")?,
+        &doc! { "tags": ["a"], "n": 1i64 }
+    );
+    assert_eq!(vista.get_value("j1").await?.unwrap()["meta"], meta);
+
+    vista.insert_value("j2", &only(text(r#"[1, "b"]"#))).await?;
+    assert_eq!(
+        raw(&db, "j2").await.get_array("meta")?,
+        &vec![Bson::Int64(1), Bson::String("b".into())]
+    );
+
+    db.doc_collection("events")
+        .update_one(doc! { "_id": "j1" }, doc! { "$set": { "meta.n": 1i32 } })
+        .await?;
+    vista
+        .patch_value("j1".to_string(), &only(meta.clone()))
+        .await?;
+    assert_eq!(
+        raw(&db, "j1").await.get_document("meta")?.get("n"),
+        Some(&Bson::Int32(1))
+    );
+
+    for scalar in [int(5), text("plain")] {
+        let err = vista
+            .insert_value("j3", &only(scalar))
+            .await
+            .expect_err("a scalar is no json value");
+        assert!(err.to_string().contains("json"), "{err}");
+    }
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
 #[tokio::test]
 async fn declared_array_keeps_unchanged_elements_as_stored_and_types_the_rest() -> TestResult {
     let (db, name) = setup().await;

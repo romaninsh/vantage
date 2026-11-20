@@ -74,6 +74,7 @@ declared_types! {
     ["date"] => NaiveDate as "date" by date,
     ["time"] => NaiveTime as "time" by time,
     ["duration"] => std::time::Duration as "duration" by typed::<std::time::Duration>,
+    ["json"] => serde_json::Value as "json" by json,
     #[cfg(feature = "decimal")]
     ["decimal", "numeric"] => rust_decimal::Decimal as "decimal" by typed::<rust_decimal::Decimal>,
 }
@@ -123,6 +124,22 @@ fn is_absent(value: &CborValue) -> bool {
 
 fn keep(_column: &str, _expected: &str, value: AnySurrealType) -> Result<AnySurrealType> {
     Ok(value)
+}
+
+/// A `json` column: a map or an array, stored as one object or array; JSON
+/// text holding one is parsed. A scalar is refused.
+fn json(column: &str, expected: &str, value: AnySurrealType) -> Result<AnySurrealType> {
+    match value.value() {
+        raw if is_absent(raw) => Ok(AnySurrealType::new(None::<String>)),
+        CborValue::Map(_) | CborValue::Array(_) => Ok(value),
+        CborValue::Text(text) => match serde_json::from_str::<serde_json::Value>(text) {
+            Ok(json @ (serde_json::Value::Object(_) | serde_json::Value::Array(_))) => Ok(
+                AnySurrealType::from(vantage_types::cbor_json::json_to_cbor(json)),
+            ),
+            _ => Err(invalid(column, expected, &value)),
+        },
+        _ => Err(invalid(column, expected, &value)),
+    }
 }
 
 /// A value already of `T`'s kind passes as it is, so a stored value written

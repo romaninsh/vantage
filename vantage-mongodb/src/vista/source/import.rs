@@ -34,7 +34,6 @@ use vantage_types::Record;
 
 use super::MongoTableShell;
 use crate::id::MongoId;
-use crate::mongodb::impls::table_source::refuse_undeclared_nested;
 use crate::mongodb::tx::MongoTx;
 use crate::mongodb::view::undeclared_view;
 use crate::types::AnyMongoType;
@@ -111,7 +110,6 @@ async fn prepare(
             .table
             .prepare_insert(&shell.flatten_for_write(record, None)?)
             .await?;
-        refuse_undeclared_nested(&shell.table, &record)?;
         let mut doc = doc! { "_id": id.to_bson() };
         for (key, value) in &record {
             doc.insert(key, value.value().clone());

@@ -35,52 +35,19 @@ pub(super) fn declared_kinds(
         .collect()
 }
 
-/// How many leading segments of `path` name the shallowest ancestor of the
-/// leaf that the stored row holds as absent, null or anything other than a
-/// sub-document; `None` when every ancestor is a sub-document, or when there
-/// is no stored row to look at.
-fn broken_ancestor(stored: Option<&IndexMap<String, Bson>>, path: &[String]) -> Option<usize> {
-    let stored = stored?;
-    (1..path.len()).find(|&depth| {
-        !matches!(
-            walk_bson_path(stored, &path[..depth]),
-            Some(Bson::Document(_))
-        )
-    })
-}
-
 impl MongoTableShell {
-    /// Build a `Record<AnyMongoType>` ready for the table's write path. For
-    /// columns with a multi-segment path, intermediate sub-documents are
-    /// reconstructed and merged so that `{ "address.city", "address.zip" }`
-    /// land as one `address: { city, zip }` BSON entry. `stored` is the row
-    /// as it stands, on replace and patch.
+    /// Build a `Record<AnyMongoType>` ready for the table's write path, for
+    /// an insert, replace or patch. A column with a multi-segment path is one
+    /// dotted key (`"address.city"`): the table writes it through the
+    /// `contains_one` its root makes (see the factory's `nested_path` sugar),
+    /// merged into the stored sub-document, so fields stored beside it stay.
+    /// `stored` is the row as it stands, on replace and patch.
     pub(super) fn flatten_for_write(
         &self,
         record: &Record<CborValue>,
         stored: Option<&IndexMap<String, Bson>>,
     ) -> Result<Record<AnyMongoType>> {
-        self.flatten(record, stored, false)
-    }
-
-    /// Like `flatten_for_write`, but a multi-segment path stays one dotted
-    /// key (`"address.city"`), so the patch's `$set` writes that leaf alone
-    /// and leaves the rest of the sub-document as stored.
-    pub(super) fn flatten_for_patch(
-        &self,
-        partial: &Record<CborValue>,
-        stored: Option<&IndexMap<String, Bson>>,
-    ) -> Result<Record<AnyMongoType>> {
-        self.flatten(partial, stored, true)
-    }
-
-    fn flatten(
-        &self,
-        record: &Record<CborValue>,
-        stored: Option<&IndexMap<String, Bson>>,
-        dotted: bool,
-    ) -> Result<Record<AnyMongoType>> {
-        let mut flat = self.flatten_paths(record, stored, dotted)?;
+        let mut flat = self.flatten_paths(record, stored)?;
         // CBOR carries an ObjectId as its hex text, so a value read from the
         // set arrives in the other spelling than the set's invariant, and the
         // table's conflict check compares raw values.
@@ -99,7 +66,6 @@ impl MongoTableShell {
         &self,
         record: &Record<CborValue>,
         stored: Option<&IndexMap<String, Bson>>,
-        dotted: bool,
     ) -> Result<Record<AnyMongoType>> {
         let mut top = Document::new();
         for (col_name, value) in record {
@@ -125,31 +91,9 @@ impl MongoTableShell {
                 (Some(old), None) => coerce::preserve(&old, value),
                 (None, None) => cbor_to_bson(value),
             };
-            if self.column_paths.is_empty() {
-                top.insert(col_name.clone(), bson_value);
-            } else if dotted {
-                match broken_ancestor(stored, path) {
-                    // MongoDB refuses a dotted `$set` through a null or
-                    // scalar parent, so that parent is set whole, built from
-                    // the leaves this patch writes under it.
-                    Some(depth) => {
-                        let parent = top
-                            .entry(path[..depth].join("."))
-                            .or_insert_with(|| Bson::Document(Document::new()));
-                        if !matches!(parent, Bson::Document(_)) {
-                            *parent = Bson::Document(Document::new());
-                        }
-                        if let Bson::Document(sub) = parent {
-                            insert_at_path(sub, &path[depth..], bson_value);
-                        }
-                    }
-                    None => {
-                        top.insert(path.join("."), bson_value);
-                    }
-                }
-            } else {
-                insert_at_path(&mut top, path, bson_value);
-            }
+            // A joined column (`client.name`) is one segment, a top-level key
+            // the table's write path strips.
+            top.insert(path.join("."), bson_value);
         }
         Ok(top
             .into_iter()
@@ -165,29 +109,5 @@ impl MongoTableShell {
             .get_value(id.clone())
             .await?
             .map(|row| row.into_iter().map(|(k, v)| (k, v.into_value())).collect()))
-    }
-}
-
-/// Insert `value` at `path` inside `doc`, creating intermediate sub-documents
-/// and overwriting a scalar in the way. It walks the path's segments, not the
-/// dots: a joined column (`client.name`) is one segment, a top-level key the
-/// table's write path strips.
-fn insert_at_path(doc: &mut Document, path: &[String], value: Bson) {
-    match path {
-        [] => {}
-        [leaf] => {
-            doc.insert(leaf.clone(), value);
-        }
-        [head, rest @ ..] => {
-            let entry = doc
-                .entry(head.clone())
-                .or_insert_with(|| Bson::Document(Document::new()));
-            if !matches!(entry, Bson::Document(_)) {
-                *entry = Bson::Document(Document::new());
-            }
-            if let Bson::Document(sub) = entry {
-                insert_at_path(sub, rest, value);
-            }
-        }
     }
 }

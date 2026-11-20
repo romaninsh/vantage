@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.6.0 — 2026-11-21
+
+- YAML column type `json`: an object or an array as one value, unchecked inside. It takes JSON text
+  too and refuses a scalar naming the column. The schema check accepts a `json` column over an
+  `object` or `array` field.
+- Contained relations: `contained_records` / `contained_host` map a host column's object or array
+  of objects to records and back, so writes to it go through the contained table (vantage-table
+  4.2.0).
+- Requires vantage-table 4.2.0.
+
 ## 2.5.0 — 2026-11-20
 
 - Fix: writing a `time` value hung until the request deadline. The carrier's `Tag(101)` reached

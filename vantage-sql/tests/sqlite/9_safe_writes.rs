@@ -61,3 +61,50 @@ async fn a_schema_replace_policy_never_deletes_the_clashing_row() {
     assert_eq!(b["email"], AnySqliteType::from("b@x.test".to_string()));
     assert!(all.get_value("c").await.unwrap().is_none());
 }
+
+/// A column with a dotted alias (`city`, read as `address.city`) declares
+/// that alias in full, not its root: a write keyed `address` names a column
+/// the table doesn't declare, which SQLite would otherwise write.
+#[tokio::test]
+async fn the_root_of_a_dotted_alias_is_not_a_column() {
+    use vantage_dataset::prelude::*;
+    use vantage_table::column::core::Column;
+    use vantage_types::Record;
+
+    let db = SqliteDB::connect("sqlite::memory:").await.unwrap();
+    sqlx::query("CREATE TABLE client (id TEXT PRIMARY KEY, city TEXT, address TEXT)")
+        .execute(db.pool())
+        .await
+        .unwrap();
+    let clients = Table::<SqliteDB, EmptyEntity>::new("client", db.clone())
+        .with_id_column("id")
+        .with_column(Column::<AnySqliteType>::new("city").with_alias("address.city"));
+    let one = |key: &str, value: &str| -> Record<AnySqliteType> {
+        [(key.to_string(), AnySqliteType::from(value.to_string()))]
+            .into_iter()
+            .collect()
+    };
+    clients
+        .insert_value("c1", &one("city", "Hill Valley"))
+        .await
+        .unwrap();
+
+    for err in [
+        clients
+            .patch_value("c1", &one("address", "x"))
+            .await
+            .unwrap_err(),
+        clients
+            .insert_value("c2", &one("address", "x"))
+            .await
+            .unwrap_err(),
+    ] {
+        assert!(err.is_forbidden(), "{err}");
+    }
+    let (address,): (Option<String>,) =
+        sqlx::query_as("SELECT address FROM client WHERE id = 'c1'")
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
+    assert_eq!(address, None);
+}

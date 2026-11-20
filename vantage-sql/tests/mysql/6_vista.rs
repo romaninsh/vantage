@@ -89,7 +89,9 @@ async fn typed_events(suffix: &str) -> (MysqlDB, String) {
             amount DECIMAL(10, 2) NULL,
             qty BIGINT NULL,
             starts TIME NULL,
-            size BIGINT NULL
+            size BIGINT NULL,
+            meta TEXT NULL,
+            doc JSON NULL
         )"
     )))
     .execute(db.pool())

@@ -24,6 +24,121 @@ pub(crate) fn parse_json_host(v: &CborValue) -> Option<CborValue> {
     }
 }
 
+/// A `json` column's value: a map or an array, given as one or as the JSON
+/// text a column stores. A scalar, or text that isn't a JSON object or
+/// array, is no `json` value.
+pub(crate) fn json_document(value: CborValue) -> Option<JsonValue> {
+    let json = match value {
+        CborValue::Text(text) => serde_json::from_str::<JsonValue>(&text).ok()?,
+        value @ (CborValue::Map(_) | CborValue::Array(_)) => cbor_to_json(value),
+        _ => return None,
+    };
+    (json.is_object() || json.is_array()).then_some(json)
+}
+
+/// The records a contained relation keeps in its host column's value: the
+/// map (one record) or array of maps a `json` column holds, given as
+/// itself or as its JSON text. `None` for no value.
+pub(crate) fn contained_records<V>(
+    host: &CborValue,
+    wrap: impl Fn(CborValue) -> V,
+) -> vantage_core::Result<Option<Vec<vantage_types::Record<V>>>> {
+    let record =
+        |pairs: Vec<(CborValue, CborValue)>| -> vantage_core::Result<vantage_types::Record<V>> {
+            pairs
+                .into_iter()
+                .map(|(k, v)| match k {
+                    CborValue::Text(k) => Ok((k, wrap(v))),
+                    other => Err(vantage_core::error!(
+                        "a contained record's field name is text",
+                        key = format!("{other:?}")
+                    )
+                    .mark_invalid_value()),
+                })
+                .collect()
+        };
+    let refused = || {
+        vantage_core::error!("a contained relation's host holds a JSON object or an array of them")
+            .mark_invalid_value()
+    };
+    let value = match host {
+        CborValue::Null => return Ok(None),
+        CborValue::Text(text) if text.is_empty() => return Ok(None),
+        CborValue::Text(_) => json_document(host.clone())
+            .map(json_to_cbor)
+            .ok_or_else(refused)?,
+        other => other.clone(),
+    };
+    match value {
+        CborValue::Map(pairs) => Ok(Some(vec![record(pairs)?])),
+        CborValue::Array(items) => items
+            .into_iter()
+            .map(|item| match item {
+                CborValue::Map(pairs) => record(pairs),
+                _ => Err(refused()),
+            })
+            .collect::<vantage_core::Result<Vec<_>>>()
+            .map(Some),
+        _ => Err(refused()),
+    }
+}
+
+/// The host column's value for `records`: one map, or an array of maps for a
+/// `contains_many`; its `json` column type stores it.
+pub(crate) fn contained_host<V>(
+    records: Vec<vantage_types::Record<V>>,
+    many: bool,
+    unwrap: impl Fn(V) -> CborValue,
+) -> CborValue {
+    let mut maps: Vec<CborValue> = records
+        .into_iter()
+        .map(|record| {
+            CborValue::Map(
+                record
+                    .into_iter()
+                    .map(|(k, v)| (CborValue::Text(k), unwrap(v)))
+                    .collect(),
+            )
+        })
+        .collect();
+    if many {
+        CborValue::Array(maps)
+    } else {
+        maps.pop().unwrap_or(CborValue::Null)
+    }
+}
+
+/// A stored cell of a column declared as the Rust type `declared`: JSON text
+/// in a `json` column reads as the map or array it holds (`""` as no value);
+/// a native `json`/`jsonb` cell is already one. Any other cell is returned
+/// as it is.
+pub(crate) fn read_json_cell(
+    table: &str,
+    column: &str,
+    declared: &str,
+    value: CborValue,
+) -> vantage_core::Result<CborValue> {
+    if declared != std::any::type_name::<JsonValue>() {
+        return Ok(value);
+    }
+    let CborValue::Text(text) = &value else {
+        return Ok(value);
+    };
+    if text.is_empty() {
+        return Ok(CborValue::Null);
+    }
+    match json_document(value.clone()) {
+        Some(json) => Ok(json_to_cbor(json)),
+        None => Err(vantage_core::error!(
+            format!("`{column}` of `{table}` holds {text:?}, which is not a `json`"),
+            table = table,
+            column = column,
+            expected = "json",
+            value = text
+        )),
+    }
+}
+
 /// Rendering policy for the SQL drivers' JSON bridge.
 ///
 /// Value-preserving rather than shape-preserving: every CBOR value

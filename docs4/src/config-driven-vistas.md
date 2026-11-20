@@ -98,6 +98,15 @@ one driver-named block at each level:
 | `decimal`, `numeric`             | `Column<Decimal>`     |
 | `date` / `time` / `datetime`     | chrono naive types    |
 | `timestamp`                      | `DateTime<Utc>`       |
+| `json`                           | `serde_json::Value`   |
+
+A `json` column holds a map or an array as one value, and nothing checks what is inside it. A
+write takes the map or array, or JSON text holding one; a scalar is refused. SQLite and MySQL
+store JSON text in a text column, MySQL `JSON` and Postgres `jsonb` columns store it natively, and
+MongoDB and SurrealDB store a sub-document or array. A read gives back the map or array. MySQL
+`JSON`, Postgres (text or `jsonb`) and SurrealDB keep keys sorted rather than in the order
+written. For a sub-record with declared columns, use a [contained relation](#contained-relations)
+instead.
 
 `flags:` is the same open vocabulary the Vista chapter introduced — `id`, `title`, `searchable`,
 `orderable`, `hidden`, `mandatory` — and drives the same consumer behaviour (title columns label
@@ -120,7 +129,7 @@ When the spec column name differs from the storage name, the column's driver blo
 | SQLite  | `sqlite: { column: unit_price }` | SELECTed under the SQL name, aliased back to the spec name |
 | Surreal | `surreal: { field: unitPrice }`  | Read/written under the Surreal field name                 |
 | MongoDB | `mongo: { field: unitPrice }`    | Single-level BSON rename                                  |
-| MongoDB | `mongo: { nested_path: price.amount }` | Dotted path into a nested document — projected on read, sub-documents rebuilt on write, dotted form pushed down on filter |
+| MongoDB | `mongo: { nested_path: price.amount }` | Dotted path into a nested document — projected on read, dotted form pushed down on filter; on write, the columns under one root form a `contains_one` (see below), so a write merges into the stored sub-document and takes only the declared paths |
 | CSV     | `csv: { source: "Unit Price" }`  | CSV header to read from                                   |
 | GraphQL | `graphql: { field: unit_price }` | Selected as a GraphQL alias, filtered and sorted under the server name ([GraphQL blocks](./http-apis/graphql-yaml.md)) |
 
@@ -460,7 +469,7 @@ section and surface as editable sub-vistas:
 name: order
 columns:
   id: { type: string, flags: [id] }
-  lines: { type: string }          # the host column — declare it so it's selected
+  lines: { type: json }            # the host column — declare it so it's selected
 contained:
   lines:
     host_column: lines
@@ -474,6 +483,13 @@ contained:
 Reads project the embedded collection into records; writes patch it back into the host column. The
 mechanics — and the sharp edges — are covered in
 [Contained Relations](./new-persistence/step9-contained-relations.md).
+
+Every write to the host column goes through the contained table, whoever makes it. A parent write
+of `lines: [...]` replaces the collection, and each record must hold only the contained table's
+columns; a field it doesn't declare is refused. On a `contains_one`, a dotted key
+(`address.city`) changes one field: it is checked the same way, then merged into the stored record,
+so fields stored beside it stay. `address: null` clears the record. A dotted key into a
+`contains_many` is refused, since its records have no single path.
 
 ---
 

@@ -59,6 +59,7 @@ mod bool;
 mod bytes;
 mod chrono;
 mod decimal;
+mod json;
 mod numbers;
 mod string;
 mod value;
