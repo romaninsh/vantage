@@ -1,5 +1,57 @@
 pub mod vantage_vista
 pub mod vantage_vista::contract
+pub enum vantage_vista::contract::Precision
+pub vantage_vista::contract::Precision::Micros
+pub vantage_vista::contract::Precision::Millis
+impl core::clone::Clone for vantage_vista::contract::Precision
+pub fn vantage_vista::contract::Precision::clone(&self) -> Self
+impl core::cmp::Eq for vantage_vista::contract::Precision
+impl core::cmp::PartialEq for vantage_vista::contract::Precision
+pub fn vantage_vista::contract::Precision::eq(&self, &Self) -> bool
+impl core::fmt::Debug for vantage_vista::contract::Precision
+pub fn vantage_vista::contract::Precision::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vantage_vista::contract::Precision
+impl core::marker::StructuralPartialEq for vantage_vista::contract::Precision
+impl core::marker::Freeze for vantage_vista::contract::Precision
+impl core::marker::Send for vantage_vista::contract::Precision
+impl core::marker::Sync for vantage_vista::contract::Precision
+impl core::marker::Unpin for vantage_vista::contract::Precision
+impl core::marker::UnsafeUnpin for vantage_vista::contract::Precision
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_vista::contract::Precision
+impl core::panic::unwind_safe::UnwindSafe for vantage_vista::contract::Precision
+pub enum vantage_vista::contract::Stored
+pub vantage_vista::contract::Stored::Carrier(vantage_vista::CborValue)
+pub vantage_vista::contract::Stored::Native
+pub vantage_vista::contract::Stored::Native::canonical: alloc::string::String
+pub vantage_vista::contract::Stored::Native::kind: alloc::string::String
+pub vantage_vista::contract::Stored::Text(alloc::string::String)
+impl core::clone::Clone for vantage_vista::contract::Stored
+pub fn vantage_vista::contract::Stored::clone(&self) -> Self
+impl core::cmp::PartialEq for vantage_vista::contract::Stored
+pub fn vantage_vista::contract::Stored::eq(&self, &Self) -> bool
+impl core::fmt::Debug for vantage_vista::contract::Stored
+pub fn vantage_vista::contract::Stored::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for vantage_vista::contract::Stored
+impl core::marker::Freeze for vantage_vista::contract::Stored
+impl core::marker::Send for vantage_vista::contract::Stored
+impl core::marker::Sync for vantage_vista::contract::Stored
+impl core::marker::Unpin for vantage_vista::contract::Stored
+impl core::marker::UnsafeUnpin for vantage_vista::contract::Stored
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_vista::contract::Stored
+impl core::panic::unwind_safe::UnwindSafe for vantage_vista::contract::Stored
+#[non_exhaustive] pub struct vantage_vista::contract::Foreign
+pub vantage_vista::contract::Foreign::column: &'static str
+pub vantage_vista::contract::Foreign::reads_as: vantage_vista::CborValue
+pub vantage_vista::contract::Foreign::written: alloc::string::String
+impl vantage_vista::contract::Foreign
+pub fn vantage_vista::contract::Foreign::new(&'static str, impl core::convert::Into<alloc::string::String>, vantage_vista::CborValue) -> Self
+impl core::marker::Freeze for vantage_vista::contract::Foreign
+impl core::marker::Send for vantage_vista::contract::Foreign
+impl core::marker::Sync for vantage_vista::contract::Foreign
+impl core::marker::Unpin for vantage_vista::contract::Foreign
+impl core::marker::UnsafeUnpin for vantage_vista::contract::Foreign
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_vista::contract::Foreign
+impl core::panic::unwind_safe::UnwindSafe for vantage_vista::contract::Foreign
 #[non_exhaustive] pub struct vantage_vista::contract::TxTables
 pub vantage_vista::contract::TxTables::a: vantage_vista::Vista
 pub vantage_vista::contract::TxTables::b: vantage_vista::Vista
@@ -14,6 +66,13 @@ impl core::marker::Unpin for vantage_vista::contract::TxTables
 impl core::marker::UnsafeUnpin for vantage_vista::contract::TxTables
 impl !core::panic::unwind_safe::RefUnwindSafe for vantage_vista::contract::TxTables
 impl !core::panic::unwind_safe::UnwindSafe for vantage_vista::contract::TxTables
+pub trait vantage_vista::contract::TemporalFixture: core::marker::Send + core::marker::Sync
+pub fn vantage_vista::contract::TemporalFixture::fresh<'life0, 'async_trait>(&'life0 self) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_vista::Vista> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
+pub fn vantage_vista::contract::TemporalFixture::precision(&self) -> vantage_vista::contract::Precision
+pub fn vantage_vista::contract::TemporalFixture::seed_foreign<'life0, 'life1, 'async_trait>(&'life0 self, &'life1 vantage_vista::Vista) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<alloc::vec::Vec<vantage_vista::contract::Foreign>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+pub fn vantage_vista::contract::TemporalFixture::stored<'life0, 'life1, 'life2, 'life3, 'async_trait>(&'life0 self, &'life1 vantage_vista::Vista, &'life2 str, &'life3 str) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_vista::contract::Stored>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait, 'life3: 'async_trait
+pub fn vantage_vista::contract::TemporalFixture::zone_aware(&self) -> bool
+pub fn vantage_vista::contract::TemporalFixture::zone_aware_full_range(&self) -> bool
 pub trait vantage_vista::contract::TxFixture: core::marker::Send + core::marker::Sync
 pub fn vantage_vista::contract::TxFixture::conflicts_fail_fast(&self) -> bool
 pub fn vantage_vista::contract::TxFixture::detects_deadlocks(&self) -> bool
@@ -27,6 +86,7 @@ pub async fn vantage_vista::contract::check_advertised_writes(&vantage_vista::Vi
 pub async fn vantage_vista::contract::check_atomic_rhai(&impl vantage_vista::contract::TxFixture)
 pub async fn vantage_vista::contract::check_clone(&vantage_vista::Vista, &str, vantage_vista::CborValue)
 pub async fn vantage_vista::contract::check_narrowing(&vantage_vista::Vista)
+pub async fn vantage_vista::contract::check_temporal(&impl vantage_vista::contract::TemporalFixture)
 pub async fn vantage_vista::contract::check_transactions(&impl vantage_vista::contract::TxFixture)
 pub mod vantage_vista::eval
 pub fn vantage_vista::eval::cbor_cmp(&ciborium::value::Value, &ciborium::value::Value) -> core::cmp::Ordering

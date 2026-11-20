@@ -365,7 +365,7 @@ async fn three_rows(fx: &impl TemporalFixture) -> Result<Vista> {
     let v = fx.fresh().await;
     for (i, (d, t, ts)) in ROWS.iter().enumerate() {
         v.insert_value(
-            &format!("c{i}"),
+            format!("c{i}"),
             &row(fx, &[("d", date(d)), ("t", time(t))], instant(ts)),
         )
         .await?;

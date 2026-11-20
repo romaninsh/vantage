@@ -15,8 +15,10 @@
   before `…00Z`. It reads every text form another program may have left (`T` or a space,
   offsets, short fractions, `HH:MM`) in the carrier forms; a `DateTime<FixedOffset>` reads back
   as its UTC instant.
-- MySQL reads and binds the carrier forms the same way, binding real chrono values instead of
-  text; `DATETIME` and `TIMESTAMP` hold UTC (the session runs at `+00:00`).
+- MySQL reads and binds the carrier forms the same way. It binds MySQL's own text with six
+  fraction digits (`2026-11-19 16:01:00.000000`), since MySQL refuses the carrier's `Z` and drops
+  the fraction of a typed parameter stored into `VARCHAR`. `DATETIME` and `TIMESTAMP` hold UTC
+  (the session runs at `+00:00`).
 - Tests: PostgreSQL runs `contract::check_temporal` over a `timestamp without time zone` and a
   `timestamptz` column, SQLite and MySQL over their own types.
 
