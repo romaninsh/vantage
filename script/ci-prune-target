@@ -3,6 +3,9 @@
 #
 #   script/ci-prune-target <profile dir>     e.g. target/llvm-cov-target/debug
 #
+# If target/ is still over CI_TARGET_CAP_GB (default 250) after the prune, the
+# whole target/ is wiped, so the cache saves empty and starts over.
+#
 # The workspace's own crates rebuild on almost every run, and their linked
 # test binaries are most of the size (vantage-ui: 62 GB, mostly ~460 MB
 # instrumented binaries), so the cache keeps what doesn't change: compiled
@@ -39,3 +42,16 @@ for out in "$(dirname "$dir")/nextest" "$(dirname "$(dirname "$dir")")/nextest";
 done
 
 echo "pruned $dir for the cache: $before -> $(du -sh "$dir" | cut -f1)"
+
+# A restore-key hit saves what it restored plus what the job added, so a week's
+# cache only grows. Past the cap the whole target/ goes, and the job saves an
+# empty one: the next run starts cold instead of restoring an ever bigger one.
+root=${dir%%/*}
+cap_gb=${CI_TARGET_CAP_GB:-250}
+size_kb=$(du -sk "$root" | cut -f1)
+if [ "$size_kb" -gt $((cap_gb * 1024 * 1024)) ]; then
+  size=$(du -sh "$root" | cut -f1)
+  rm -rf "$root"
+  mkdir -p "$root"
+  echo "::warning::$root was $size, over the ${cap_gb} GB cap: saving an empty cache"
+fi
