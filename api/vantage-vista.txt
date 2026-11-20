@@ -1,6 +1,6 @@
 pub mod vantage_vista
 pub mod vantage_vista::contract
-pub enum vantage_vista::contract::Precision
+#[non_exhaustive] pub enum vantage_vista::contract::Precision
 pub vantage_vista::contract::Precision::Micros
 pub vantage_vista::contract::Precision::Millis
 impl core::clone::Clone for vantage_vista::contract::Precision
@@ -19,7 +19,7 @@ impl core::marker::Unpin for vantage_vista::contract::Precision
 impl core::marker::UnsafeUnpin for vantage_vista::contract::Precision
 impl core::panic::unwind_safe::RefUnwindSafe for vantage_vista::contract::Precision
 impl core::panic::unwind_safe::UnwindSafe for vantage_vista::contract::Precision
-pub enum vantage_vista::contract::Stored
+#[non_exhaustive] pub enum vantage_vista::contract::Stored
 pub vantage_vista::contract::Stored::Carrier(vantage_vista::CborValue)
 pub vantage_vista::contract::Stored::Native
 pub vantage_vista::contract::Stored::Native::canonical: alloc::string::String

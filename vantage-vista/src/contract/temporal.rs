@@ -16,6 +16,7 @@ type Rec = Record<CborValue>;
 
 /// What the store holds for one cell, as the fixture reads it past the vista.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum Stored {
     /// The store's own temporal type (`kind`, e.g. `timestamp without time zone`, BSON `date`),
     /// rendered by the fixture in the carrier's text form: an instant as its UTC wall clock with
@@ -29,6 +30,7 @@ pub enum Stored {
 
 /// Sub-second digits an instant or a time keeps in the store.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Precision {
     Micros,
     Millis,
