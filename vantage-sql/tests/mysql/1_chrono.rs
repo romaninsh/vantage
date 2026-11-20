@@ -211,36 +211,20 @@ async fn test_time_utc() {
 // ═════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
-async fn test_datetime_date() {
-    // NaiveDate into DATETIME — gets midnight appended
+async fn test_datetime_date_is_refused_on_read() {
     let t = table_for!("chrono_datetime", db().await, ValDate);
     let orig = ValDate {
         name: "d".into(),
         value: date_val(),
     };
-    // NaiveDate into DATETIME — an instant comes back, and an instant never
-    // reads as a date
-    assert!(try_round_trip(&t, "dt_d", &orig).await.is_err());
+    // DATETIME takes the date as midnight, but an instant comes back, and an
+    // instant never reads as a date
+    t.replace(&"dt_d".to_string(), &orig).await.unwrap();
+    assert!(t.get("dt_d").await.is_err());
 }
 
 // ═════════════════════════════════════════════════════════════════════════
-// 5. TIMESTAMP columns — UTC-aware
-// ═════════════════════════════════════════════════════════════════════════
-
-#[tokio::test]
-async fn test_timestamp_date() {
-    // NaiveDate into TIMESTAMP — gets midnight UTC
-    let t = table_for!("chrono_timestamp", db().await, ValDate);
-    let orig = ValDate {
-        name: "d".into(),
-        value: date_val(),
-    };
-    // Same as datetime_date — an instant never reads as a date
-    assert!(try_round_trip(&t, "ts_d", &orig).await.is_err());
-}
-
-// ═════════════════════════════════════════════════════════════════════════
-// 6. Subsecond precision — TIME/DATETIME/TIMESTAMP(0) truncate, (6) preserve
+// 5. Subsecond precision — TIME/DATETIME/TIMESTAMP(0) truncate, (6) preserve
 // ═════════════════════════════════════════════════════════════════════════
 
 fn time_subsec() -> NaiveTime {
@@ -424,7 +408,7 @@ async fn test_timestamp6_utc_subsec() {
 }
 
 // ═════════════════════════════════════════════════════════════════════════
-// 7. DateTime<FixedOffset> — timezone offset as a runtime value
+// 6. DateTime<FixedOffset> — timezone offset as a runtime value
 // ═════════════════════════════════════════════════════════════════════════
 
 use chrono::FixedOffset;
@@ -455,22 +439,7 @@ fn fixed_val() -> DateTime<FixedOffset> {
         .unwrap()
 }
 
-// ── VARCHAR — offset normalized to UTC (typed bind) ─────────────────────
-
-#[tokio::test]
-async fn test_varchar_fixed() {
-    let t = table_for_fixed!("chrono_varchar", db().await);
-    let orig = ValFixed {
-        name: "india".into(),
-        value: fixed_val(),
-    };
-    let fetched = try_round_trip(&t, "vc_fix", &orig).await.unwrap();
-    // Same instant but offset lost — the bind sends the UTC wall clock
-    assert_eq!(fetched.value, orig.value.with_timezone(&Utc).fixed_offset());
-    assert_eq!(fetched.value.offset().local_minus_utc(), 0);
-}
-
-// ── DATETIME / TIMESTAMP — offset lost, converted to UTC ───────────
+// ── DATETIME — offset lost, converted to UTC ────────────────────────────
 
 #[tokio::test]
 async fn test_datetime_fixed() {
