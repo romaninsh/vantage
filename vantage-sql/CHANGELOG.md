@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.14.0 — 2026-11-20
+
+- PostgreSQL reads dates, times and instants in the carrier forms of `vantage_types::temporal`:
+  `timestamp` and `timestamptz` both as `Tag(0, "2026-11-19T16:01:00.000000Z")` (a `timestamp
+  without time zone` holds UTC by convention, as Odoo writes it), `date` as `Tag(1004)`, `time`
+  as `Tag(101, "16:01:00.000000")`. Before, `timestamptz` read as `… 16:01:00+00`, `timestamp`
+  as naive text, `date` as `Tag(100)`, `time` without its fraction.
+- PostgreSQL binds any accepted form of a date, time or instant as the real type (offsets, naive
+  text, `HH:MM`, `Tag(100)` and `Tag(1004)` dates, SurrealDB's `Tag(12)`), and the chrono types
+  read and write the carrier forms.
+- Tests: PostgreSQL runs `contract::check_temporal` over a `timestamp without time zone` and a
+  `timestamptz` column.
+
 ## 0.13.2 — 2026-11-19
 
 - Tests: SQLite, PostgreSQL and MySQL run `contract::check_list_condition`.

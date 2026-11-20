@@ -31,17 +31,23 @@
 //! - [`check_atomic_rhai`] (feature `rhai`): the same promise from a Rhai
 //!   `atomic {}` block, its `rollback` arm, a `return` out of it, and handles
 //!   made before and used after it.
+//! - [`check_temporal`]: dates, times and instants come back in the carrier
+//!   forms of `vantage_types::temporal`, whatever form they were written in,
+//!   are stored the driver's way, read foreign rows the same way, keep the
+//!   driver's precision, and compare and order by value. Needs a disposable
+//!   [`TemporalFixture`].
 //!
 //! Each driver's contract test file runs `check_clone` and
-//! `check_advertised`, plus `check_advertised_writes` where its fixture is
-//! disposable, and `check_transactions` and `check_atomic_rhai` where its
-//! backend has transactions.
+//! `check_advertised`, plus `check_advertised_writes` and `check_temporal`
+//! where its fixture is disposable, and `check_transactions` and
+//! `check_atomic_rhai` where its backend has transactions.
 
 mod advertised;
 #[cfg(feature = "rhai")]
 mod atomic;
 mod clone;
 mod narrowing;
+mod temporal;
 mod transactions;
 mod window;
 mod writes;
@@ -51,6 +57,7 @@ pub use advertised::check_advertised;
 pub use atomic::check_atomic_rhai;
 pub use clone::check_clone;
 pub use narrowing::check_narrowing;
+pub use temporal::{Foreign, Precision, Stored, TemporalFixture, check_temporal};
 pub use transactions::{TxFixture, TxTables, check_transactions};
 pub use writes::check_advertised_writes;
 

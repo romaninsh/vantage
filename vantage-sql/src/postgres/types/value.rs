@@ -72,7 +72,7 @@ impl std::fmt::Display for AnyPostgresType {
                     write!(f, "{:?}", inner)
                 }
             }
-            CborValue::Tag(0, inner) | CborValue::Tag(100, inner) | CborValue::Tag(101, inner) => {
+            CborValue::Tag(0 | 100 | 101 | 1004, inner) => {
                 if let CborValue::Text(s) = inner.as_ref() {
                     write!(f, "'{}'", s)
                 } else {
@@ -340,6 +340,7 @@ impl vantage_types::TerminalRender for AnyPostgresType {
             CborValue::Tag(10, inner)
             | CborValue::Tag(0, inner)
             | CborValue::Tag(100, inner)
+            | CborValue::Tag(1004, inner)
             | CborValue::Tag(101, inner)
             | CborValue::Tag(9, inner) => {
                 if let CborValue::Text(s) = inner.as_ref() {

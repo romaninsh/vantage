@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.13.0 — 2026-11-20
+
+- `contract::check_temporal` (feature `contract`): dates, times and instants written through a
+  vista come back in the carrier forms of `vantage_types::temporal`, whatever form they were
+  written in; they are stored the driver's way (`TemporalFixture::stored`); rows another program
+  wrote read the same way (`seed_foreign`); the driver's precision is kept; nulls clear; and
+  conditions and order compare by value. A table without inserts gets only the foreign-read
+  probe. Each driver's contract test runs it on a disposable fixture.
+
 ## 2.12.2 — 2026-11-19
 
 - Tests: the Rhai guide and vocabulary fixtures declare the columns their imports and dotted

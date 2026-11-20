@@ -11,6 +11,7 @@ use vantage_vista::{
 
 mod direct;
 mod dotted;
+mod temporal;
 mod window;
 
 fn t(s: &str) -> CborValue {

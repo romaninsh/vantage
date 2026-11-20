@@ -48,13 +48,11 @@ impl<V> ViaStrict<V> for &Probe<'_, V> {
     }
 }
 
-// CBOR tags the bundled drivers use for typed values.
-const TAG_DATETIME_TEXT: u64 = 0;
+use crate::temporal::{TAG_DATE, TAG_INSTANT as TAG_DATETIME_TEXT, TAG_LEGACY_DATE, TAG_TIME};
+
 const TAG_DECIMAL: u64 = 10;
 #[cfg(feature = "serde")]
-const TAG_SURREAL_DATETIME: u64 = 12;
-const TAG_DATE: u64 = 100;
-const TAG_TIME: u64 = 101;
+use crate::temporal::TAG_SURREAL_INSTANT as TAG_SURREAL_DATETIME;
 
 impl LenientValue for CborValue {
     fn lenient_forms(&self) -> Vec<Self> {
@@ -102,11 +100,11 @@ fn text_forms(s: &str) -> Vec<CborValue> {
         forms.push(CborValue::Float(f));
     }
     if is_date(s) {
-        forms.push(tag_text(TAG_DATE, s.to_string()));
+        forms.extend(date_forms(s));
         forms.extend(midnight_instant_forms(s));
     } else if is_date(s.get(..10).unwrap_or("")) {
         if let Some(date) = midnight_date(s) {
-            forms.push(tag_text(TAG_DATE, date.to_string()));
+            forms.extend(date_forms(date));
         }
         forms.extend(instant_forms(s));
     }
@@ -124,7 +122,7 @@ fn tagged_forms(tag: u64, inner: &CborValue) -> Vec<CborValue> {
         };
         let mut forms = vec![tag_text(TAG_DATETIME_TEXT, rfc.clone())];
         if let Some(date) = midnight_date(&rfc) {
-            forms.push(tag_text(TAG_DATE, date.to_string()));
+            forms.extend(date_forms(date));
         }
         forms.push(CborValue::Text(rfc));
         return forms;
@@ -136,13 +134,18 @@ fn tagged_forms(tag: u64, inner: &CborValue) -> Vec<CborValue> {
     match tag {
         TAG_DATETIME_TEXT => {
             if let Some(date) = midnight_date(s) {
-                forms.push(tag_text(TAG_DATE, date.to_string()));
+                forms.extend(date_forms(date));
             }
             forms.push(CborValue::Text(s.clone()));
             #[cfg(feature = "serde")]
             forms.extend(crate::cbor_json::rfc3339_to_tag12(s));
         }
-        TAG_DATE => {
+        TAG_DATE | TAG_LEGACY_DATE => {
+            forms.extend(
+                date_forms(s)
+                    .into_iter()
+                    .filter(|f| !matches!(f, CborValue::Tag(t, _) if *t == tag)),
+            );
             forms.push(CborValue::Text(s.clone()));
             forms.extend(midnight_instant_forms(s));
         }
@@ -163,6 +166,14 @@ fn tagged_forms(tag: u64, inner: &CborValue) -> Vec<CborValue> {
         _ => {}
     }
     forms
+}
+
+// A date in the carrier form, then the legacy tag the drivers decoded before it.
+fn date_forms(date: &str) -> [CborValue; 2] {
+    [
+        tag_text(TAG_DATE, date.to_string()),
+        tag_text(TAG_LEGACY_DATE, date.to_string()),
+    ]
 }
 
 // Date-only text as an instant: midnight UTC.

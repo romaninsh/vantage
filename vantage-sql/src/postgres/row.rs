@@ -7,7 +7,7 @@ use ciborium::Value as CborValue;
 use sqlx::postgres::PgRow;
 use sqlx::{Column, Row, TypeInfo};
 use vantage_core::{Result, VantageError, error};
-use vantage_types::Record;
+use vantage_types::{Record, temporal};
 
 use super::types::{AnyPostgresType, PostgresTypeVariants};
 
@@ -81,36 +81,17 @@ pub(crate) fn bind_postgres_value<'q>(
         },
         PostgresTypeVariants::DateTime => match cbor {
             CborValue::Null => query.bind(None::<chrono::NaiveDateTime>),
-            _ => {
-                let s = tagged_text(cbor, 0).ok_or_else(refused)?;
-                // An offset makes it an instant (TIMESTAMPTZ); without one
-                // it's a wall-clock time (TIMESTAMP).
-                if let Some(dt) = parse_instant(s) {
-                    query.bind(dt)
-                } else {
-                    query.bind(parse_naive_datetime(s).ok_or_else(refused)?)
-                }
-            }
+            // A UTC instant; the session runs in UTC, so a `timestamp without time zone`
+            // column stores its UTC wall clock.
+            _ => query.bind(temporal::as_instant(cbor).ok_or_else(refused)?),
         },
         PostgresTypeVariants::Date => match cbor {
             CborValue::Null => query.bind(None::<chrono::NaiveDate>),
-            _ => query.bind(
-                tagged_text(cbor, 100)
-                    .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
-                    .ok_or_else(refused)?,
-            ),
+            _ => query.bind(temporal::as_date(cbor).ok_or_else(refused)?),
         },
         PostgresTypeVariants::Time => match cbor {
             CborValue::Null => query.bind(None::<chrono::NaiveTime>),
-            _ => query.bind(
-                tagged_text(cbor, 101)
-                    .and_then(|s| {
-                        chrono::NaiveTime::parse_from_str(s, "%H:%M:%S")
-                            .or_else(|_| chrono::NaiveTime::parse_from_str(s, "%H:%M:%S%.f"))
-                            .ok()
-                    })
-                    .ok_or_else(refused)?,
-            ),
+            _ => query.bind(temporal::as_time(cbor).ok_or_else(refused)?),
         },
         PostgresTypeVariants::Uuid => match cbor {
             CborValue::Null => query.bind(None::<String>),
@@ -135,25 +116,6 @@ fn tagged_text(value: &CborValue, tag: u64) -> Option<&str> {
         },
         _ => None,
     }
-}
-
-fn parse_instant(s: &str) -> Option<chrono::DateTime<chrono::Utc>> {
-    chrono::DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%#z")
-        .or_else(|_| chrono::DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f%#z"))
-        .map(|dt| dt.with_timezone(&chrono::Utc))
-        .ok()
-        .or_else(|| s.parse::<chrono::DateTime<chrono::Utc>>().ok())
-}
-
-fn parse_naive_datetime(s: &str) -> Option<chrono::NaiveDateTime> {
-    [
-        "%Y-%m-%d %H:%M:%S",
-        "%Y-%m-%d %H:%M:%S%.f",
-        "%Y-%m-%dT%H:%M:%S",
-        "%Y-%m-%dT%H:%M:%S%.f",
-    ]
-    .iter()
-    .find_map(|fmt| chrono::NaiveDateTime::parse_from_str(s, fmt).ok())
 }
 
 fn text_array(items: &[CborValue]) -> Option<Vec<String>> {
@@ -205,7 +167,7 @@ fn bind_by_cbor<'q>(query: PgQuery<'q>, cbor: &'q CborValue) -> Result<PgQuery<'
         CborValue::Bytes(b) => query.bind(b.as_slice()),
         // Decimal, uuid, datetime, date, time: their text, which
         // PostgreSQL coerces.
-        CborValue::Tag(0 | 9 | 10 | 100 | 101, inner) => match inner.as_ref() {
+        CborValue::Tag(0 | 9 | 10 | 100 | 101 | 1004, inner) => match inner.as_ref() {
             CborValue::Text(s) => query.bind(s.as_str()),
             _ => return Err(unbindable(cbor)),
         },
@@ -342,48 +304,24 @@ fn pg_column_to_cbor(
         }
         "TIME" | "TIME WITHOUT TIME ZONE" => {
             if let Ok(v) = row.try_get::<chrono::NaiveTime, _>(ordinal) {
-                return (
-                    CborValue::Tag(
-                        101,
-                        Box::new(CborValue::Text(v.format("%H:%M:%S%.f").to_string())),
-                    ),
-                    Some(PostgresTypeVariants::Time),
-                );
+                return (temporal::time(&v), Some(PostgresTypeVariants::Time));
             }
         }
         "DATE" => {
             if let Ok(v) = row.try_get::<chrono::NaiveDate, _>(ordinal) {
-                return (
-                    CborValue::Tag(
-                        100,
-                        Box::new(CborValue::Text(v.format("%Y-%m-%d").to_string())),
-                    ),
-                    Some(PostgresTypeVariants::Date),
-                );
+                return (temporal::date(&v), Some(PostgresTypeVariants::Date));
             }
         }
         "TIMESTAMPTZ" | "TIMESTAMP WITH TIME ZONE" => {
             if let Ok(v) = row.try_get::<chrono::DateTime<chrono::Utc>, _>(ordinal) {
-                return (
-                    CborValue::Tag(
-                        0,
-                        Box::new(CborValue::Text(
-                            v.format("%Y-%m-%d %H:%M:%S%.f+00").to_string(),
-                        )),
-                    ),
-                    Some(PostgresTypeVariants::DateTime),
-                );
+                return (temporal::instant(&v), Some(PostgresTypeVariants::DateTime));
             }
         }
+        // Naive, holding UTC by convention (Odoo's datetimes).
         "TIMESTAMP" | "TIMESTAMP WITHOUT TIME ZONE" => {
             if let Ok(v) = row.try_get::<chrono::NaiveDateTime, _>(ordinal) {
                 return (
-                    CborValue::Tag(
-                        0,
-                        Box::new(CborValue::Text(
-                            v.format("%Y-%m-%d %H:%M:%S%.f").to_string(),
-                        )),
-                    ),
+                    temporal::instant(&v.and_utc()),
                     Some(PostgresTypeVariants::DateTime),
                 );
             }
