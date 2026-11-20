@@ -259,13 +259,10 @@ impl WsCborEngine {
                                             };
                                             let _ = tx.send(reply);
                                         }
-                                        // An error tied to no waiting request: the server
-                                        // couldn't decode a request, so it couldn't read its
-                                        // id. Which request it was is unknown, so every one
-                                        // still waiting fails with it rather than waiting out
-                                        // its deadline.
+                                        // An error tied to no request: the server couldn't
+                                        // decode a request, so it couldn't read its id.
                                         (None, Some(err)) if top_id.is_none() => {
-                                            fail_waiting(&pending_requests, &err).await;
+                                            fail_sole_waiting(&pending_requests, &err).await;
                                         }
                                         (None, Some(err)) => {
                                             warn!(id = ?top_id, error = ?err, "SurrealDB error for a request nothing waits for");
@@ -301,12 +298,20 @@ impl WsCborEngine {
     }
 }
 
-/// Fail every request still waiting for a reply with a server error that names no request.
-async fn fail_waiting(pending_requests: &PendingRequests, err: &CborValue) {
-    let waiting: Vec<_> = pending_requests.lock().await.drain().collect();
-    warn!(error = ?err, waiting = waiting.len(), "SurrealDB error tied to no request");
-    for (_, tx) in waiting {
-        let _ = tx.send(Err(server_error(err)));
+/// A server error that names no request fails the waiting request only when it is the sole
+/// one, so the error can only be its own. With several waiting, failing them all would report
+/// requests the server did decode (and may apply) as rejected, so they wait out their deadline.
+async fn fail_sole_waiting(pending_requests: &PendingRequests, err: &CborValue) {
+    let mut pending = pending_requests.lock().await;
+    if pending.len() == 1 {
+        let tx = pending.drain().next().map(|(_, tx)| tx);
+        drop(pending);
+        warn!(error = ?err, "SurrealDB error tied to no request; failing the one waiting");
+        if let Some(tx) = tx {
+            let _ = tx.send(Err(server_error(err)));
+        }
+    } else {
+        warn!(error = ?err, waiting = pending.len(), "SurrealDB error tied to no request");
     }
 }
 

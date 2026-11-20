@@ -1,5 +1,5 @@
 //! An error the server can't tie to a request (it couldn't decode the request, so it couldn't
-//! read its id) fails the waiting request at once instead of leaving it to its deadline.
+//! read its id) fails the sole waiting request at once instead of leaving it to its deadline.
 //!
 //! Requires SurrealDB at localhost:8000 (root/root), like the other live tests.
 
