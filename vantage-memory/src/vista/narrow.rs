@@ -34,24 +34,28 @@ impl MemoryTableShell {
 
     /// `condition` as the store evaluates it. Operands are conformed to the
     /// column's [`Affinity`](super::affinity::Affinity), set items one by one;
-    /// a `Like` pattern stays as given.
+    /// a `Like` pattern stays as given. An operand a temporal column can't
+    /// read as its kind is refused.
     ///
     /// A column with no declared type has no stored form, so (in)equality
     /// with an id-like value (an integer, or its canonical text) matches both
     /// forms.
-    fn store_condition(&self, condition: &Condition) -> MemoryCondition {
+    fn store_condition(&self, condition: &Condition) -> Result<MemoryCondition> {
         let column = condition.column.as_str();
         let value = &condition.value;
         let affinity = self.affinity(column);
         let undeclared = self.is_untyped(column);
-        match condition.op {
+        Ok(match condition.op {
             FilterOp::Like => MemoryCondition::cmp(column, condition.op, value.clone()),
             FilterOp::InSet | FilterOp::NotInSet => {
                 let value = match value {
-                    CborValue::Array(items) => {
-                        CborValue::Array(items.iter().map(|v| affinity.conform(v)).collect())
-                    }
-                    single => affinity.conform(single),
+                    CborValue::Array(items) => CborValue::Array(
+                        items
+                            .iter()
+                            .map(|v| affinity.conform(column, v))
+                            .collect::<Result<_>>()?,
+                    ),
+                    single => affinity.conform(column, single)?,
                 };
                 MemoryCondition::cmp(column, condition.op, value)
             }
@@ -69,8 +73,8 @@ impl MemoryTableShell {
                 }
                 None => MemoryCondition::cmp(column, op, value.clone()),
             },
-            op => MemoryCondition::cmp(column, op, affinity.conform(value)),
-        }
+            op => MemoryCondition::cmp(column, op, affinity.conform(column, value)?),
+        })
     }
 
     /// The table fills and checks an equality condition on writes. A dotted
@@ -80,7 +84,7 @@ impl MemoryTableShell {
     pub(super) fn narrow_by(&mut self, condition: &Condition) -> Result<()> {
         let column = condition.column.as_str();
         self.check_column(column)?;
-        let stored = self.store_condition(condition);
+        let stored = self.store_condition(condition)?;
         let flat = !column.contains('.') || self.metadata.columns.contains_key(column);
         if !flat {
             self.table.temp_add_condition(stored);
@@ -94,7 +98,7 @@ impl MemoryTableShell {
             .data_source()
             .is_rollup(self.table.table_name(), column);
         if condition.op == FilterOp::Eq && !rollup {
-            let value = self.affinity(column).conform(&condition.value);
+            let value = self.affinity(column).conform(column, &condition.value)?;
             self.table
                 .add_invariant(column, AnyMemoryType::untyped(value));
         }

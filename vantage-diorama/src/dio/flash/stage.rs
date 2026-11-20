@@ -181,9 +181,10 @@ async fn commit(
     // that flash's unconfirmed value: nothing is published until it settles.
     // Its commit publishes the row then, and its rollback, which restores
     // this flash's value, asks the others to re-check it.
-    let confirmed = confirm(pending, flash, staged);
+    let stored = outcome.record.as_ref();
+    let confirmed = confirm(pending, flash, staged, stored);
     if confirmed {
-        reassert_confirmed(inner, flash).await?;
+        reassert_confirmed(inner, flash, stored).await?;
     }
     let id_owned = id.to_string();
     let event = match (flash.kind(), pre) {
@@ -216,8 +217,14 @@ async fn commit(
 /// writer that ignored the pending guard may have replaced the row
 /// mid-flight with a pre-write snapshot. Merging the flash's own fields onto
 /// the *current* row re-asserts exactly what was confirmed, keeping any
-/// fresher values that arrived for other fields.
-async fn reassert_confirmed(inner: &DioInner, flash: &ChangeFlash) -> Result<()> {
+/// fresher values that arrived for other fields. The row the backend reported
+/// storing (`stored`) goes over that: its form of a value is the one a read
+/// of the master returns.
+async fn reassert_confirmed(
+    inner: &DioInner,
+    flash: &ChangeFlash,
+    stored: Option<&Record<CborValue>>,
+) -> Result<()> {
     let Some(id) = flash.id() else {
         return Ok(());
     };
@@ -226,10 +233,20 @@ async fn reassert_confirmed(inner: &DioInner, flash: &ChangeFlash) -> Result<()>
         FlashKind::Clear => Ok(()),
         _ => {
             let current = inner.cache.get_value(id).await?;
-            inner
-                .cache
-                .insert_value(id, &merged(current.as_ref(), flash))
-                .await
+            let row = adopted(merged(current.as_ref(), flash), stored);
+            inner.cache.insert_value(id, &row).await
         }
     }
+}
+
+/// `row` with the fields of `stored`, the row a backend reported storing,
+/// over it. Fields only the cache holds (augmented values) stay.
+pub(super) fn adopted(
+    mut row: Record<CborValue>,
+    stored: Option<&Record<CborValue>>,
+) -> Record<CborValue> {
+    for (k, v) in stored.into_iter().flatten() {
+        row.insert(k.clone(), v.clone());
+    }
+    row
 }

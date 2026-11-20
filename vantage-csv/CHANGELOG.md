@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8.0 — 2026-11-20
+
+- Columns declared `date`, `time` and `timestamp` read in the carrier forms of
+  `vantage_types::temporal` (`Tag(1004)`, `Tag(101, "16:01:00.000000")`,
+  `Tag(0, "2026-11-19T16:01:00.000000Z")`), from any text form a file may hold (naive, `T` or a
+  space, an offset, `HH:MM`). Before, they read as plain text. An empty cell reads as null; a
+  cell that isn't its column's kind fails the read, naming the column and the cell.
+- An `Eq` condition on those columns compares by value: `"2026-11-19 16:01:00"` finds
+  `…T16:01:00Z`.
+- Tests: CSV runs `contract::check_temporal` (the read probe; CSV takes no writes).
+
 ## 0.7.7 — 2026-11-16
 
 - Requires vantage-table 4.0.0.

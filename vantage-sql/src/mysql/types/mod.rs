@@ -1,11 +1,10 @@
 //! MySQL Type System
 //!
 //! Uses `ciborium::Value` as the underlying value type for lossless storage.
-//! CBOR tags follow SurrealDB conventions where they overlap:
-//!   Tag(0)  = DateTime (RFC 3339)
-//!   Tag(10) = Decimal (string representation)
-//!   Tag(100) = Date (YYYY-MM-DD string)
-//!   Tag(101) = Time (HH:MM:SS string)
+//! CBOR tags:
+//!   Tag(0)    = DateTime, Tag(1004) = Date, Tag(101) = Time, in the carrier forms of
+//!               `vantage_types::temporal` (Tag(100) dates are still read)
+//!   Tag(10)   = Decimal (string representation)
 //!
 //! Type variants track the original MySQL column type so that bind and
 //! entity deserialization can reconstruct the correct Rust type.
@@ -48,7 +47,7 @@ impl MysqlTypeVariants {
             Bytes(_) => Some(Self::Blob),
             Tag(0, _) => Some(Self::DateTime),
             Tag(10, _) => Some(Self::Decimal),
-            Tag(100, _) => Some(Self::Date),
+            Tag(100 | 1004, _) => Some(Self::Date),
             Tag(101, _) => Some(Self::Time),
             Tag(_, inner) => Self::from_cbor(inner),
             _ => None,

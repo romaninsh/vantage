@@ -246,13 +246,12 @@ impl WsCborEngine {
                                         continue;
                                     }
 
-                                    if let Some(id) = top_id.as_ref().and_then(cbor_id_key) {
-                                        let tx = {
-                                            let mut pending = pending_requests.lock().await;
-                                            pending.remove(&id)
-                                        };
-
-                                        if let Some(tx) = tx {
+                                    let tx = match top_id.as_ref().and_then(cbor_id_key) {
+                                        Some(id) => pending_requests.lock().await.remove(&id),
+                                        None => None,
+                                    };
+                                    match (tx, error) {
+                                        (Some(tx), error) => {
                                             let reply = match (error, result) {
                                                 (Some(err), _) => Err(server_error(&err)),
                                                 (None, Some(res)) => Ok(res),
@@ -260,6 +259,15 @@ impl WsCborEngine {
                                             };
                                             let _ = tx.send(reply);
                                         }
+                                        // An error tied to no request: the server couldn't
+                                        // decode a request, so it couldn't read its id.
+                                        (None, Some(err)) if top_id.is_none() => {
+                                            fail_sole_waiting(&pending_requests, &err).await;
+                                        }
+                                        (None, Some(err)) => {
+                                            warn!(id = ?top_id, error = ?err, "SurrealDB error for a request nothing waits for");
+                                        }
+                                        (None, None) => {}
                                     }
                                 }
                                 Ok(_) => {}
@@ -287,6 +295,23 @@ impl WsCborEngine {
             }
             .in_current_span(),
         )
+    }
+}
+
+/// A server error that names no request fails the waiting request only when it is the sole
+/// one, so the error can only be its own. With several waiting, failing them all would report
+/// requests the server did decode (and may apply) as rejected, so they wait out their deadline.
+async fn fail_sole_waiting(pending_requests: &PendingRequests, err: &CborValue) {
+    let mut pending = pending_requests.lock().await;
+    if pending.len() == 1 {
+        let tx = pending.drain().next().map(|(_, tx)| tx);
+        drop(pending);
+        warn!(error = ?err, "SurrealDB error tied to no request; failing the one waiting");
+        if let Some(tx) = tx {
+            let _ = tx.send(Err(server_error(err)));
+        }
+    } else {
+        warn!(error = ?err, waiting = pending.len(), "SurrealDB error tied to no request");
     }
 }
 

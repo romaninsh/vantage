@@ -1,11 +1,10 @@
 //! SQLite Type System
 //!
 //! Uses `ciborium::Value` as the underlying value type for lossless storage.
-//! CBOR tags follow the same conventions as MySQL/Postgres backends:
-//!   Tag(0)   = DateTime (RFC 3339)
-//!   Tag(10)  = Decimal/Numeric (string representation)
-//!   Tag(100) = Date (YYYY-MM-DD string)
-//!   Tag(101) = Time (HH:MM:SS string)
+//! CBOR tags:
+//!   Tag(0)    = DateTime, Tag(1004) = Date, Tag(101) = Time, in the carrier forms of
+//!               `vantage_types::temporal` (Tag(100) dates are still read)
+//!   Tag(10)   = Decimal/Numeric (string representation)
 //!
 //! SQLite type variants map to SQLite's affinity system:
 //! - INTEGER affinity: INTEGER, INT, TINYINT, SMALLINT, MEDIUMINT, BIGINT
@@ -45,7 +44,7 @@ impl SqliteTypeVariants {
             Text(_) => Some(Self::Text),
             Bytes(_) => Some(Self::Blob),
             Tag(10, _) => Some(Self::Numeric),
-            Tag(0 | 100 | 101, _) => Some(Self::Text),
+            Tag(0 | 100 | 101 | 1004, _) => Some(Self::Text),
             Tag(_, inner) => Self::from_cbor(inner),
             _ => None,
         }

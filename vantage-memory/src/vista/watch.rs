@@ -3,9 +3,11 @@
 //! taken when the watch starts.
 
 use async_stream::{stream, try_stream};
+use ciborium::Value as CborValue;
 use futures_util::stream::select_all;
 use tokio::sync::broadcast::error::RecvError;
 use vantage_core::Result;
+use vantage_types::Record;
 use vantage_vista::{VistaChange, VistaChangeStream};
 
 use crate::eval::matches_all;
@@ -27,13 +29,19 @@ pub(crate) fn invalidations(tables: &[MemoryTableHandle]) -> VistaChangeStream {
     Box::pin(select_all(streams.collect::<Vec<_>>()))
 }
 
-pub(crate) fn stream(table: MemoryTableHandle, query: Query) -> VistaChangeStream {
+/// Each changed row's value goes out as `read` returns it, as a read of the
+/// table would.
+pub(crate) fn stream(
+    table: MemoryTableHandle,
+    query: Query,
+    read: impl Fn(Record<CborValue>) -> Result<Record<CborValue>> + Send + 'static,
+) -> VistaChangeStream {
     let mut rx = table.subscribe();
     let s = try_stream! {
         loop {
             match rx.recv().await {
                 Ok(change) => {
-                    if let Some(vista_change) = to_vista_change(&query, change)? {
+                    if let Some(vista_change) = to_vista_change(&query, change, &read)? {
                         yield vista_change;
                     }
                 }
@@ -45,23 +53,28 @@ pub(crate) fn stream(table: MemoryTableHandle, query: Query) -> VistaChangeStrea
     Box::pin(s)
 }
 
-fn to_vista_change(query: &Query, change: MemoryChange) -> Result<Option<VistaChange>> {
+fn to_vista_change(
+    query: &Query,
+    change: MemoryChange,
+    read: &impl Fn(Record<CborValue>) -> Result<Record<CborValue>>,
+) -> Result<Option<VistaChange>> {
     Ok(match change {
-        MemoryChange::Inserted { id, row } => {
-            matches_all(query, &row)?.then(|| VistaChange::Inserted {
+        MemoryChange::Inserted { id, row } => match matches_all(query, &row)? {
+            true => Some(VistaChange::Inserted {
                 id,
-                value: (*row).clone(),
-            })
-        }
+                value: read((*row).clone())?,
+            }),
+            false => None,
+        },
         MemoryChange::Updated { id, row, old } => {
             match (matches_all(query, &old)?, matches_all(query, &row)?) {
                 (false, true) => Some(VistaChange::Inserted {
                     id,
-                    value: (*row).clone(),
+                    value: read((*row).clone())?,
                 }),
                 (true, true) => Some(VistaChange::Updated {
                     id,
-                    value: (*row).clone(),
+                    value: read((*row).clone())?,
                 }),
                 (true, false) => Some(VistaChange::Deleted { id }),
                 (false, false) => None,

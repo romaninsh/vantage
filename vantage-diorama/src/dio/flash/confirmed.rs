@@ -13,7 +13,7 @@ use ciborium::Value as CborValue;
 use vantage_core::Result;
 use vantage_types::Record;
 
-use super::stage::{staged_value, write_row};
+use super::stage::{adopted, staged_value, write_row};
 use crate::dio::DioInner;
 use crate::dio::pending::PendingFlashGuard;
 use crate::ops::{ChangeFlash, FlashKind};
@@ -72,23 +72,25 @@ impl Flight {
         Some(self.confirmed.clone().unwrap_or_else(|| pre.cloned()))
     }
 
-    /// The flash at `seq` committed: its value over the last confirmed row
-    /// is now the confirmed one. A patch of a row the cache didn't hold
-    /// staged over the master's row, so with no confirmed row its own
-    /// `staged` value is the confirmed one. `true` when it may re-assert its
-    /// fields in the cache, which is only while no later flash is staged
-    /// over it.
+    /// The flash at `seq` committed: its value over the last confirmed row,
+    /// with the row the backend reported storing (`stored`) over that, is
+    /// now the confirmed one. A patch of a row the cache didn't hold staged
+    /// over the master's row, so with no confirmed row its own `staged`
+    /// value is the confirmed one. `true` when it may re-assert its fields in
+    /// the cache, which is only while no later flash is staged over it.
     fn confirm(
         &mut self,
         seq: u64,
         flash: &ChangeFlash,
         staged: Option<&Record<CborValue>>,
+        stored: Option<&Record<CborValue>>,
     ) -> bool {
         let before = self.confirmed.take().flatten();
-        self.confirmed = Some(match before {
+        let value = match before {
             None if *flash.kind() == FlashKind::Patch => staged.cloned(),
             before => staged_value(flash, before.as_ref()),
-        });
+        };
+        self.confirmed = Some(value.map(|row| adopted(row, stored)));
         !self.later_staged(seq)
     }
 }
@@ -118,16 +120,17 @@ pub(crate) async fn roll_back(
     Ok(true)
 }
 
-/// Record a committed flash, which staged `staged`, as confirmed. `true`
-/// when it may re-assert its fields in the cache: no later flash on the id
-/// is staged over it.
+/// Record a committed flash, which staged `staged` and which the backend
+/// reported storing as `stored`, as confirmed. `true` when it may re-assert
+/// its fields in the cache: no later flash on the id is staged over it.
 pub(crate) fn confirm(
     pending: Option<&PendingFlashGuard>,
     flash: &ChangeFlash,
     staged: Option<&Record<CborValue>>,
+    stored: Option<&Record<CborValue>>,
 ) -> bool {
     match pending.and_then(|guard| Some((guard, guard.seq()?))) {
-        Some((guard, seq)) => guard.flight(|flight| flight.confirm(seq, flash, staged)),
+        Some((guard, seq)) => guard.flight(|flight| flight.confirm(seq, flash, staged, stored)),
         None => true,
     }
 }

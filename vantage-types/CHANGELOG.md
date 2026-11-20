@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.2.0 — 2026-11-20
+
+- `temporal`: the carrier forms every driver emits for dates, times and instants. An instant is
+  `Tag(0)` RFC 3339 in UTC with six fraction digits and `Z` (`2026-11-19T16:01:00.000000Z`), a
+  date `Tag(1004)` (`2026-11-19`), a time of day `Tag(101)` (`16:01:00.000000`). `instant`,
+  `date`, `time` build them; `as_instant`, `as_date`, `as_time` read any form a form, a script or
+  an old fixture sends (offsets, naive text taken as UTC, `HH:MM`, `Tag(100)` dates, SurrealDB's
+  `Tag(12)`). A date never reads as an instant, nor a midnight instant as a date;
+  `midnight_date` is for a driver that stores dates that way.
+- `coerce_<x>` proposes the `Tag(1004)` date first, then the `Tag(100)` one drivers decoded
+  before it, and accepts `Tag(1004)` input.
+- `chrono` is a plain dependency (`default-features = false`, `std`), no longer behind `serde`.
+
 ## 1.1.1 — 2026-11-16
 
 - `paste` and `vantage-core` are no longer dependencies of the library: the

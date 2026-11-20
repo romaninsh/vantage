@@ -49,10 +49,10 @@ impl MongoTableShell {
         Ok(())
     }
 
-    /// The kind of a `date` or `timestamp` column `condition` compares: its
-    /// value is typed as a write is, so text in any form a write takes
-    /// compares against the stored DateTime, and a value that doesn't fit is
-    /// the write's error. `Like` matches the value's own text.
+    /// The kind of a `date`, `timestamp` or `time` column `condition`
+    /// compares: its value is typed as a write is, so any form a write takes
+    /// compares against the stored DateTime or time text, and a value that
+    /// doesn't fit is the write's error. `Like` matches the value's own text.
     fn typed_kind(&self, condition: &Condition) -> Option<BsonKind> {
         let kind = *self.declared.get(condition.column.as_str())?;
         (kind.reads_typed() && condition.op != FilterOp::Like).then_some(kind)

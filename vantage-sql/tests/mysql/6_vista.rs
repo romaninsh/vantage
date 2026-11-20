@@ -117,8 +117,12 @@ async fn vista_time_and_timestamp_take_minute_precision() -> TestResult {
             .collect();
         vista.insert_value(id, &row).await?;
         let stored = vista.get_value(id).await?.expect("inserted");
-        assert_eq!(stored["starts"], tagged(101, "09:30:00"), "{id}");
-        assert_eq!(stored["at"], tagged(0, "2026-12-10 09:30:00"), "{id}");
+        assert_eq!(stored["starts"], tagged(101, "09:30:00.000000"), "{id}");
+        assert_eq!(
+            stored["at"],
+            tagged(0, "2026-12-10T09:30:00.000000Z"),
+            "{id}"
+        );
     }
     Ok(())
 }

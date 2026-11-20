@@ -13,6 +13,7 @@ use indexmap::IndexMap;
 use vantage_core::Result;
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_table::table::Table;
+use vantage_table::traits::column_like::ColumnLike;
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{
     Capability, Condition, FilterOp, Page, Preview, TableShell, Transaction, Vista,
@@ -22,6 +23,7 @@ use vantage_vista::{
 
 use crate::csv::Csv;
 use crate::operation::CsvOperation;
+use crate::temporal::Temporal;
 use crate::type_system::AnyCsvType;
 use crate::vista::factory::CsvVistaFactory;
 
@@ -47,15 +49,35 @@ impl CsvTableShell {
 
     async fn read_all(&self) -> Result<IndexMap<String, Record<CborValue>>> {
         let raw = self.table.list_values().await?;
+        let temporal: IndexMap<&str, Temporal> = self
+            .table
+            .columns()
+            .iter()
+            .filter_map(|(name, col)| Some((name.as_str(), Temporal::of_type(col.get_type())?)))
+            .collect();
         Ok(raw
             .into_iter()
-            .map(|(id, record)| (id, csv_record_to_cbor(record)))
+            .map(|(id, record)| (id, csv_record_to_cbor(record, &temporal)))
             .collect())
     }
 }
 
-fn csv_record_to_cbor(record: Record<AnyCsvType>) -> Record<CborValue> {
-    record.into_iter().map(|(k, v)| (k, v.into())).collect()
+/// A temporal column's cell is already canonical text (see `Csv::read_csv`), or an empty cell.
+fn csv_record_to_cbor(
+    record: Record<AnyCsvType>,
+    temporal: &IndexMap<&str, Temporal>,
+) -> Record<CborValue> {
+    record
+        .into_iter()
+        .map(|(k, v)| {
+            let value = match temporal.get(k.as_str()) {
+                Some(_) if v.type_variant().is_none() => CborValue::Null,
+                Some(kind) => kind.carrier(v.into_value()),
+                None => v.into(),
+            };
+            (k, value)
+        })
+        .collect()
 }
 
 #[async_trait]
@@ -121,7 +143,11 @@ impl TableShell for CsvTableShell {
         if condition.op != FilterOp::Eq {
             return unsupported(Capability::FilterOps);
         }
-        let value: AnyCsvType = condition.value.clone().into();
+        // A temporal cell reads as canonical text, so the value is compared in that form.
+        let value: AnyCsvType = match Temporal::of_type(column.get_type()) {
+            Some(kind) => AnyCsvType::new(kind.value_text(field, &condition.value)?),
+            None => condition.value.clone().into(),
+        };
         self.table.add_condition(column.eq(value));
         Ok(())
     }

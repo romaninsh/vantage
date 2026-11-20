@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.8.0 — 2026-11-20
+
+- Fix: after a write through a Dio settles, the cache, its confirmed copy and the write's
+  return value hold the row the master reports storing, for insert, replace, upsert and patch.
+  Before, they kept the caller's fields, so a value the master converted (a date given as text,
+  stored as `Tag(1004)`) read back from the cache as given. Fields only the cache holds
+  (augmented values) are kept. A patch returns the whole stored row, as `patch_value` says.
+
 ## 1.7.1 — 2026-11-16
 
 - Requires vantage-table 4.0.0.

@@ -1,5 +1,19 @@
 # Changelog
 
+## 4.1.0 — 2026-11-20
+
+- `date`, `time` and `timestamp` columns store and read the carrier forms of
+  `vantage_types::temporal` (`Tag(1004)`, `Tag(101, "16:01:00.000000")`,
+  `Tag(0, "2026-11-19T16:01:00.000000Z")`) from any accepted input. Before, only `date` was
+  conformed (to `Tag(100)`), and times and instants were kept as given. A value that isn't its
+  column's kind is refused on write and fails on read, naming the column.
+- Conditions on those columns compare by value, whatever form the operand takes:
+  `ts < "2026-11-19T17:01:00+01:00"` compares instants, not text.
+- Watched rows are read the same way, so a Dio over a memory table sees the carrier forms.
+- `seed::load_with`'s `prepare` callback returns `Result<()>`, so a seed file with a bad date
+  fails to load.
+- Tests: memory and a Dio over memory run `contract::check_temporal`.
+
 ## 4.0.2 — 2026-11-19
 
 - Tests: the typed table runs `contract::check_list_condition`.

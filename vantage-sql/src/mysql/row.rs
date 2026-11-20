@@ -7,7 +7,7 @@ use ciborium::Value as CborValue;
 use sqlx::mysql::MySqlRow;
 use sqlx::{Column, Row, TypeInfo};
 use vantage_core::{Result, VantageError, error};
-use vantage_types::Record;
+use vantage_types::{Record, temporal};
 
 use super::types::{AnyMysqlType, MysqlTypeVariants};
 
@@ -15,7 +15,9 @@ pub(crate) type MysqlQuery<'q> = sqlx::query::Query<'q, sqlx::MySql, sqlx::mysql
 
 /// A value the binder can't express as its variant's parameter comes from
 /// user data, so it surfaces as an error: never a silent NULL, never a
-/// panic. Decimals, dates and times bind as their text, which MySQL parses.
+/// panic. Decimals bind as their text, which MySQL parses; dates, times and
+/// instants as MySQL's own text (see [`mysql_instant`]), from any form
+/// `vantage_types::temporal` reads.
 pub(crate) fn bind_mysql_value<'q>(
     query: MysqlQuery<'q>,
     value: &'q AnyMysqlType,
@@ -70,9 +72,18 @@ pub(crate) fn bind_mysql_value<'q>(
             _ => return Err(refused()),
         },
         MysqlTypeVariants::Decimal => text_of(query, cbor, 10).ok_or_else(refused)?,
-        MysqlTypeVariants::DateTime => text_of(query, cbor, 0).ok_or_else(refused)?,
-        MysqlTypeVariants::Date => text_of(query, cbor, 100).ok_or_else(refused)?,
-        MysqlTypeVariants::Time => text_of(query, cbor, 101).ok_or_else(refused)?,
+        MysqlTypeVariants::DateTime => match cbor {
+            CborValue::Null => query.bind(None::<String>),
+            _ => query.bind(mysql_instant(cbor).ok_or_else(refused)?),
+        },
+        MysqlTypeVariants::Date => match cbor {
+            CborValue::Null => query.bind(None::<String>),
+            _ => query.bind(mysql_date(cbor).ok_or_else(refused)?),
+        },
+        MysqlTypeVariants::Time => match cbor {
+            CborValue::Null => query.bind(None::<String>),
+            _ => query.bind(mysql_time(cbor).ok_or_else(refused)?),
+        },
         MysqlTypeVariants::Blob => match cbor {
             CborValue::Null => query.bind(None::<Vec<u8>>),
             CborValue::Bytes(b) => query.bind(b.as_slice()),
@@ -80,6 +91,22 @@ pub(crate) fn bind_mysql_value<'q>(
             _ => return Err(refused()),
         },
     })
+}
+
+/// An instant as MySQL's text for its UTC wall clock, `2026-11-19 16:01:00.000000`: MySQL
+/// refuses the carrier's `Z`. `DATETIME` holds UTC by convention and the session runs at
+/// `+00:00` (sqlx's default), so `TIMESTAMP` stores it unshifted. Text rather than a chrono
+/// value, because MySQL drops the fraction when it turns a temporal parameter into `VARCHAR`.
+fn mysql_instant(value: &CborValue) -> Option<String> {
+    temporal::as_instant(value).map(|at| at.format("%Y-%m-%d %H:%M:%S%.6f").to_string())
+}
+
+fn mysql_date(value: &CborValue) -> Option<String> {
+    temporal::as_date(value).map(|d| temporal::format_date(&d))
+}
+
+fn mysql_time(value: &CborValue) -> Option<String> {
+    temporal::as_time(value).map(|t| temporal::format_time(&t))
 }
 
 /// NULL, or the text of `value`, plain or inside `tag`, bound as text;
@@ -123,8 +150,17 @@ fn bind_by_cbor<'q>(query: MysqlQuery<'q>, cbor: &'q CborValue) -> Result<MysqlQ
         CborValue::Float(f) => query.bind(*f),
         CborValue::Text(s) => query.bind(s.as_str()),
         CborValue::Bytes(b) => query.bind(b.as_slice()),
-        // Decimal, datetime, date, time: their text, which MySQL parses.
-        CborValue::Tag(0 | 10 | 100 | 101, inner) => match inner.as_ref() {
+        CborValue::Tag(temporal::TAG_INSTANT, _) => {
+            query.bind(mysql_instant(cbor).ok_or_else(|| unbindable(cbor))?)
+        }
+        CborValue::Tag(temporal::TAG_DATE | temporal::TAG_LEGACY_DATE, _) => {
+            query.bind(mysql_date(cbor).ok_or_else(|| unbindable(cbor))?)
+        }
+        CborValue::Tag(temporal::TAG_TIME, _) => {
+            query.bind(mysql_time(cbor).ok_or_else(|| unbindable(cbor))?)
+        }
+        // Decimal: its text, which MySQL parses.
+        CborValue::Tag(10, inner) => match inner.as_ref() {
             CborValue::Text(s) => query.bind(s.as_str()),
             _ => return Err(unbindable(cbor)),
         },
@@ -286,50 +322,27 @@ fn mysql_column_to_cbor(
         }
         "TIME" => {
             if let Ok(v) = row.try_get::<chrono::NaiveTime, _>(ordinal) {
-                return (
-                    CborValue::Tag(
-                        101,
-                        Box::new(CborValue::Text(v.format("%H:%M:%S%.f").to_string())),
-                    ),
-                    Some(MysqlTypeVariants::Time),
-                );
+                return (temporal::time(&v), Some(MysqlTypeVariants::Time));
             }
         }
         "DATE" => {
             if let Ok(v) = row.try_get::<chrono::NaiveDate, _>(ordinal) {
-                return (
-                    CborValue::Tag(
-                        100,
-                        Box::new(CborValue::Text(v.format("%Y-%m-%d").to_string())),
-                    ),
-                    Some(MysqlTypeVariants::Date),
-                );
+                return (temporal::date(&v), Some(MysqlTypeVariants::Date));
             }
         }
+        // Naive, holding UTC by convention.
         "DATETIME" => {
             if let Ok(v) = row.try_get::<chrono::NaiveDateTime, _>(ordinal) {
                 return (
-                    CborValue::Tag(
-                        0,
-                        Box::new(CborValue::Text(
-                            v.format("%Y-%m-%d %H:%M:%S%.f").to_string(),
-                        )),
-                    ),
+                    temporal::instant(&v.and_utc()),
                     Some(MysqlTypeVariants::DateTime),
                 );
             }
         }
+        // MySQL converts it from the session zone, which is `+00:00`.
         "TIMESTAMP" | "TIMESTAMP(6)" => {
             if let Ok(v) = row.try_get::<chrono::DateTime<chrono::Utc>, _>(ordinal) {
-                return (
-                    CborValue::Tag(
-                        0,
-                        Box::new(CborValue::Text(
-                            v.format("%Y-%m-%d %H:%M:%S%.f").to_string(),
-                        )),
-                    ),
-                    Some(MysqlTypeVariants::DateTime),
-                );
+                return (temporal::instant(&v), Some(MysqlTypeVariants::DateTime));
             }
         }
         "YEAR" => {

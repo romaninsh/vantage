@@ -4,6 +4,7 @@ mod csv;
 mod expr_data_source;
 pub mod operation;
 mod table_source;
+mod temporal;
 pub mod type_system;
 #[cfg(feature = "vista")]
 pub mod vista;

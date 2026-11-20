@@ -77,23 +77,30 @@ async fn vista_temporal_columns_read_typed() -> TestResult {
                 &cells(&[("due", "2026-12-10"), ("at", at), ("starts", starts)]),
             )
             .await?;
-        assert_eq!(written["due"], tagged(100, "2026-12-10"), "{id}");
-        assert_eq!(written["at"], tagged(0, "2026-12-10T09:30:00Z"), "{id}");
+        assert_eq!(written["due"], tagged(1004, "2026-12-10"), "{id}");
+        assert_eq!(
+            written["at"],
+            tagged(0, "2026-12-10T09:30:00.000000Z"),
+            "{id}"
+        );
     }
 
     let rows = vista.list_values().await?;
-    assert_eq!(rows["full"]["starts"], tagged(101, "09:30:00"));
-    assert_eq!(rows["short"]["starts"], tagged(101, "09:30:00"));
-    assert_eq!(rows["naive"]["starts"], tagged(101, "09:30:00.250"));
-    assert_eq!(rows["short"]["at"], tagged(0, "2026-12-10T09:30:00Z"));
+    assert_eq!(rows["full"]["starts"], tagged(101, "09:30:00.000000"));
+    assert_eq!(rows["short"]["starts"], tagged(101, "09:30:00.000000"));
+    assert_eq!(rows["naive"]["starts"], tagged(101, "09:30:00.250000"));
+    assert_eq!(
+        rows["short"]["at"],
+        tagged(0, "2026-12-10T09:30:00.000000Z")
+    );
 
-    // Naive text is stored as the UTC instant it stands for.
+    // Naive text is stored as the UTC instant it stands for, in the carrier's text.
     for id in ["full", "short", "naive"] {
         let (due, at, _) = stored_text(&db, id).await;
         assert_eq!(due, "2026-12-10", "{id}");
-        assert_eq!(at, "2026-12-10T09:30:00Z", "{id}");
+        assert_eq!(at, "2026-12-10T09:30:00.000000Z", "{id}");
     }
-    assert_eq!(stored_text(&db, "short").await.2, "09:30:00");
+    assert_eq!(stored_text(&db, "short").await.2, "09:30:00.000000");
     Ok(())
 }
 
@@ -107,57 +114,57 @@ async fn vista_temporal_columns_read_legacy_text() -> TestResult {
             "space",
             "2026-12-10 09:30:00",
             "09:30",
-            "2026-12-10T09:30:00Z",
-            "09:30:00",
+            "2026-12-10T09:30:00.000000Z",
+            "09:30:00.000000",
         ),
         (
             "space_frac",
             "2026-12-10 09:30:00.250",
             "09:30:00",
-            "2026-12-10T09:30:00.250Z",
-            "09:30:00",
+            "2026-12-10T09:30:00.250000Z",
+            "09:30:00.000000",
         ),
         (
             "zulu",
             "2026-12-10T09:30:00Z",
             "09:30:00.250",
-            "2026-12-10T09:30:00Z",
-            "09:30:00.250",
+            "2026-12-10T09:30:00.000000Z",
+            "09:30:00.250000",
         ),
         (
             "zulu_frac",
             "2026-12-10T09:30:00.250Z",
             "23:59:59",
-            "2026-12-10T09:30:00.250Z",
-            "23:59:59",
+            "2026-12-10T09:30:00.250000Z",
+            "23:59:59.000000",
         ),
         (
             "t_naive",
             "2026-12-10T09:30:00",
             "00:00",
-            "2026-12-10T09:30:00Z",
-            "00:00:00",
+            "2026-12-10T09:30:00.000000Z",
+            "00:00:00.000000",
         ),
         (
             "minutes",
             "2026-12-10 09:30",
             "09:30",
-            "2026-12-10T09:30:00Z",
-            "09:30:00",
+            "2026-12-10T09:30:00.000000Z",
+            "09:30:00.000000",
         ),
         (
             "offset",
             "2026-12-10T11:30:00+02:00",
             "09:30",
-            "2026-12-10T09:30:00Z",
-            "09:30:00",
+            "2026-12-10T09:30:00.000000Z",
+            "09:30:00.000000",
         ),
         (
             "day",
             "2026-12-10",
             "09:30",
-            "2026-12-10T00:00:00Z",
-            "09:30:00",
+            "2026-12-10T00:00:00.000000Z",
+            "09:30:00.000000",
         ),
     ];
     for (id, at, starts, _, _) in legacy {
@@ -166,7 +173,7 @@ async fn vista_temporal_columns_read_legacy_text() -> TestResult {
 
     let rows = vista.list_values().await?;
     for (id, at, starts, typed_at, typed_starts) in legacy {
-        assert_eq!(rows[id]["due"], tagged(100, "2026-12-10"), "{id}");
+        assert_eq!(rows[id]["due"], tagged(1004, "2026-12-10"), "{id}");
         assert_eq!(rows[id]["at"], tagged(0, typed_at), "{id}");
         assert_eq!(rows[id]["starts"], tagged(101, typed_starts), "{id}");
         let one = vista.get_value(id).await?.expect("row");
@@ -249,7 +256,7 @@ async fn vista_timestamp_column_filters_and_orders() -> TestResult {
     )?;
     let rows = exact.list_values().await?;
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows["b"]["at"], tagged(0, "2026-12-10T12:00:00Z"));
+    assert_eq!(rows["b"]["at"], tagged(0, "2026-12-10T12:00:00.000000Z"));
     Ok(())
 }
 

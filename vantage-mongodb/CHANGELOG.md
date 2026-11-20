@@ -1,5 +1,16 @@
 # Changelog
 
+## 4.1.0 — 2026-11-20
+
+- Dates, times and instants in the carrier forms of `vantage_types::temporal`: a `date` reads
+  as `Tag(1004)` (was `Tag(100)`), a `timestamp` as `Tag(0, "…T16:01:00.123000Z")` (six digits,
+  millisecond precision), and a `time` column is typed: stored as `"16:01:00.000000"`, read as
+  `Tag(101)`. Writes take any accepted form, `Tag(1004)` included (it was refused).
+- Strings another program left in those columns read typed. A stored value that isn't its
+  column's kind fails the read, naming the column, including a DateTime with a time of day in a
+  `date` column (it used to read as its UTC date).
+- Tests: MongoDB runs `contract::check_temporal`.
+
 ## 4.0.2 — 2026-11-19
 
 - Tests: run `contract::check_list_condition`.

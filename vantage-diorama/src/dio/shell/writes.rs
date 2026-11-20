@@ -91,10 +91,11 @@ impl DioShell {
             return Err(not_found(self, id));
         };
         self.rule().check_patch(id, &before, partial)?;
-        self.dio()
+        let outcome = self
+            .dio()
             .flash(ChangeFlash::partial(id, partial.clone()))
             .await?;
-        Ok(self.with_injected_id(partial, id))
+        Ok(self.stored(outcome, id, Some(partial)))
     }
 
     /// Idempotent: a row missing or outside the narrowing is already gone

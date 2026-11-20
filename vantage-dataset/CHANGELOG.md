@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.1 — 2026-11-20
+
+- Drops the unused `anyhow` dependency.
+
 ## 1.3.0 — 2026-11-19
 
 - `contract::check_list_condition`: writes through a set narrowed by a list (`parent IN ("p1",

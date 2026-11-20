@@ -10,6 +10,7 @@ pub mod coerce;
 pub mod null;
 pub mod prelude;
 pub mod record;
+pub mod temporal;
 pub mod terminal_render;
 pub mod type_system;
 
