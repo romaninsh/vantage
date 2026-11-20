@@ -397,6 +397,25 @@ async fn a_write_naming_an_undeclared_column_is_forbidden() {
     assert!(err.is_forbidden(), "{err}");
 }
 
+/// A contained host value a Populate hook sets goes through the contained
+/// step like one the caller wrote: here the mock source, which can't decode
+/// a host, refuses it rather than storing it unchecked.
+#[tokio::test]
+async fn a_host_value_a_hook_sets_goes_through_the_contained_table() {
+    let src = MockTableSource::new()
+        .with_data("t", vec![json!({"id": "1"})])
+        .await;
+    let table = MockTable::new("t", src)
+        .with_id_column("id")
+        .with_contained_one("address", "address", |db| {
+            MockTable::new("address", db).with_column_of::<String>("city")
+        })
+        .with_hook(Hook::BeforeInsert(Phase::Populate, setting("address", "x")));
+
+    let err = table.insert_value("2", &rec(json!({}))).await.unwrap_err();
+    assert!(err.is_unsupported(), "{err}");
+}
+
 // --- denials ------------------------------------------------------------------
 
 #[tokio::test]

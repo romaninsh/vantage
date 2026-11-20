@@ -100,6 +100,21 @@ async fn a_dotted_contained_key_answers_to_the_host_rule() -> TestResult {
         .unwrap_err();
     assert!(err.is_forbidden(), "{err}");
     assert_eq!(stored().await, r#"{"city":"b"}"#);
+
+    // A whole host value replaces the record, so it needs no read: a set
+    // that may update but not read still takes it.
+    use vantage_table::table::{Hook, SelectCx, select_hook};
+    let blind = people.clone().with_hook(Hook::BeforeSelect(select_hook(
+        |_cx: SelectCx<'_, SqliteDB>| Box::pin(async { Err(vantage_core::error!("no reads")) }),
+    )));
+    let whole: Record<AnySqliteType> = [(
+        "address".to_string(),
+        AnySqliteType::untyped(CborValue::Map(vec![("city".into(), "d".into())])),
+    )]
+    .into_iter()
+    .collect();
+    blind.patch_value("p1", &whole).await?;
+    assert_eq!(stored().await, r#"{"city":"d"}"#);
     Ok(())
 }
 
@@ -227,5 +242,15 @@ contained:
         .fetch_one(db.pool())
         .await?;
     assert_eq!(stored, r#"[{"sku":"a","qty":1},{"sku":"b","qty":2}]"#);
+
+    // A contains_many collection has no single path for a dotted key.
+    let dotted: Record<CborValue> = [("items.qty".to_string(), CborValue::Integer(3.into()))]
+        .into_iter()
+        .collect();
+    let err = vista
+        .patch_value("c1".to_string(), &dotted)
+        .await
+        .expect_err("a dotted key into a contains_many is refused");
+    assert!(err.is_forbidden(), "{err}");
     Ok(())
 }

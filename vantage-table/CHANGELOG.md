@@ -3,12 +3,15 @@
 ## 4.2.0 — 2026-11-20
 
 - Every insert, replace and patch that touches a contained relation's host column goes through the
-  contained table first: its hooks, its column check and its typing, with no read or write. A
-  whole value (`lines: [...]`, `address: {...}`) replaces what is stored and `null` clears it; a
-  dotted key into a `contains_one` (`address.city`) is checked alone and merged into the stored
-  record, so fields stored beside it stay. A field the contained table doesn't declare is refused
-  with Forbidden; so is a dotted key into a `contains_many`. Before, any value written to the host
-  column was stored as it came.
+  contained table, after the parent's Normalize and Populate hooks (so a host value a hook sets is
+  checked too): its hooks, its column check and its typing, with no read or write. A whole value
+  (`lines: [...]`, `address: {...}`) replaces what is stored and `null` clears it, and needs no
+  read of the row; a dotted key into a `contains_one` (`address.city`) is checked alone and merged
+  into the stored record, so fields stored beside it stay, and the contained table's update hooks
+  get that stored record under the host row's id. A field the contained table doesn't declare is
+  refused with Forbidden; so is a dotted key into a `contains_many`. Before, any value written to
+  the host column was stored as it came. A dotted patch reads, merges and writes the whole host
+  back, so a concurrent change to another field of the same record can be lost.
 - New `TableSource::contained_records` and `contained_host` decode and encode a host column's
   value. Both default to refusing the write, so a backend without them never stores an unchecked
   host value.

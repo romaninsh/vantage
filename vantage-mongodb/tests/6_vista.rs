@@ -739,6 +739,41 @@ mongo:
     Ok(())
 }
 
+/// A typed table whose column has a dotted alias (`city` at `address.city`),
+/// wrapped with `from_table`, stores the column inside the `address`
+/// sub-document, not as a literal `address.city` field, and reads it back.
+#[tokio::test]
+async fn a_dotted_alias_on_a_typed_table_writes_the_nested_path() -> TestResult {
+    use vantage_table::column::core::Column;
+
+    let (db, name) = setup().await;
+    let table = Table::<MongoDB, EmptyEntity>::new("people", db.clone())
+        .with_id_column("_id")
+        .with_column(Column::<AnyMongoType>::new("city").with_alias("address.city"));
+    let vista = db.vista_factory().from_table(table)?;
+    let record: Record<CborValue> = [("city".to_string(), CborValue::Text("Paris".into()))]
+        .into_iter()
+        .collect();
+    vista.insert_value("p1", &record).await?;
+    let raw = db
+        .collection::<bson::Document>("people")
+        .find_one(bson::doc! { "_id": "p1" })
+        .await?
+        .expect("person");
+    assert_eq!(
+        raw.get_document("address")?,
+        &bson::doc! { "city": "Paris" }
+    );
+    assert!(raw.get("address.city").is_none());
+    assert_eq!(
+        vista.get_value("p1").await?.unwrap()["city"],
+        CborValue::Text("Paris".into())
+    );
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
 /// A path two levels deep (`place.geo.lat`) makes a `contains_one` inside a
 /// `contains_one`: a patch merges into the stored `place.geo`, fields stored
 /// beside it at either level stay, an insert builds the nested documents,

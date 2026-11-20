@@ -331,33 +331,54 @@ impl TableSource for MongoDB {
     }
 
     /// A contained record is a sub-document; a `contains_many` host holds an
-    /// array of them.
+    /// array of them. A host given as JSON text (a `json` column takes it) is
+    /// parsed first. A refusal names the value's BSON type, not the value.
     fn contained_records(&self, host: &Self::Value) -> Result<Option<Vec<Record<Self::Value>>>> {
         let record = |doc: &bson::Document| -> Record<AnyMongoType> {
             doc.iter()
                 .map(|(k, v)| (k.clone(), AnyMongoType::untyped(v.clone())))
                 .collect()
         };
-        match host.to_bson() {
+        let refused = |what: &str, value: &Bson| {
+            error!(
+                what.to_string(),
+                bson_type = format!("{:?}", value.element_type())
+            )
+            .mark_invalid_value()
+        };
+        let value = match host.to_bson() {
+            Bson::String(text) if text.is_empty() => return Ok(None),
+            Bson::String(text) => match serde_json::from_str::<serde_json::Value>(&text) {
+                Ok(json @ (serde_json::Value::Object(_) | serde_json::Value::Array(_))) => {
+                    Bson::try_from(json).map_err(|_| {
+                        error!("a contained relation's host holds a document or an array of them")
+                            .mark_invalid_value()
+                    })?
+                }
+                _ => {
+                    return Err(error!(
+                        "a contained relation's host holds a document or an array of them"
+                    )
+                    .mark_invalid_value());
+                }
+            },
+            other => other,
+        };
+        match value {
             Bson::Null | Bson::Undefined => Ok(None),
             Bson::Document(doc) => Ok(Some(vec![record(&doc)])),
             Bson::Array(items) => items
                 .iter()
                 .map(|item| match item {
                     Bson::Document(doc) => Ok(record(doc)),
-                    other => Err(error!(
-                        "a contained record is a document",
-                        value = other.to_string()
-                    )
-                    .mark_invalid_value()),
+                    other => Err(refused("a contained record is a document", other)),
                 })
                 .collect::<Result<Vec<_>>>()
                 .map(Some),
-            other => Err(error!(
+            other => Err(refused(
                 "a contained relation's host holds a document or an array of them",
-                value = other.to_string()
-            )
-            .mark_invalid_value()),
+                &other,
+            )),
         }
     }
 

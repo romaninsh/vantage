@@ -10,11 +10,13 @@
   `zip`, nested again for a deeper path (`place.geo.lat`). The vista writes each column as its
   dotted key, and the table merges it into the stored sub-document, so fields stored beside it
   stay on insert, replace and patch alike. A sub-document written whole takes only the declared
-  paths; `address: null` clears it.
+  paths; `address: null` clears it. A typed table wrapped with `from_table` gets the same sugar for
+  each column with a dotted alias (`with_alias("address.city")`).
 - Removed the driver's own check of keys inside a nested root (`refuse_undeclared_nested`): the
   contained table now does it for every write, and on import.
 - Contained relations: `contained_records` / `contained_host` map a host column's sub-document or
-  array of sub-documents to records and back.
+  array of sub-documents to records and back; a host given as JSON text is parsed first. A refusal
+  names the value's BSON type, not the value.
 - Requires vantage-table 4.2.0.
 
 ## 4.1.0 — 2026-11-20

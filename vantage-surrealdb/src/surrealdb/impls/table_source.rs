@@ -196,7 +196,20 @@ impl TableSource for SurrealDB {
                 })
                 .collect()
         };
-        match host.value() {
+        // A host given as JSON text (a `json` column takes it) is parsed first.
+        let parsed;
+        let value = match host.value() {
+            CborValue::Text(text) if text.is_empty() => return Ok(None),
+            CborValue::Text(text) => match serde_json::from_str::<serde_json::Value>(text) {
+                Ok(json @ (serde_json::Value::Object(_) | serde_json::Value::Array(_))) => {
+                    parsed = vantage_types::cbor_json::json_to_cbor(json);
+                    &parsed
+                }
+                _ => return Err(refused()),
+            },
+            other => other,
+        };
+        match value {
             CborValue::Null | CborValue::Tag(6, _) => Ok(None),
             CborValue::Map(pairs) => Ok(Some(vec![record(pairs)?])),
             CborValue::Array(items) => items

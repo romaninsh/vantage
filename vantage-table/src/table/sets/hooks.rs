@@ -1,7 +1,8 @@
 //! Fire a table's lifecycle hooks around a write.
 //!
-//! First, each contained record the write touches goes through its contained
-//! table and back into its host column (see `write_contained`).
+//! After the Normalize and Populate hooks, each contained record the write
+//! touches goes through its contained table and back into its host column
+//! (see `write_contained`).
 //! Before-write hooks run on the record about to be written, in phase order,
 //! just ahead of set-invariant enforcement, with the source typing the
 //! record between the Populate and Validate bands; an error cancels the
@@ -66,26 +67,24 @@ where
 
 impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// What every insert, replace and patch does to `record` before the
-    /// set's invariants: each contained record the write touches checked
-    /// through its contained table, the Normalize and Populate hooks, refusing
-    /// a column the table doesn't declare, dropping imported and expression
-    /// columns, typing the declared columns through the source, then the
-    /// Validate hooks, which so see the record as stored.
+    /// set's invariants: the Normalize and Populate hooks, each contained
+    /// record the write touches (as the hooks left it) checked through its
+    /// contained table, refusing a column the table doesn't declare, dropping
+    /// imported and expression columns, typing the declared columns through
+    /// the source, then the Validate hooks, which so see the record as stored.
     pub(crate) async fn before_write(
         &self,
         hooks: &[(Phase, BeforeFn<T>)],
         record: &mut Record<T::Value>,
         update: Option<UpdateOf<'_, T>>,
     ) -> Result<()> {
-        Box::pin(self.write_contained(record, update.and_then(|u| u.stored))).await?;
-        self.shape_and_check(hooks, record, update, false).await
+        self.write_steps(hooks, record, update, false).await
     }
 
-    /// [`Self::before_write`] after the contained records: the hooks, the
-    /// column check, stripping and typing. `contained`: this is a contained
+    /// The steps of [`Self::before_write`]. `contained`: this is a contained
     /// table checking a record for its host, so an id it doesn't declare is
     /// no column.
-    async fn shape_and_check(
+    async fn write_steps(
         &self,
         hooks: &[(Phase, BeforeFn<T>)],
         record: &mut Record<T::Value>,
@@ -96,6 +95,8 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             hooks.split_at(hooks.partition_point(|(phase, _)| *phase < Phase::Validate));
         let erased = self.as_entity_erased();
         run_before(shaping, record, update, erased).await?;
+        // After the shaping hooks, so a host value a hook set is checked too.
+        Box::pin(self.write_contained(record, update)).await?;
         self.refuse_undeclared_columns(record, contained)?;
         self.strip_imported_columns(record);
         self.strip_expression_columns(record);
@@ -103,17 +104,15 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         run_before(validating, record, update, erased).await
     }
 
-    /// Whether `record` writes a contained relation: its host column, or a
-    /// dotted key under it (`address.city`). Such a patch needs the stored row
-    /// to merge into.
-    pub(crate) fn touches_contained(&self, record: &Record<T::Value>) -> bool {
+    /// Whether `record` has a dotted key under a contained host
+    /// (`address.city`): such a write merges into the stored record, so it
+    /// needs the stored row. A whole host value replaces it and needs none.
+    pub(crate) fn merges_contained(&self, record: &Record<T::Value>) -> bool {
         self.contained.iter().any(|rel| {
             let host = rel.host_column();
             record.keys().any(|key| {
-                key == host
-                    || key
-                        .strip_prefix(host)
-                        .is_some_and(|rest| rest.starts_with('.'))
+                key.strip_prefix(host)
+                    .is_some_and(|rest| rest.starts_with('.'))
             })
         })
     }
@@ -123,14 +122,16 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// checked (the host's whole value, or the dotted keys as a partial
     /// record): its columns are the contained table's (strict), its hooks run,
     /// and nothing is read or written. A partial record is merged into the
-    /// stored one (`stored`, the row as it stands), so fields stored there
+    /// stored one (`update`'s row as it stands), so fields stored there
     /// before stay as they are; a dotted key two levels down (`a.b.c`)
-    /// merges into the stored `a.b` the same way.
+    /// merges into the stored `a.b` the same way. The contained table's
+    /// update hooks get the stored record, under the host row's id.
     async fn write_contained(
         &self,
         record: &mut Record<T::Value>,
-        stored: Option<&Record<T::Value>>,
+        update: Option<UpdateOf<'_, T>>,
     ) -> Result<()> {
+        let stored = update.and_then(|u| u.stored);
         for rel in &self.contained {
             let host = rel.host_column();
             let many = rel.kind() == vantage_vista::ReferenceKind::ContainsMany;
@@ -159,7 +160,8 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
                     table = self.table_name(),
                     relation = rel.name(),
                     column = dotted_keys[0].as_str()
-                ));
+                )
+                .mark_forbidden());
             }
             let target = rel.build_target(self.data_source().clone());
             let records = match whole {
@@ -195,7 +197,15 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
                         None => Vec::new(),
                     };
                     let mut base = stored.into_iter().next();
-                    Box::pin(target.check_contained(&mut change, base.as_ref())).await?;
+                    let child = match (update, base.as_ref()) {
+                        (Some(u), Some(base)) => Some(UpdateOf {
+                            id: u.id,
+                            stored: Some(base),
+                            patch: true,
+                        }),
+                        _ => None,
+                    };
+                    Box::pin(target.check_contained(&mut change, child)).await?;
                     let merged = base.get_or_insert_with(Record::new);
                     for (key, value) in change {
                         merged.insert(key, value);
@@ -211,22 +221,22 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         Ok(())
     }
 
-    /// One contained record, or the changed part of the `stored` one,
-    /// through this contained table's write steps with no read or write: its
-    /// own contained records, the insert hooks for a new record or the update
-    /// hooks for a change, the strict column check and the column typing.
+    /// One contained record, or the changed part of the stored one
+    /// (`update`), through this contained table's write steps with no read or
+    /// write: the insert hooks for a new record or the update hooks for a
+    /// change, its own contained records, the strict column check and the
+    /// column typing.
     async fn check_contained(
         &self,
         record: &mut Record<T::Value>,
-        stored: Option<&Record<T::Value>>,
+        update: Option<UpdateOf<'_, T>>,
     ) -> Result<()> {
-        let hooks = if stored.is_some() {
+        let hooks = if update.is_some() {
             self.before_update_hooks()
         } else {
             self.before_insert_hooks()
         };
-        self.write_contained(record, stored).await?;
-        self.shape_and_check(hooks, record, None, true).await
+        self.write_steps(hooks, record, update, true).await
     }
 
     /// Every column a write key stands for, as rules name them: the key

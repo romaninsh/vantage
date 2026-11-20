@@ -106,7 +106,8 @@ impl MongoVistaFactory {
         E: Entity<AnyMongoType> + 'static,
     {
         let name = table.table_name().to_string();
-        let any_table = table.into_entity::<EmptyEntity>();
+        // Dotted aliases are `contains_one` sugar here too (see `build`).
+        let any_table = build::with_alias_path_relations(table.into_entity::<EmptyEntity>())?;
         table_joins(&any_table)?;
         ref_keys::check_table(&any_table)?;
         let column_paths = column_paths(&any_table);

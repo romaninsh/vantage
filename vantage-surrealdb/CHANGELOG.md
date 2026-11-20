@@ -7,7 +7,7 @@
   `object` or `array` field.
 - Contained relations: `contained_records` / `contained_host` map a host column's object or array
   of objects to records and back, so writes to it go through the contained table (vantage-table
-  4.2.0).
+  4.2.0); a host given as JSON text is parsed first.
 - Requires vantage-table 4.2.0.
 
 ## 2.5.0 — 2026-11-20
