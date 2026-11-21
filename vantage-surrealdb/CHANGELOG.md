@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.7.0 — 2026-11-21
+
+- A patch wrote with `UPDATE … MERGE`, which folds an object into the stored one at every
+  level, so a whole contained host value (`address: {city: "Paris"}`) kept the stored fields it
+  left out. A patch now sets each field it names (`UPDATE … SET`): an object value replaces the
+  stored object, as on the other drivers. Fields the patch doesn't name stay as they were.
+
 ## 2.6.0 — 2026-11-21
 
 - YAML column type `json`: an object or an array as one value, unchecked inside. It takes JSON text

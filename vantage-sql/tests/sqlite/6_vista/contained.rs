@@ -1,10 +1,12 @@
 //! Contained relations over a JSON host column, built from a typed table
 //! and from YAML.
 
+use std::sync::{Arc, Mutex};
+
 use ciborium::Value as CborValue;
 use vantage_dataset::prelude::*;
 use vantage_sql::sqlite::SqliteDB;
-use vantage_table::table::Table;
+use vantage_table::table::{BeforeCx, Hook, Phase, SelectCx, Table, before_hook, select_hook};
 use vantage_types::{EmptyEntity, Record};
 use vantage_vista::{Capability, ReferenceKind, VistaFactory};
 
@@ -35,9 +37,14 @@ fn field(name: &str, value: CborValue) -> Record<CborValue> {
     r
 }
 
+/// What a contained table's update hook saw: the id, the stored `city`, and
+/// whether it was a patch.
+type SeenUpdate = (Option<String>, Option<CborValue>, bool);
+
 /// A dotted key under a contained host is a write to the host: a rule that
 /// makes the host read-only refuses it on patch and drops it on replace. A
-/// contained record takes no `id` its table doesn't declare.
+/// contained record takes no `id` its table doesn't declare. The contained
+/// table's update hooks see the stored record, under the host row's id.
 #[tokio::test]
 async fn a_dotted_contained_key_answers_to_the_host_rule() -> TestResult {
     use vantage_sql::sqlite::AnySqliteType;
@@ -49,11 +56,28 @@ async fn a_dotted_contained_key_answers_to_the_host_rule() -> TestResult {
     sqlx::query(r#"INSERT INTO person VALUES ('p1', '{"city":"a"}')"#)
         .execute(db.pool())
         .await?;
+    let seen: Arc<Mutex<Vec<SeenUpdate>>> = Arc::default();
+    let seen_in = seen.clone();
     let people = Table::<SqliteDB, EmptyEntity>::new("person", db.clone())
         .with_id_column("id")
         .with_column_of::<String>("address")
-        .with_contained_one("address", "address", |db| {
-            Table::<SqliteDB, EmptyEntity>::new("address", db).with_column_of::<String>("city")
+        .with_contained_one("address", "address", move |db| {
+            let seen = seen_in.clone();
+            Table::<SqliteDB, EmptyEntity>::new("address", db)
+                .with_column_of::<String>("city")
+                .with_hook(Hook::BeforeUpdate(
+                    Phase::Validate,
+                    before_hook(move |cx: BeforeCx<'_, SqliteDB>| {
+                        seen.lock().unwrap().push((
+                            cx.id.cloned(),
+                            cx.stored
+                                .and_then(|s| s.get("city"))
+                                .map(|v| v.value().clone()),
+                            cx.patch,
+                        ));
+                        Box::pin(async { Ok(()) })
+                    }),
+                ))
         });
     let one = |key: &str, value: &str| -> Record<AnySqliteType> {
         [(key.to_string(), AnySqliteType::from(value.to_string()))]
@@ -75,6 +99,14 @@ async fn a_dotted_contained_key_answers_to_the_host_rule() -> TestResult {
     assert!(err.is_forbidden(), "{err}");
     people.patch_value("p1", &one("address.city", "b")).await?;
     assert_eq!(stored().await, r#"{"city":"b"}"#);
+    assert_eq!(
+        *seen.lock().unwrap(),
+        [(
+            Some("p1".to_string()),
+            Some(CborValue::Text("a".into())),
+            true
+        )]
+    );
 
     let mut locked = people.clone();
     locked.deny_column("address", "policy/address-locked");
@@ -103,7 +135,6 @@ async fn a_dotted_contained_key_answers_to_the_host_rule() -> TestResult {
 
     // A whole host value replaces the record, so it needs no read: a set
     // that may update but not read still takes it.
-    use vantage_table::table::{Hook, SelectCx, select_hook};
     let blind = people.clone().with_hook(Hook::BeforeSelect(select_hook(
         |_cx: SelectCx<'_, SqliteDB>| Box::pin(async { Err(vantage_core::error!("no reads")) }),
     )));
@@ -115,6 +146,36 @@ async fn a_dotted_contained_key_answers_to_the_host_rule() -> TestResult {
     .collect();
     blind.patch_value("p1", &whole).await?;
     assert_eq!(stored().await, r#"{"city":"d"}"#);
+    Ok(())
+}
+
+/// A `json` field of a contained record is stored as the nested object it
+/// holds, not as JSON text inside the host's JSON.
+#[tokio::test]
+async fn a_json_field_in_a_contained_record_stays_an_object() -> TestResult {
+    let db = SqliteDB::connect("sqlite::memory:").await.unwrap();
+    sqlx::query("CREATE TABLE person (id TEXT PRIMARY KEY, address TEXT)")
+        .execute(db.pool())
+        .await?;
+    let people = Table::<SqliteDB, EmptyEntity>::new("person", db.clone())
+        .with_id_column("id")
+        .with_column_of::<String>("address")
+        .with_contained_one("address", "address", |db| {
+            Table::<SqliteDB, EmptyEntity>::new("address", db)
+                .with_column_of::<serde_json::Value>("meta")
+        });
+    let vista = db.vista_factory().from_table(people)?;
+    let meta = CborValue::Map(vec![("x".into(), CborValue::Integer(1.into()))]);
+    vista
+        .insert_value(
+            "p1".to_string(),
+            &field("address", CborValue::Map(vec![("meta".into(), meta)])),
+        )
+        .await?;
+    let (stored,): (String,) = sqlx::query_as("SELECT address FROM person WHERE id = 'p1'")
+        .fetch_one(db.pool())
+        .await?;
+    assert_eq!(stored, r#"{"meta":{"x":1}}"#);
     Ok(())
 }
 

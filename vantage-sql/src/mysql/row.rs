@@ -10,6 +10,7 @@ use vantage_core::{Result, VantageError, error};
 use vantage_types::{Record, temporal};
 
 use super::types::{AnyMysqlType, MysqlTypeVariants};
+use crate::types::text_param;
 
 pub(crate) type MysqlQuery<'q> = sqlx::query::Query<'q, sqlx::MySql, sqlx::mysql::MySqlArguments>;
 
@@ -62,15 +63,7 @@ pub(crate) fn bind_mysql_value<'q>(
             CborValue::Integer(i) => query.bind(i128::from(*i) as f64),
             _ => return Err(refused()),
         },
-        MysqlTypeVariants::Text => match cbor {
-            CborValue::Null => query.bind(None::<String>),
-            CborValue::Text(s) => query.bind(s.as_str()),
-            CborValue::Tag(_, inner) => match inner.as_ref() {
-                CborValue::Text(s) => query.bind(s.as_str()),
-                _ => return Err(refused()),
-            },
-            _ => return Err(refused()),
-        },
+        MysqlTypeVariants::Text => query.bind(text_param(cbor).ok_or_else(refused)?),
         MysqlTypeVariants::Decimal => text_of(query, cbor, 10).ok_or_else(refused)?,
         MysqlTypeVariants::DateTime => match cbor {
             CborValue::Null => query.bind(None::<String>),

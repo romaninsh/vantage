@@ -121,6 +121,49 @@ async fn contains_many_eager_writeback_on_real_surreal() {
     vista.delete(&id).await.unwrap();
 }
 
+/// A `contains_one` host given as JSON text is stored as the object it holds.
+/// A whole host value replaces the stored record: a field the new value
+/// leaves out is gone, not merged back in.
+#[tokio::test]
+async fn a_whole_host_patch_replaces_the_contained_record() {
+    let _turn = TABLE_LOCK.lock().await;
+    let db = v2_db().await;
+    let table = Table::<SurrealDB, EmptyEntity>::new("contained_test", db.clone())
+        .with_id_column("id")
+        .with_column_of::<AnySurrealType>("address")
+        .with_contained_one("address", "address", |db| {
+            Table::new("address", db)
+                .with_column_of::<String>("city")
+                .with_column_of::<String>("zip")
+        });
+    let vista = SurrealVistaFactory::new(db.clone())
+        .from_table(table)
+        .unwrap();
+    let id = "contained_test:t3".to_string();
+    let _ = vista.delete(&id).await;
+    vista
+        .insert_value(
+            &id,
+            &rec(&[("address", text(r#"{"city":"Rome","zip":"00100"}"#))]),
+        )
+        .await
+        .unwrap();
+    let row = vista.get_value(&id).await.unwrap().unwrap();
+    assert_eq!(
+        row["address"],
+        lmap(&[("city", text("Rome")), ("zip", text("00100"))])
+    );
+
+    vista
+        .patch_value(&id, &rec(&[("address", lmap(&[("city", text("Paris"))]))]))
+        .await
+        .unwrap();
+    let row = vista.get_value(&id).await.unwrap().unwrap();
+    assert_eq!(row["address"], lmap(&[("city", text("Paris"))]));
+
+    vista.delete(&id).await.unwrap();
+}
+
 /// Without a parent row a contained relation is its bare target: the
 /// embedded table with the columns its builder declares.
 #[tokio::test]
