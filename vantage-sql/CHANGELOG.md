@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.16.1 — 2026-11-21
+
+- Fix: a `json` field of a contained record was stored on SQLite and MySQL as JSON text inside the
+  host's JSON (`{"meta":"{\"x\":1}"}`), so it read back as a string. A `json` value now stays a
+  map or array until the binder writes its text, and nests as `{"meta":{"x":1}}`.
+
 ## 0.16.0 — 2026-11-21
 
 - PostgreSQL `postgres: { listen: [...] }` names the tables whose `{table}_changed` NOTIFY channel

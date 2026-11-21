@@ -53,7 +53,7 @@ where
     }
 
     /// SurrealDB stores the embedded object / array natively, so the host
-    /// value passes through unchanged and writes `UPDATE … MERGE` it back.
+    /// value passes through unchanged and a patch writes it back.
     /// The shared `Table::get_contained_ref` does the rest; this supplies the
     /// parent's `Thing` id and the factory wrap. Without a row it gives the
     /// bare target.

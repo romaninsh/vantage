@@ -165,7 +165,7 @@ async fn test_patch_table_value() {
         .await
         .unwrap();
 
-    // Patch only the score (MERGE keeps other fields)
+    // Patch only the score; other fields stay
     let mut partial = Record::new();
     partial.insert("score".to_string(), AnySurrealType::new(75i64));
 

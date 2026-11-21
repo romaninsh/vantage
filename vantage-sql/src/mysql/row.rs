@@ -10,6 +10,7 @@ use vantage_core::{Result, VantageError, error};
 use vantage_types::{Record, temporal};
 
 use super::types::{AnyMysqlType, MysqlTypeVariants};
+use crate::types::cbor_to_json;
 
 pub(crate) type MysqlQuery<'q> = sqlx::query::Query<'q, sqlx::MySql, sqlx::mysql::MySqlArguments>;
 
@@ -69,6 +70,10 @@ pub(crate) fn bind_mysql_value<'q>(
                 CborValue::Text(s) => query.bind(s.as_str()),
                 _ => return Err(refused()),
             },
+            // A `json` value, stored as its text.
+            CborValue::Map(_) | CborValue::Array(_) => {
+                query.bind(cbor_to_json(cbor.clone()).to_string())
+            }
             _ => return Err(refused()),
         },
         MysqlTypeVariants::Decimal => text_of(query, cbor, 10).ok_or_else(refused)?,

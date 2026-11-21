@@ -178,7 +178,7 @@ The codec is the one place native and JSON-blob backends differ.
 
 **Native backends** (SurrealDB, MongoDB) store the host column as a real nested object or array. The
 value arrives as `CborValue::Map` / `Array` already, and the writeback patches it back as it is
-(SurrealDB `UPDATE … MERGE`, MongoDB `$set`). Decode is a clone; encode is the identity.
+(SurrealDB `UPDATE … SET`, MongoDB `$set`). Decode is a clone; encode is the identity.
 
 **JSON-blob backends** (SQL with no native nesting, the SQLite path above) store the collection as a
 JSON string in a `TEXT` column: parse on read, serialize on write. The SQL drivers' decoder also

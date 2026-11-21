@@ -668,7 +668,9 @@ impl TableSource for SurrealDB {
                 return Err(set_writes::patch_leaves_set(table.table_name(), id));
             }
         }
-        let mut update = SurrealUpdate::new(id.clone()).merge().with_record(partial);
+        // SET, not MERGE: MERGE folds an object into the stored one at every
+        // level, so a contained host's new value would keep the fields it drops.
+        let mut update = SurrealUpdate::new(id.clone()).with_record(partial);
         for condition in table.conditions() {
             update = update.with_condition(condition.clone());
         }
