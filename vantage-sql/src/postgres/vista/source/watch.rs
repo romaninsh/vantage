@@ -1,10 +1,12 @@
 //! Change feed over Postgres `LISTEN/NOTIFY`.
 
+use tokio::sync::broadcast::error::RecvError;
 use vantage_core::{Result, error};
 use vantage_types::Entity;
 use vantage_vista::{VistaChange, VistaChangeStream};
 
 use super::PostgresTableShell;
+use crate::postgres::notify::HubEvent;
 use crate::postgres::types::AnyPostgresType;
 
 impl<E> PostgresTableShell<E>
@@ -25,24 +27,36 @@ where
     /// when declared: via
     /// [`PostgresVistaFactory::with_notify`](crate::postgres::vista::PostgresVistaFactory::with_notify)
     /// or the spec's `postgres.listen`.
+    ///
+    /// Every stream of a data source shares its one listener connection
+    /// (see `PostgresDB::notify_hub`), so open lists don't hold a pool
+    /// connection each.
     pub(super) fn listen(&self) -> Result<VistaChangeStream> {
         let channels = self.extra.names().to_vec();
-        let pool = self.table.data_source().pool().clone();
+        let db = self.table.data_source().clone();
 
         let stream = async_stream::try_stream! {
-            let mut listener = sqlx::postgres::PgListener::connect_with(&pool)
-                .await
-                .map_err(|e| error!("open pg listener", details = e.to_string()))?;
-            listener
-                .listen_all(channels.iter().map(String::as_str))
+            let mut feed = db
+                .notify_hub()
+                .subscribe(channels.clone())
                 .await
                 .map_err(|e| error!("LISTEN failed", channels = channels.join(", "), details = e.to_string()))?;
             loop {
-                listener
-                    .recv()
-                    .await
-                    .map_err(|e| error!("recv notification", details = e.to_string()))?;
-                yield VistaChange::Invalidated;
+                match feed.recv().await {
+                    Ok(HubEvent::Notified(channel)) => {
+                        if channels.iter().any(|c| **c == *channel) {
+                            yield VistaChange::Invalidated;
+                        }
+                    }
+                    Ok(HubEvent::Failed(message)) => {
+                        Err(error!("notification listener failed", details = message.to_string()))?;
+                    }
+                    // Missed notifications still mean the set changed.
+                    Err(RecvError::Lagged(_)) => yield VistaChange::Invalidated,
+                    Err(RecvError::Closed) => {
+                        Err(error!("notification listener stopped"))?;
+                    }
+                }
             }
         };
         Ok(Box::pin(stream))

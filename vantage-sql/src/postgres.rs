@@ -1,6 +1,8 @@
 #[macro_use]
 mod macros;
 pub mod impls;
+#[cfg(feature = "vista")]
+pub(crate) mod notify;
 pub mod operation;
 pub(crate) mod row;
 pub mod statements;
@@ -10,6 +12,8 @@ pub mod types;
 pub mod vista;
 
 use std::sync::Arc;
+#[cfg(feature = "vista")]
+use std::sync::Mutex;
 
 use sqlx::Connection as _;
 use sqlx::postgres::{PgConnection, PgPool, PgPoolOptions};
@@ -33,6 +37,9 @@ pub struct PostgresDB {
     /// Identity shared by every clone: one transaction per datasource.
     key: Arc<()>,
     tx: Option<Arc<SqlTx<sqlx::Postgres>>>,
+    /// The `LISTEN` hub every clone shares, spawned on first subscription.
+    #[cfg(feature = "vista")]
+    notify: Arc<Mutex<Option<notify::NotifyHub>>>,
 }
 
 impl PostgresDB {
@@ -42,6 +49,21 @@ impl PostgresDB {
             pool,
             key: Arc::new(()),
             tx: None,
+            #[cfg(feature = "vista")]
+            notify: Arc::default(),
+        }
+    }
+
+    /// The shared `LISTEN` hub, spawning it on first use or after the
+    /// previous one stopped. Needs a Tokio runtime.
+    #[cfg(feature = "vista")]
+    pub(crate) fn notify_hub(&self) -> notify::NotifyHub {
+        let mut slot = self.notify.lock().unwrap_or_else(|e| e.into_inner());
+        match slot.as_ref() {
+            Some(hub) if hub.is_running() => hub.clone(),
+            _ => slot
+                .insert(notify::NotifyHub::spawn(self.pool.clone()))
+                .clone(),
         }
     }
 
