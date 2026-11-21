@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.15.1 — 2026-11-21
+
+- Requires sqlx 0.9.1, whose bundled SQLite (libsqlite3-sys 0.40) is past RUSTSEC-2026-0459.
+  With 0.9.0 allowed, a project's lock could keep libsqlite3-sys 0.30.1.
+
 ## 0.15.0 — 2026-11-21
 
 - YAML column type `json`: a map or an array as one value, unchecked inside. A write takes the map

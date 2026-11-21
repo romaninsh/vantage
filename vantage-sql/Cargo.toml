@@ -1,6 +1,6 @@
 [package]
 name = "vantage-sql"
-version = "0.15.0"
+version = "0.15.1"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -33,7 +33,9 @@ async-trait = "0.1"
 # an error (a non-unique id column collapsing rows, say) — a facade, so the
 # host application still owns whether and where it lands.
 tracing = "0.1"
-sqlx = { version = "0.9.0", features = ["runtime-tokio", "tls-rustls", "rust_decimal", "uuid", "chrono"] }
+# 0.9.1: its bundled SQLite (libsqlite3-sys 0.40) is past RUSTSEC-2026-0459, so a
+# project resolving this crate can't keep the vulnerable one.
+sqlx = { version = "0.9.1", features = ["runtime-tokio", "tls-rustls", "rust_decimal", "uuid", "chrono"] }
 rust_decimal = "1"
 uuid = "1"
 chrono = { version = "0.4", features = ["serde"] }
