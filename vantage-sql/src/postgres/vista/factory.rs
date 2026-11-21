@@ -14,7 +14,7 @@ use vantage_vista::{
 use crate::postgres::PostgresDB;
 use crate::postgres::statements::PostgresSelect;
 use crate::postgres::types::AnyPostgresType;
-use crate::postgres::vista::source::PostgresTableShell;
+use crate::postgres::vista::source::{PostgresChannels, PostgresTableShell};
 use crate::postgres::vista::spec::{PostgresColumnExtras, PostgresTableExtras, PostgresVistaSpec};
 use crate::sql_vista::{
     SourceBlock, SqlSpecDialect, build_spec_table, column_for_type, is_query_sourced, lower_spec,
@@ -87,33 +87,39 @@ impl PostgresVistaFactory {
         let name = table.table_name().to_string();
         let metadata = table.vista_metadata(metadata_options());
         let read_only = is_query_sourced(table.source());
-        Ok(self.wrap(table, name, metadata, read_only))
+        Ok(self.wrap(table, name, metadata, read_only, &[]))
     }
 
     /// Single source-construction site shared by `from_table` and
     /// `build_from_spec`. A query-sourced (e.g. `rhai:`) vista is `read_only`,
-    /// which clears the write capabilities.
+    /// which clears the write capabilities. `listen` names the extra tables
+    /// whose NOTIFY channels invalidate the vista.
     fn wrap<E>(
         &self,
         table: Table<PostgresDB, E>,
         name: String,
         metadata: VistaMetadata,
         read_only: bool,
+        listen: &[String],
     ) -> Vista
     where
         E: Entity<AnyPostgresType> + 'static,
     {
+        // Push via LISTEN/NOTIFY on `{table}_changed` channels, which the
+        // application feeds from triggers. Opt-in (`with_notify` for the
+        // vista's own table, `listen:` for others): we cannot detect a
+        // trigger, and claiming a feed we may never receive is worse than
+        // claiming none.
+        let own = (self.notify && !read_only).then(|| table.table_name().to_string());
+        let channels =
+            PostgresChannels::of_tables(self.notify, own.iter().chain(listen).map(String::as_str));
         let mut capabilities = sql_capabilities(read_only);
-        // Push via LISTEN/NOTIFY on the `{table}_changed` channel, which the
-        // application feeds from a trigger. Opt-in (`with_notify`): we cannot
-        // detect the trigger, and claiming a feed we may never receive is
-        // worse than claiming none.
-        if self.notify && !read_only {
+        if !channels.is_empty() {
             capabilities = capabilities.with(Capability::Subscribe);
         }
         Vista::new(
             name,
-            PostgresTableShell::new(table, capabilities, metadata, ()),
+            PostgresTableShell::new(table, capabilities, metadata, channels),
         )
     }
 
@@ -137,11 +143,17 @@ impl VistaFactory for PostgresVistaFactory {
         // Only here, on the table the caller asked for: a reference target
         // or a `base:` table checking its own would build this one again.
         lowered.table.check_expressions()?;
+        let listen = spec
+            .driver
+            .postgres
+            .as_ref()
+            .map_or(&[][..], |block| &block.listen);
         Ok(self.wrap(
             lowered.table,
-            spec.name,
+            spec.name.clone(),
             lowered.metadata,
             lowered.read_only,
+            listen,
         ))
     }
 }

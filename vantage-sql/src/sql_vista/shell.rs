@@ -36,8 +36,8 @@ where
     /// Handle for the active quicksearch condition, removed when the search
     /// is replaced or cleared.
     pub(crate) current_search_handle: Option<ConditionHandle>,
-    // Only MySQL carries extra state.
-    #[cfg_attr(not(feature = "mysql"), allow(dead_code))]
+    // Only MySQL and PostgreSQL carry extra state.
+    #[cfg_attr(not(any(feature = "mysql", feature = "postgres")), allow(dead_code))]
     pub(crate) extra: X,
 }
 

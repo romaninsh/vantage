@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.16.0 — 2026-11-21
+
+- PostgreSQL `postgres: { listen: [...] }` names the tables whose `{table}_changed` NOTIFY channel
+  invalidates the vista, so query-sourced vistas and ones reading other tables update live. Listing
+  a table makes the vista advertise `Subscribe` without `with_notify`; a query-sourced vista stays read-only.
+- PostgreSQL watches share one `LISTEN` connection per data source. Each watch used to hold a pool
+  connection, so about a dozen open lists timed out every query.
+
 ## 0.15.1 — 2026-11-21
 
 - Requires sqlx 0.9.1, whose bundled SQLite (libsqlite3-sys 0.40) is past RUSTSEC-2026-0459.
