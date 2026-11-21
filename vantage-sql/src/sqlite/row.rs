@@ -8,7 +8,7 @@ use sqlx::{Column, Row, TypeInfo};
 use vantage_types::Record;
 
 use super::types::{AnySqliteType, SqliteTypeVariants};
-use crate::types::cbor_to_json;
+use crate::types::text_param;
 
 pub(crate) type SqliteQuery<'q> =
     sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments>;
@@ -49,19 +49,7 @@ pub(crate) fn bind_sqlite_value<'q>(
             CborValue::Integer(i) => query.bind(i128::from(*i) as f64),
             _ => return Err(refused()),
         },
-        SqliteTypeVariants::Text => match cbor {
-            CborValue::Null => query.bind(None::<String>),
-            CborValue::Text(s) => query.bind(s.as_str()),
-            CborValue::Tag(_, inner) => match inner.as_ref() {
-                CborValue::Text(s) => query.bind(s.as_str()),
-                _ => return Err(refused()),
-            },
-            // A `json` value, stored as its text.
-            CborValue::Map(_) | CborValue::Array(_) => {
-                query.bind(cbor_to_json(cbor.clone()).to_string())
-            }
-            _ => return Err(refused()),
-        },
+        SqliteTypeVariants::Text => query.bind(text_param(cbor).ok_or_else(refused)?),
         SqliteTypeVariants::Numeric => match cbor {
             CborValue::Null => query.bind(None::<String>),
             CborValue::Tag(10, inner) => match inner.as_ref() {

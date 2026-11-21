@@ -37,6 +37,10 @@ fn field(name: &str, value: CborValue) -> Record<CborValue> {
     r
 }
 
+/// What a contained table's update hook saw: the id, the stored `city`, and
+/// whether it was a patch.
+type SeenUpdate = (Option<String>, Option<CborValue>, bool);
+
 /// A dotted key under a contained host is a write to the host: a rule that
 /// makes the host read-only refuses it on patch and drops it on replace. A
 /// contained record takes no `id` its table doesn't declare. The contained
@@ -52,7 +56,7 @@ async fn a_dotted_contained_key_answers_to_the_host_rule() -> TestResult {
     sqlx::query(r#"INSERT INTO person VALUES ('p1', '{"city":"a"}')"#)
         .execute(db.pool())
         .await?;
-    let seen: Arc<Mutex<Vec<(Option<String>, Option<CborValue>, bool)>>> = Arc::default();
+    let seen: Arc<Mutex<Vec<SeenUpdate>>> = Arc::default();
     let seen_in = seen.clone();
     let people = Table::<SqliteDB, EmptyEntity>::new("person", db.clone())
         .with_id_column("id")
@@ -164,7 +168,7 @@ async fn a_json_field_in_a_contained_record_stays_an_object() -> TestResult {
     let meta = CborValue::Map(vec![("x".into(), CborValue::Integer(1.into()))]);
     vista
         .insert_value(
-            &"p1".to_string(),
+            "p1".to_string(),
             &field("address", CborValue::Map(vec![("meta".into(), meta)])),
         )
         .await?;

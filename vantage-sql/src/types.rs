@@ -7,6 +7,9 @@
 //!
 //! JSON→CBOR is lossless (JSON is a subset of what CBOR can represent).
 
+#[cfg(any(feature = "sqlite", feature = "mysql"))]
+use std::borrow::Cow;
+
 use ciborium::Value as CborValue;
 use serde_json::Value as JsonValue;
 use vantage_types::cbor_json::{self, CborDialect};
@@ -34,6 +37,25 @@ pub(crate) fn json_document(value: CborValue) -> Option<JsonValue> {
         _ => return None,
     };
     (json.is_object() || json.is_array()).then_some(json)
+}
+
+/// What a text parameter binds for a value: its text, or a `json` map or
+/// array as its JSON text. `Some(None)` binds NULL; `None` is a value no
+/// text parameter takes.
+#[cfg(any(feature = "sqlite", feature = "mysql"))]
+pub(crate) fn text_param(cbor: &CborValue) -> Option<Option<Cow<'_, str>>> {
+    Some(match cbor {
+        CborValue::Null => None,
+        CborValue::Text(s) => Some(Cow::Borrowed(s.as_str())),
+        CborValue::Tag(_, inner) => match inner.as_ref() {
+            CborValue::Text(s) => Some(Cow::Borrowed(s.as_str())),
+            _ => return None,
+        },
+        CborValue::Map(_) | CborValue::Array(_) => {
+            Some(Cow::Owned(cbor_to_json(cbor.clone()).to_string()))
+        }
+        _ => return None,
+    })
 }
 
 /// The records a contained relation keeps in its host column's value: the
