@@ -15,7 +15,7 @@ use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Entity};
 #[cfg(feature = "rhai")]
 use vantage_vista::rhai::RuleHandle;
-use vantage_vista::{Capability, Transaction, Vista, VistaChangeStream};
+use vantage_vista::{Transaction, Vista, VistaChangeStream};
 
 #[cfg(feature = "rhai")]
 use crate::postgres::vista::rhai_source::register_postgres_onto;
@@ -30,10 +30,40 @@ use crate::postgres::vista::factory::PostgresVistaFactory;
 use crate::primitives::identifier::ident;
 use crate::sql_vista::{Shell, SqlShellDialect, SqlTableShell};
 
-pub type PostgresTableShell<E = EmptyEntity> = SqlTableShell<PostgresDB, E>;
+pub type PostgresTableShell<E = EmptyEntity> = SqlTableShell<PostgresDB, E, PostgresChannels>;
+
+/// The NOTIFY channels a shell's `watch` LISTENs on, deduplicated (empty
+/// means the shell does not advertise `Subscribe`), and the building
+/// factory's `with_notify` flag, which relation targets inherit.
+#[derive(Clone, Debug, Default)]
+pub struct PostgresChannels {
+    names: Vec<String>,
+    notify: bool,
+}
+
+impl PostgresChannels {
+    /// The `{table}_changed` channel of each table.
+    pub(crate) fn of_tables<'a>(notify: bool, tables: impl IntoIterator<Item = &'a str>) -> Self {
+        let mut names = Vec::new();
+        for channel in tables.into_iter().map(|t| format!("{t}_changed")) {
+            if !names.contains(&channel) {
+                names.push(channel);
+            }
+        }
+        Self { names, notify }
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.names.is_empty()
+    }
+
+    pub(crate) fn names(&self) -> &[String] {
+        &self.names
+    }
+}
 
 impl SqlShellDialect for PostgresDB {
-    type Extra = ();
+    type Extra = PostgresChannels;
 
     const DRIVER: &'static str = "postgres";
 
@@ -111,12 +141,11 @@ impl SqlShellDialect for PostgresDB {
         table
     }
 
-    /// Targets carry this shell's NOTIFY opt-in, recovered from the
-    /// advertised `Subscribe` rather than stored twice. A query-sourced
-    /// parent never advertises it (it is read-only), which under-advertises
-    /// a real child table: the safe direction, since a missed feed degrades
-    /// to the consumer's reconcile path while a phantom one degrades to
-    /// silence.
+    /// Targets carry the factory's `with_notify` declaration, not the
+    /// parent's `Subscribe`: a query-sourced parent subscribing through
+    /// `listen:` says nothing about triggers on its targets' tables. The
+    /// parent's `listen:` tables are not inherited either; they describe
+    /// what the parent's own rows read.
     fn target_factory<E>(
         shell: &Shell<Self, E>,
     ) -> impl Fn(Table<Self, EmptyEntity>) -> Result<Vista> + Send + Sync + 'static
@@ -124,12 +153,12 @@ impl SqlShellDialect for PostgresDB {
         E: Entity<AnyPostgresType> + 'static,
     {
         let factory = PostgresVistaFactory::new(shell.table.data_source().clone())
-            .with_notify(shell.capabilities.has(Capability::Subscribe));
+            .with_notify(shell.extra.notify);
         move |table| factory.from_table(table)
     }
 
-    /// `Subscribe` is advertised only when the factory declared the NOTIFY
-    /// triggers (`with_notify`); `Vista::watch` refuses it otherwise.
+    /// `Subscribe` is advertised only when a NOTIFY channel was declared
+    /// (`with_notify` or `listen:`); `Vista::watch` refuses it otherwise.
     fn watch<E>(shell: &Shell<Self, E>) -> Result<VistaChangeStream>
     where
         E: Entity<AnyPostgresType> + 'static,

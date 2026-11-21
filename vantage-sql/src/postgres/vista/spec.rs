@@ -36,6 +36,13 @@ pub struct PostgresTableBlock {
     /// alongside `base`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inherit: Option<InheritBlock>,
+    /// Database tables whose `{name}_changed` NOTIFY channel invalidates this
+    /// vista: the tables a query reads, or those its dotted and expression
+    /// columns reach. Listing a table declares that its trigger exists, so it
+    /// makes the vista advertise `Subscribe` without `with_notify`, and
+    /// read-only (`rhai:` / `base:`) vistas included.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub listen: Vec<String>,
     /// Observation-supplied parameters, exposed to the `rhai` script as the
     /// `args` map (`args.month`, `args.lob`, …) so a view can apply
     /// conditions BEFORE aggregation. Set programmatically by the host at
