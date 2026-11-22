@@ -26,12 +26,19 @@ use fake::rand::rngs::StdRng;
 use fake::rand::{RngExt as _, SeedableRng as _};
 use tokio::time::Instant;
 use vantage_core::{Result, error};
+use vantage_dataset::Inserted;
+use vantage_types::Record;
 use vantage_vista::{Capability, TableShell, VistaCapabilities, unsupported};
 
 mod profile;
 mod shell;
 
-pub use profile::{BackendShape, FaultSchedule, Latency, LatencyModel, Offline};
+pub use profile::{BackendShape, FaultSchedule, Latency, LatencyModel, Offline, WriteRefusal};
+
+/// One fault draw at `rate`; a zero rate leaves the stream untouched.
+fn hit(rng: &mut StdRng, rate: f64) -> bool {
+    rate > 0.0 && rng.random_range(0.0..1.0) < rate
+}
 
 /// Which latency band a request draws from.
 #[derive(Clone, Copy)]
@@ -111,17 +118,7 @@ impl ShapedShell {
     /// Every tolled request logs at debug under `vantage_faker::shape` —
     /// the tap the select tester's request accounting reads.
     async fn toll(&self, class: OpClass) -> Result<()> {
-        if let Some(off) = self.shape.faults.offline {
-            let elapsed = self.epoch.elapsed();
-            let period = off.period.max(off.down);
-            let into_period =
-                Duration::from_nanos((elapsed.as_nanos() % period.as_nanos().max(1)) as u64);
-            if into_period >= period.saturating_sub(off.down) {
-                return Err(
-                    error!("shaped source is offline (scheduled outage)").mark_unavailable()
-                );
-            }
-        }
+        self.check_online()?;
 
         let (delay, failed) = {
             let rng = &mut *self.rng.lock().unwrap();
@@ -138,9 +135,7 @@ impl ShapedShell {
             {
                 delay += extra.draw(rng);
             }
-            let failed = self.shape.faults.error_rate > 0.0
-                && rng.random_range(0.0..1.0) < self.shape.faults.error_rate;
-            (delay, failed)
+            (delay, hit(rng, self.shape.faults.error_rate))
         };
 
         if !delay.is_zero() {
@@ -150,6 +145,106 @@ impl ShapedShell {
             return Err(error!("shaped source request failed (injected fault)").mark_unavailable());
         }
         Ok(())
+    }
+
+    fn check_online(&self) -> Result<()> {
+        if let Some(off) = self.shape.faults.offline {
+            let elapsed = self.epoch.elapsed();
+            let period = off.period.max(off.down);
+            let into_period =
+                Duration::from_nanos((elapsed.as_nanos() % period.as_nanos().max(1)) as u64);
+            if into_period >= period.saturating_sub(off.down) {
+                return Err(
+                    error!("shaped source is offline (scheduled outage)").mark_unavailable()
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// A write's toll, before it reaches the store: outage, refusal,
+    /// latency, then the write error draw.
+    async fn write_toll(&self) -> Result<()> {
+        self.check_online()?;
+        if let Some(refusal) = self.shape.faults.refuse {
+            return Err(match refusal {
+                WriteRefusal::Conflict => {
+                    error!("shaped source refuses writes (injected conflict)").mark_conflict()
+                }
+                WriteRefusal::InvalidValue => {
+                    error!("shaped source refuses writes (injected invalid value)")
+                        .mark_invalid_value()
+                }
+                WriteRefusal::Forbidden => {
+                    error!("shaped source refuses writes (injected permission denial)")
+                        .mark_forbidden()
+                }
+            });
+        }
+
+        let (delay, failed) = {
+            let rng = &mut *self.rng.lock().unwrap();
+            let delay = self
+                .shape
+                .latency
+                .write
+                .map(|b| b.draw(rng))
+                .unwrap_or_default();
+            (delay, hit(rng, self.shape.faults.write_error_rate))
+        };
+
+        if !delay.is_zero() {
+            tokio::time::sleep(delay).await;
+        }
+        if failed {
+            return Err(error!("shaped source write failed (injected fault)").mark_unavailable());
+        }
+        Ok(())
+    }
+
+    /// The write has landed; its answer, unless the lost-reply draw drops it.
+    fn reply<T>(&self, answer: T) -> Result<T> {
+        if hit(
+            &mut self.rng.lock().unwrap(),
+            self.shape.faults.lost_reply_rate,
+        ) {
+            return Err(
+                error!("shaped source lost the write's reply (injected fault)").mark_unavailable(),
+            );
+        }
+        Ok(answer)
+    }
+
+    /// A queued insert: answered `Accepted` now, stored in the inner shell
+    /// after `delay`. A caller without an id gets one drawn from the shared
+    /// rng, since the queue must name the row before it exists.
+    fn enqueue_insert(
+        &self,
+        id: Option<&str>,
+        record: &Record<CborValue>,
+        delay: Duration,
+    ) -> (String, Inserted<CborValue>) {
+        let id = match id {
+            Some(id) => id.to_string(),
+            None => format!(
+                "{:016x}",
+                self.rng.lock().unwrap().random_range(0..=u64::MAX)
+            ),
+        };
+        let inner = self.inner.clone();
+        let record = record.clone();
+        let queued = id.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(delay).await;
+            if let Err(e) = inner.insert(Some(queued.as_str()), &record).await {
+                tracing::warn!(
+                    target: "vantage_faker::shape",
+                    id = %queued,
+                    "queued insert failed: {e}"
+                );
+            }
+        });
+        (id, Inserted::Accepted)
     }
 
     /// Offset after the boundary-skew vice: occasionally ±1, producing the

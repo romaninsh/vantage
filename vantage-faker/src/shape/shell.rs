@@ -3,8 +3,9 @@
 //!
 //! The paged reads live in [`reads`] and the narrowing setters in
 //! [`query_state`]; the impl below is one block because the forwarding macro
-//! emits a single trait impl. Writes are gated but not tolled: the scenarios
-//! stress the read path.
+//! emits a single trait impl. Writes pay their own toll (outage, refusal,
+//! write latency, write error draw), may be queued (inserts only), and may
+//! lose their reply after landing.
 
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
@@ -101,32 +102,47 @@ forward_table_shell!(ShapedShell, inner, {
         record: &Rec,
     ) -> Result<(String, Inserted<CborValue>)> {
         self.gate(Capability::Insert)?;
-        self.inner.insert(id, record).await
+        self.write_toll().await?;
+        let answer = match self.shape.faults.queue {
+            Some(delay) => self.enqueue_insert(id, record, delay),
+            None => self.inner.insert(id, record).await?,
+        };
+        self.reply(answer)
     }
 
     async fn replace(&self, id: &str, record: &Rec) -> Result<Rec> {
         self.gate(Capability::Update)?;
-        self.inner.replace(id, record).await
+        self.write_toll().await?;
+        let answer = self.inner.replace(id, record).await?;
+        self.reply(answer)
     }
 
     async fn upsert(&self, id: &str, record: &Rec) -> Result<Rec> {
         self.gate(Capability::Update)?;
-        self.inner.upsert(id, record).await
+        self.write_toll().await?;
+        let answer = self.inner.upsert(id, record).await?;
+        self.reply(answer)
     }
 
     async fn patch(&self, id: &str, partial: &Rec) -> Result<Rec> {
         self.gate(Capability::Update)?;
-        self.inner.patch(id, partial).await
+        self.write_toll().await?;
+        let answer = self.inner.patch(id, partial).await?;
+        self.reply(answer)
     }
 
     async fn delete(&self, id: &str) -> Result<()> {
         self.gate(Capability::Delete)?;
-        self.inner.delete(id).await
+        self.write_toll().await?;
+        self.inner.delete(id).await?;
+        self.reply(())
     }
 
     async fn delete_all(&self) -> Result<()> {
         self.gate(Capability::Delete)?;
-        self.inner.delete_all().await
+        self.write_toll().await?;
+        self.inner.delete_all().await?;
+        self.reply(())
     }
 
     /// Bulk import is not part of any shape.

@@ -1,5 +1,14 @@
 # Changelog
 
+## 4.1.0 — 2026-11-22
+
+- A shaped source can make writes misbehave, so an app's handling of failed writes can be shown
+  and tested: `LatencyModel::write` delays every write; `FaultSchedule::write_error_rate` fails
+  writes before they are stored, `lost_reply_rate` fails them after they are stored, `queue`
+  answers inserts `Inserted::Accepted` and stores them later, and `refuse` (a `WriteRefusal`)
+  refuses every write as a conflict, an invalid value or forbidden.
+- The `offline` schedule now applies to writes too. `error_rate` still applies to reads only.
+
 ## 4.0.0 — 2026-11-22
 
 - **Breaking:** requires vantage-memory 5 and vantage-vista 3. The shaped shell's `insert`
