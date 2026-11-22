@@ -140,7 +140,15 @@ async fn default_write(dio: &Dio, flash: ChangeFlash) -> Result<FlashOutcome> {
     // value, filled a default or (on an insert) moved the id.
     let stored = |stored| FlashOutcome::applied().with_record(stored);
     let written = match (flash.kind(), flash.id()) {
-        (FlashKind::Insert, Some(id)) => master.insert_value(id, flash.patch()).await.map(stored),
+        (FlashKind::Insert, Some(id)) => {
+            master
+                .insert_value(id, flash.patch())
+                .await
+                .map(|inserted| match inserted.into_record() {
+                    Some(record) => stored(record),
+                    None => FlashOutcome::applied(),
+                })
+        }
         (FlashKind::Insert, None) => master
             .insert_return_id_value(flash.patch())
             .await
@@ -175,6 +183,7 @@ async fn default_write(dio: &Dio, flash: ChangeFlash) -> Result<FlashOutcome> {
         Some(ErrorKind::Forbidden) => wrapped.map_err(VantageError::mark_forbidden),
         Some(ErrorKind::Unsupported) => wrapped.map_err(VantageError::mark_unsupported),
         Some(ErrorKind::InvalidValue) => wrapped.map_err(VantageError::mark_invalid_value),
+        Some(ErrorKind::Unavailable) => wrapped.map_err(VantageError::mark_unavailable),
         _ => wrapped,
     }
 }

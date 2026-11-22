@@ -27,6 +27,7 @@ use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use spacetimedb_sats::ProductType;
 use vantage_core::Result;
+use vantage_dataset::Inserted;
 use vantage_types::Record;
 use vantage_vista::{
     Capability, Condition, Page, Preview, TableShell, Transaction, VistaCapabilities,
@@ -159,7 +160,11 @@ impl TableShell for SpacetimeTableShell {
 
     // Writes are SQL DML keyed on the row identity; see the `writes` module.
 
-    async fn insert(&self, id: Option<&str>, record: &Rec) -> Result<(String, Rec)> {
+    async fn insert(
+        &self,
+        id: Option<&str>,
+        record: &Rec,
+    ) -> Result<(String, Inserted<CborValue>)> {
         self.insert_row_with_id(id, record).await
     }
 

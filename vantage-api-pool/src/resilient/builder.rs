@@ -159,10 +159,9 @@ impl ResilientClientBuilder {
     }
 
     /// Finish the client. No network or proxy work happens here: a default
-    /// HTTP client is built on the first request. If that build keeps
-    /// failing, every attempt fails with a retryable
-    /// [`ErrorKind::Transport`](super::ErrorKind::Transport), so an
-    /// `essential()` call keeps retrying.
+    /// HTTP client is built on the first request. If that build fails, the
+    /// call fails with a final [`ErrorKind::Build`](super::ErrorKind::Build)
+    /// and the next call tries the build again.
     pub fn build(self) -> ResilientClient {
         let http = match self.http {
             Some(client) => LazyHttp::supplied(client),

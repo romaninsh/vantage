@@ -34,6 +34,7 @@ use vantage_types::Record;
 
 use super::MongoTableShell;
 use crate::id::MongoId;
+use crate::mongodb::driver_error::driver_error;
 use crate::mongodb::tx::MongoTx;
 use crate::mongodb::view::undeclared_view;
 use crate::types::AnyMongoType;
@@ -46,8 +47,10 @@ struct Prepared {
     record: Record<AnyMongoType>,
 }
 
-fn failed(e: impl std::fmt::Display) -> VantageError {
-    error!("MongoDB import failed", details = e.to_string())
+/// Unavailable when the server could not be reached, the commit included:
+/// a rerun skips the ids a lost commit did store.
+fn failed(e: mongodb::error::Error) -> VantageError {
+    driver_error("MongoDB import failed", &e)
 }
 
 /// Import `records` (id → record); returns how many were newly inserted.

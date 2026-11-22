@@ -2,13 +2,16 @@
 
 mod support;
 
+use std::sync::{Arc, Mutex};
+
 use ciborium::Value as CborValue;
 use serde_json::json;
 use support::{mount, requests, test_client};
 use vantage_api_client::{ResponseShape, RestApi, RestApiVistaFactory, RestApiVistaSpec};
-use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet};
+use vantage_dataset::Inserted;
+use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet, WritableValueSet};
 use vantage_types::Record;
-use vantage_vista::{Capability, Vista, VistaFactory};
+use vantage_vista::{Capability, TableShell, Vista, VistaFactory};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -85,6 +88,71 @@ columns:
     mount(&server, "POST", 409, "").await;
     let events = build(&server, &yaml.replace("[204]", "[200, 409]")).unwrap();
     events.insert_return_id_value(&record("x")).await.unwrap();
+}
+
+#[tokio::test]
+async fn rest_insert_202_reports_accepted() {
+    let server = MockServer::start().await;
+    mount(&server, "POST", 202, "").await;
+    let events = build(&server, EVENTS).unwrap();
+    let inserted = events.insert_value("1", &record("x")).await.unwrap();
+    assert_eq!(inserted, Inserted::Accepted);
+
+    let server = MockServer::start().await;
+    mount(&server, "POST", 201, "").await;
+    let events = build(&server, EVENTS).unwrap();
+    let inserted = events.insert_value("1", &record("x")).await.unwrap();
+    assert_eq!(inserted, Inserted::Created(record("x")));
+}
+
+/// Keeps the inner shell reachable, so a test can call `insert(None, ..)`,
+/// which no `Vista` method returns the outcome of.
+#[derive(Clone)]
+struct Grab {
+    inner: Box<dyn TableShell>,
+}
+
+vantage_vista::forward_table_shell!(Grab, inner, {});
+
+fn shell_of(vista: Vista) -> Box<dyn TableShell> {
+    let slot = Arc::new(Mutex::new(None));
+    let kept = slot.clone();
+    let _ = vista.map_shell(move |inner| {
+        *kept.lock().unwrap() = Some(inner.clone());
+        Grab { inner }
+    });
+    slot.lock().unwrap().take().unwrap()
+}
+
+#[tokio::test]
+async fn rest_vista_insert_without_id_on_a_batching_target_is_accepted() {
+    let yaml = EVENTS.replace("{ method: POST }", "{ batch: 10 }");
+    let server = MockServer::start().await;
+    mount(&server, "POST", 200, "").await;
+    let shell = shell_of(build(&server, &yaml).unwrap());
+    let (id, inserted) = shell.insert(None, &record("x")).await.unwrap();
+    assert_eq!((id.as_str(), inserted), ("", Inserted::Accepted));
+
+    let server = MockServer::start().await;
+    mount(&server, "POST", 202, "").await;
+    let shell = shell_of(build(&server, EVENTS).unwrap());
+    let (_, inserted) = shell.insert(None, &record("x")).await.unwrap();
+    assert_eq!(inserted, Inserted::Accepted);
+}
+
+#[tokio::test]
+async fn rest_insert_503_is_unavailable() {
+    let server = MockServer::start().await;
+    mount(&server, "POST", 503, "").await;
+    let events = build(&server, EVENTS).unwrap();
+    let err = events.insert_value("1", &record("x")).await.unwrap_err();
+    assert!(err.is_unavailable(), "{err}");
+
+    let server = MockServer::start().await;
+    mount(&server, "POST", 400, "").await;
+    let events = build(&server, EVENTS).unwrap();
+    let err = events.insert_value("1", &record("x")).await.unwrap_err();
+    assert!(!err.is_unavailable(), "{err}");
 }
 
 #[tokio::test]

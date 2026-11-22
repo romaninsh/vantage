@@ -77,7 +77,11 @@ vantage_vista::forward_table_shell!(Canonical, inner, {
             value,
         ))
     }
-    async fn insert(&self, id: Option<&str>, record: &Rec) -> vantage_core::Result<(String, Rec)> {
+    async fn insert(
+        &self,
+        id: Option<&str>,
+        record: &Rec,
+    ) -> vantage_core::Result<(String, vantage_dataset::Inserted<CborValue>)> {
         self.inner.insert(id, &self.record(record)).await
     }
     async fn replace(&self, id: &str, record: &Rec) -> vantage_core::Result<Rec> {

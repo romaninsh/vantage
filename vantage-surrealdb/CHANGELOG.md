@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.0.0 — 2026-11-22
+
+- **Breaking:** `insert_table_value` returns `Inserted<AnySurrealType>` and the vista shell's
+  `insert` returns `(String, Inserted<CborValue>)`. Use `.into_record()` for the row.
+- An insert reports `Created`, or `Existed` with the stored record when the id is already in the
+  set.
+- Queries, live queries and transaction begin/rollback fail `Unavailable` when the server wasn't
+  reached: a dropped or refused connection, a timeout, a WebSocket or IO failure, a reconnect
+  still backing off, an HTTP 5xx. A statement the server answered with an error is not.
+- Requires vantage-core 1.4.0, vantage-dataset 2.0.0, vantage-table 5.0.0, vantage-vista 3.0.0.
+
 ## 2.7.0 — 2026-11-21
 
 - A patch wrote with `UPDATE … MERGE`, which folds an object into the stored one at every

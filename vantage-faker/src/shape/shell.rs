@@ -9,6 +9,7 @@
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::Result;
+use vantage_dataset::Inserted;
 use vantage_types::Record;
 use vantage_vista::{
     Capability, Condition, NativeCondition, Page, SortDirection, TableShell, Transaction, Vista,
@@ -94,7 +95,11 @@ forward_table_shell!(ShapedShell, inner, {
         self.inner.add_order(column, dir)
     }
 
-    async fn insert(&self, id: Option<&str>, record: &Rec) -> Result<(String, Rec)> {
+    async fn insert(
+        &self,
+        id: Option<&str>,
+        record: &Rec,
+    ) -> Result<(String, Inserted<CborValue>)> {
         self.gate(Capability::Insert)?;
         self.inner.insert(id, record).await
     }

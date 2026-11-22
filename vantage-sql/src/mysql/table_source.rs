@@ -5,6 +5,7 @@ use indexmap::IndexMap;
 use sqlx::Row;
 use sqlx::mysql::MySqlConnection;
 use vantage_core::{Result, error};
+use vantage_dataset::Inserted;
 use vantage_expressions::traits::associated_expressions::AssociatedExpression;
 use vantage_expressions::traits::datasource::ExprDataSource;
 use vantage_expressions::traits::expressive::ExpressiveEnum;
@@ -22,6 +23,7 @@ use crate::mysql::statements::MysqlSelect;
 use crate::mysql::types::{AnyMysqlType, MysqlType};
 use crate::primitives::identifier::ident;
 use crate::set_writes::id_exists_anywhere;
+use crate::sql_exec::mark_transport;
 use crate::table_writes::{
     guard_insert, guard_new_row, guard_patch, guard_replace, settle_failed_insert,
 };
@@ -160,10 +162,12 @@ async fn insert_returning_id(
         .execute(&mut *conn)
         .await
         .map_err(|e| {
-            let err = error!("MySQL insert failed", details = e.to_string());
+            let err = mark_transport(error!("MySQL insert failed", details = e.to_string()), &e);
             crate::sql_exec::failure_context::<MysqlDB>(err, sql, params)
         })?;
 
+    // The row is written by now: a lost connection here must not invite a
+    // retry that would insert it again under a new id.
     let row = sqlx::query("SELECT LAST_INSERT_ID() AS id")
         .fetch_one(&mut *conn)
         .await
@@ -432,12 +436,12 @@ impl TableSource for MysqlDB {
         table: &Table<Self, E>,
         id: &Self::Id,
         record: &Record<Self::Value>,
-    ) -> Result<Record<Self::Value>>
+    ) -> Result<Inserted<Self::Value>>
     where
         E: Entity<Self::Value>,
     {
         if let Some(existing) = guard_insert(self, table, id, record).await? {
-            return Ok(existing);
+            return Ok(Inserted::Existed(existing));
         }
 
         if let Err(e) = self.execute(&insert_with_id(table, id, record)).await {
@@ -446,6 +450,7 @@ impl TableSource for MysqlDB {
 
         self.get_table_value(table, id)
             .await?
+            .map(Inserted::Created)
             .ok_or_else(|| error!("Inserted row disappeared", id = id.clone()))
     }
 
@@ -554,10 +559,12 @@ impl TableSource for MysqlDB {
         // Both statements run on one connection, for LAST_INSERT_ID(): the
         // transaction's, when there is one.
         let Some(tx) = &self.tx else {
-            let mut conn =
-                self.pool().acquire().await.map_err(|e| {
-                    error!("MySQL acquire connection failed", details = e.to_string())
-                })?;
+            let mut conn = self.pool().acquire().await.map_err(|e| {
+                mark_transport(
+                    error!("MySQL acquire connection failed", details = e.to_string()),
+                    &e,
+                )
+            })?;
             return insert_returning_id(&mut conn, &sql, &params).await;
         };
         let mut open = tx.open().await?;

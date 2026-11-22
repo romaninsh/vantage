@@ -79,7 +79,7 @@ trait ReadableValueSet: ValueSet {
 }
 
 trait WritableValueSet: ValueSet {
-    async fn insert_value(&self, id: impl Into<Self::Id>, record: &Record<Self::Value>) -> Result<Record<Self::Value>>;
+    async fn insert_value(&self, id: impl Into<Self::Id>, record: &Record<Self::Value>) -> Result<Inserted<Self::Value>>;
     async fn replace_value(&self, id: impl Into<Self::Id>, record: &Record<Self::Value>) -> Result<Record<Self::Value>>;
     async fn patch_value(&self, id: impl Into<Self::Id>, partial: &Record<Self::Value>) -> Result<Record<Self::Value>>;
     async fn delete(&self, id: impl Into<Self::Id>) -> Result<()>;

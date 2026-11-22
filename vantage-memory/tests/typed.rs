@@ -2,6 +2,7 @@
 mod rollups;
 
 use ciborium::Value as CborValue;
+use vantage_dataset::Inserted;
 use vantage_expressions::traits::expressive::DeferredFn;
 use vantage_memory::prelude::*;
 use vantage_memory::{MemoryCondition, MemoryDB};
@@ -94,6 +95,9 @@ async fn crud_round_trip() {
         .insert_table_value(&t, &id, &Record::new())
         .await
         .unwrap();
+    let Inserted::Existed(again) = again else {
+        panic!("an existing id reports Existed, got {again:?}");
+    };
     assert_eq!(String::try_from(again["name"].clone()).unwrap(), "Scone");
     ds.delete_table_value(&t, &id).await.unwrap();
     ds.delete_table_value(&t, &id).await.unwrap();

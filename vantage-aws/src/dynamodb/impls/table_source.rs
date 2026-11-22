@@ -21,6 +21,7 @@ use indexmap::IndexMap;
 use serde_json::{Map as JsonMap, Value as JsonValue};
 
 use vantage_core::error;
+use vantage_dataset::Inserted;
 use vantage_dataset::traits::Result;
 use vantage_expressions::{
     Expression, expr_any,
@@ -307,7 +308,7 @@ impl TableSource for DynamoDB {
         table: &Table<Self, E>,
         id: &Self::Id,
         record: &Record<Self::Value>,
-    ) -> Result<Record<Self::Value>>
+    ) -> Result<Inserted<Self::Value>>
     where
         E: Entity<Self::Value>,
     {
@@ -328,7 +329,8 @@ impl TableSource for DynamoDB {
         // the stored item is returned, outside it the insert conflicts.
         // PutItem doesn't return the written item, so re-fetch it.
         match (outcome, self.get_table_value(table, id).await?) {
-            (_, Some(stored)) => Ok(stored),
+            (PutOutcome::Written, Some(stored)) => Ok(Inserted::Created(stored)),
+            (PutOutcome::ConditionFailed, Some(stored)) => Ok(Inserted::Existed(stored)),
             (PutOutcome::Written, None) => Err(error!(
                 "Inserted item not found by GetItem",
                 id = id.to_string()

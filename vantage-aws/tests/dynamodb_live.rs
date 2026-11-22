@@ -18,6 +18,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use indexmap::IndexMap;
 use vantage_aws::AwsAccount;
 use vantage_aws::dynamodb::{AnyDynamoType, AttributeValue, DynamoDB, DynamoId};
+use vantage_dataset::Inserted;
 use vantage_dataset::traits::{ReadableValueSet, WritableValueSet};
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
@@ -84,7 +85,9 @@ async fn insert_get_delete_round_trip() -> vantage_core::Result<()> {
     let id = DynamoId::new(format!("{}-cupcake", prefix));
     let rec = build_record(id.as_str(), "Cupcake", 120);
 
-    let written = table.insert_value(id.clone(), &rec).await?;
+    let Inserted::Created(written) = table.insert_value(id.clone(), &rec).await? else {
+        panic!("a fresh id should be Created");
+    };
     assert_eq!(
         written["name"].try_get::<String>(),
         Some("Cupcake".to_string()),
@@ -95,6 +98,12 @@ async fn insert_get_delete_round_trip() -> vantage_core::Result<()> {
         Some(120),
         "insert returned the wrong price"
     );
+
+    let again = build_record(id.as_str(), "Muffin", 999);
+    let Inserted::Existed(stored) = table.insert_value(id.clone(), &again).await? else {
+        panic!("a second insert of the same id should be Existed");
+    };
+    assert_eq!(stored["name"].try_get::<String>(), Some("Cupcake".into()));
 
     let fetched = table
         .get_value(id.clone())

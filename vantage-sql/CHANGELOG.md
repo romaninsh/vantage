@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.17.0 — 2026-11-22
+
+- **Breaking:** `insert_table_value` returns `Inserted<…>` on SQLite, PostgreSQL and MySQL, and
+  the vista shell's `insert` returns `(String, Inserted<CborValue>)`. Use `.into_record()` for the
+  row.
+- An insert reports `Created`, or `Existed` with the stored row when the id is already in the set.
+- Errors are `Unavailable` when the database couldn't be reached or the pool had no connection
+  (IO failure, pool timeout or closed, worker crash), including on begin, commit, connection
+  acquire and MySQL import. Errors the database returned (constraints, bad values) are not. A
+  MySQL insert that lost its connection after writing the row is not marked, so a retry can't
+  store it twice under a new id.
+- Requires vantage-core 1.4.0, vantage-dataset 2.0.0, vantage-table 5.0.0, vantage-vista 3.0.0.
+
 ## 0.16.1 — 2026-11-21
 
 - Fix: a `json` field of a contained record was stored on SQLite and MySQL as JSON text inside the

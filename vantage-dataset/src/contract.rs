@@ -16,6 +16,7 @@
 use vantage_core::{Result, VantageError};
 use vantage_types::{InvariantValue, Record};
 
+use crate::inserted::Inserted;
 use crate::traits::{ReadableValueSet, WritableValueSet};
 
 pub struct Fixture<'a, S: ReadableValueSet + WritableValueSet> {
@@ -49,6 +50,16 @@ fn has<V: InvariantValue>(r: &Record<V>, col: &str, expected: &V) -> bool {
     r.get(col).is_some_and(|v| v.value_eq(expected))
 }
 
+/// The stored row of an insert that must report `Existed`; panics with `rule`
+/// otherwise.
+fn existed<V>(inserted: Inserted<V>, rule: &str) -> Record<V> {
+    match inserted {
+        Inserted::Existed(r) => r,
+        Inserted::Created(_) => panic!("{rule}: reported Created"),
+        Inserted::Accepted => panic!("{rule}: reported Accepted"),
+    }
+}
+
 /// The error of a write that must fail; panics with `rule` if it succeeded.
 /// Stands in for `expect_err`, which would need `Debug` on every backend's
 /// value type.
@@ -79,10 +90,12 @@ where
     all.insert_value(id("k1"), &rec(vec![("name", text("a"))]))
         .await
         .expect("insert");
-    let again = all
-        .insert_value(id("k1"), &rec(vec![("name", text("b"))]))
-        .await
-        .expect("insert of an existing id must succeed");
+    let again = existed(
+        all.insert_value(id("k1"), &rec(vec![("name", text("b"))]))
+            .await
+            .expect("insert of an existing id must succeed"),
+        "insert of an existing id",
+    );
     assert!(
         has(&again, "name", &text("a")),
         "insert of an existing id must return the stored row"
@@ -150,11 +163,13 @@ where
     S::Value: InvariantValue,
 {
     let t = f.text;
-    let stored = f
-        .set
-        .insert_value((f.id)("in1"), &rec(vec![("name", t("changed"))]))
-        .await
-        .expect("insert of an id already in the set must succeed");
+    let stored = existed(
+        f.set
+            .insert_value((f.id)("in1"), &rec(vec![("name", t("changed"))]))
+            .await
+            .expect("insert of an id already in the set must succeed"),
+        "insert of an id already in the set",
+    );
     assert!(
         has(&stored, "name", &t("a")),
         "insert of an existing id must return the stored row"

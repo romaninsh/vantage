@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.0 — 2026-11-22
+
+- `axum_action::error_response` maps `ErrorKind::Unavailable` to 503 Service Unavailable.
+- Requires vantage-core 1.4.0, vantage-diorama 2.0.0, vantage-dataset 2.0.0.
+
 ## 0.7.3 — 2026-11-11
 
 - `axum_action::error_response` maps `ErrorKind::InvalidValue` to 422 Unprocessable Entity,

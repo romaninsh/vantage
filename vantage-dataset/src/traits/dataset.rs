@@ -190,7 +190,10 @@ where
     /// untouched; an id held outside the set is `Conflict`; a new entity
     /// must fit the set.
     ///
-    /// **Returns**: Entity as it was stored.
+    /// **Returns**: Entity as it was stored, for both a new and an existing
+    /// id. A backend that only accepts the write
+    /// ([`Inserted::Accepted`](crate::Inserted::Accepted)) returns `entity`
+    /// as given; use `insert_value` to tell the cases apart.
     ///
     /// # Use Case
     /// Generate unique ID and store centity while avoiding duplicates.

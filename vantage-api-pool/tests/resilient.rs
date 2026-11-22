@@ -97,6 +97,22 @@ async fn caps_parallelism() {
 }
 
 #[tokio::test]
+async fn a_request_builder_error_is_final_and_not_retried() {
+    let server = MockServer::start().await;
+    mount_status(&server, 200).await;
+    let client = local_client().retry(fast_retry(3)).build();
+    let url = server.uri();
+    let err = client
+        .execute(|h| h.get(&url).header("x-bad", "a\nb"))
+        .await
+        .unwrap_err();
+    assert_eq!(err.kind_name(), "build");
+    assert!(err.is_final(), "{err}");
+    assert_eq!(err.attempts, 1);
+    assert_eq!(requests(&server).await, 0);
+}
+
+#[tokio::test]
 async fn error_carries_status_and_attempts() {
     let server = MockServer::start().await;
     mount_status(&server, 404).await;

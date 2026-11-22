@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::error;
+use vantage_dataset::Inserted;
 use vantage_dataset::traits::{ReadableValueSet, Result};
 use vantage_expressions::Expression;
 use vantage_expressions::traits::associated_expressions::AssociatedExpression;
@@ -17,6 +18,7 @@ use vantage_expressions::traits::expressive::DeferredFn;
 
 use crate::RestApi;
 use crate::rest::api::Order;
+use crate::rest::insert::Delivered;
 
 /// The error every write and server-side aggregate returns.
 fn unsupported(method: &'static str) -> vantage_core::VantageError {
@@ -283,13 +285,15 @@ impl TableSource for RestApi {
     }
 
     /// POSTs the record to the table's `api.insert` target; the id is not
-    /// sent. A table without `api.insert` refuses.
+    /// sent. A table without `api.insert` refuses. The answer body is not
+    /// read: a success is `Created` with the record as sent, and a 202 or a
+    /// batching target is `Accepted`.
     async fn insert_table_value<E>(
         &self,
         _table: &Table<Self, E>,
         _id: &Self::Id,
         record: &Record<Self::Value>,
-    ) -> Result<Record<Self::Value>>
+    ) -> Result<Inserted<Self::Value>>
     where
         E: Entity<Self::Value>,
         Self: Sized,
@@ -297,10 +301,14 @@ impl TableSource for RestApi {
         if !self.has_insert() {
             return Err(unsupported("insert_table_value"));
         }
-        self.table_insert()?
-            .send(std::slice::from_ref(record))
+        let delivered = self
+            .table_insert()?
+            .deliver_records(std::slice::from_ref(record))
             .await?;
-        Ok(record.clone())
+        Ok(match delivered {
+            Delivered::Stored => Inserted::Created(record.clone()),
+            Delivered::Queued => Inserted::Accepted,
+        })
     }
 
     async fn replace_table_value<E>(

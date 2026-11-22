@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.0 — 2026-11-22
+
+- **Breaking:** `insert_table_value` returns `Inserted<AnyRedbType>`. Use `.into_record()` for the
+  row.
+- An insert reports `Created`, or `Existed` with the stored row when the id is already in the
+  set.
+- Requires vantage-dataset 2.0.0, vantage-table 5.0.0.
+
 ## 0.8.4 — 2026-11-16
 
 - Requires vantage-table 4.0.0.

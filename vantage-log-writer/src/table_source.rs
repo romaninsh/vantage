@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use indexmap::IndexMap;
 use serde_json::Value;
 use vantage_core::{Result, error};
+use vantage_dataset::Inserted;
 use vantage_expressions::Expression;
 use vantage_expressions::traits::associated_expressions::AssociatedExpression;
 use vantage_expressions::traits::datasource::{DataSource, ExprDataSource};
@@ -176,7 +177,7 @@ impl TableSource for LogWriter {
         table: &Table<Self, E>,
         id: &Self::Id,
         record: &Record<Self::Value>,
-    ) -> Result<Record<Self::Value>>
+    ) -> Result<Inserted<Self::Value>>
     where
         E: Entity<Self::Value>,
         Self: Sized,
@@ -188,7 +189,9 @@ impl TableSource for LogWriter {
             .send(WriteOp::Append { path, line })
             .await
             .map_err(|e| error!("log writer channel closed", detail = e.to_string()))?;
-        Ok(projected)
+        // Queued for the writer task, which appends and flushes later and
+        // only logs a failed write: nothing is confirmed here.
+        Ok(Inserted::Accepted)
     }
 
     async fn replace_table_value<E>(

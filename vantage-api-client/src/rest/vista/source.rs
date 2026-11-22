@@ -18,7 +18,8 @@ use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::{Result, error};
-use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet, WritableValueSet};
+use vantage_dataset::Inserted;
+use vantage_dataset::traits::{ReadableValueSet, WritableValueSet};
 use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Record};
@@ -253,22 +254,17 @@ impl TableShell for RestApiTableShell {
 
     /// POSTs the record through the table, so its insert hooks run. The
     /// endpoint answers with no row or id: the id is the one given, or empty,
-    /// and the row is the record as sent.
+    /// and a stored row is the record as sent. The id is never sent, so an
+    /// insert without one goes the same way under the empty id and reports
+    /// the same outcome.
     async fn insert(
         &self,
         id: Option<&str>,
         record: &Record<CborValue>,
-    ) -> Result<(String, Record<CborValue>)> {
-        match id {
-            Some(id) => {
-                let stored = self.table.insert_value(id, record).await?;
-                Ok((id.to_string(), stored))
-            }
-            None => {
-                let id = self.table.insert_return_id_value(record).await?;
-                Ok((id, record.clone()))
-            }
-        }
+    ) -> Result<(String, Inserted<CborValue>)> {
+        let id = id.unwrap_or_default();
+        let inserted = self.table.insert_value(id, record).await?;
+        Ok((id.to_string(), inserted))
     }
 
     /// A REST API has no transactions: inside one, the shell works as it

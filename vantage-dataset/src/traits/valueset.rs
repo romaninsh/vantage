@@ -1,5 +1,6 @@
 use std::pin::Pin;
 
+use crate::inserted::Inserted;
 use crate::record::ActiveRecord;
 
 use super::Result;
@@ -135,7 +136,7 @@ pub trait ReadableValueSet: ValueSet {
 /// | operation | row in the set | row exists outside the set | no such row |
 /// |---|---|---|---|
 /// | `delete(id)` | deleted, `Ok(())` | untouched, `Ok(())` | `Ok(())` |
-/// | `insert_value(id, r)` | untouched, returns the stored row | `Conflict` where the backend can see it; never an overwrite | inserted; must fit the set, else `Conflict` |
+/// | `insert_value(id, r)` | untouched, `Existed` with the stored row | `Conflict` where the backend can see it; never an overwrite | inserted; must fit the set, else `Conflict` |
 /// | `patch_value(id, p)` | applied; `Conflict` if the result leaves the set | `NotFound` | `NotFound` |
 /// | `replace_value(id, r)` | replaced; `Conflict` if it leaves the set | `Conflict` where verifiable | created; must fit the set |
 /// | `delete_all()` | deletes exactly the set | — | — |
@@ -153,11 +154,14 @@ pub trait ReadableValueSet: ValueSet {
 pub trait WritableValueSet: ValueSet {
     /// Insert value with a specific ID (often generated) (HTTP POST with ID)
     ///
-    /// **Idempotent**: an id already in the set returns the stored row
-    /// untouched; an id held outside the set is `Conflict`; a new row must
-    /// fit the set.
+    /// **Idempotent**: an id already in the set is [`Inserted::Existed`] with
+    /// the stored row, untouched; an id held outside the set is `Conflict`; a
+    /// new row must fit the set and is [`Inserted::Created`] with the row as
+    /// stored.
     ///
-    /// **Returns**: Record as it was stored.
+    /// A backend that confirms later or never (queue, webhook, batched API)
+    /// returns [`Inserted::Accepted`]: the caller may assume the row will be
+    /// stored, but it may yet be rejected or turn out to be a duplicate.
     ///
     /// # Use Case
     /// Generate unique ID and store record while avoiding duplicates.
@@ -165,7 +169,7 @@ pub trait WritableValueSet: ValueSet {
         &self,
         id: impl Into<Self::Id> + Send,
         record: &Record<Self::Value>,
-    ) -> Result<Record<Self::Value>>;
+    ) -> Result<Inserted<Self::Value>>;
 
     /// Replace the entire record at the specified ID (HTTP PUT)
     ///

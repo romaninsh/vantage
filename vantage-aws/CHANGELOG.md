@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.11.0 — 2026-11-22
+
+- **Breaking:** `insert_table_value` returns `Inserted<…>`. Use `.into_record()` for the row.
+- A DynamoDB insert reports `Created` when `PutItem` wrote the item, or `Existed` with the stored
+  item when its condition found the id already in the set. The other AWS tables still refuse
+  inserts.
+- Requests that got no response (connect, TLS, timeout, body read) fail `Unavailable`, and so do
+  error responses with a retryable status (`408`, `429`, `5xx`) or a throttling or timeout error
+  code (`ThrottlingException`, `ProvisionedThroughputExceededException`, `SlowDown`, …).
+  `LimitExceededException` is not: several services use it for a hard quota.
+- Requires vantage-api-pool 1.4.0, vantage-core 1.4.0, vantage-dataset 2.0.0, vantage-table 5.0.0,
+  vantage-vista 3.0.0.
+
 ## 0.10.1 — 2026-11-17
 
 - Lockfile follows the published feedback round-up crates; no code changes.

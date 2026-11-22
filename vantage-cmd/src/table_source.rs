@@ -16,6 +16,7 @@ use indexmap::IndexMap;
 use serde_json::json;
 
 use vantage_core::error;
+use vantage_dataset::Inserted;
 use vantage_dataset::traits::Result;
 use vantage_expressions::{
     Expression, Expressive, expr_any,
@@ -181,7 +182,7 @@ impl TableSource for Cmd {
         _table: &Table<Self, E>,
         _id: &Self::Id,
         _record: &Record<Self::Value>,
-    ) -> Result<Record<Self::Value>>
+    ) -> Result<Inserted<Self::Value>>
     where
         E: Entity<Self::Value>,
         Self: Sized,

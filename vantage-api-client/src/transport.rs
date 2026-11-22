@@ -386,8 +386,20 @@ const BODY_IN_ERROR: usize = 500;
 
 /// A transport failure as an error. `url`, the server's body and the
 /// transport's own text all pass through `redaction`: a client error can
-/// quote the request URL.
+/// quote the request URL. A failure the pool calls transient
+/// (`!is_final()`) is marked unavailable.
 pub(crate) fn client_error(
+    e: ClientError,
+    what: &'static str,
+    url: &str,
+    redaction: &Redaction,
+) -> VantageError {
+    let fin = e.is_final();
+    let err = describe_client_error(e, what, url, redaction);
+    if fin { err } else { err.mark_unavailable() }
+}
+
+fn describe_client_error(
     e: ClientError,
     what: &'static str,
     url: &str,

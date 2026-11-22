@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::{Result, error};
+use vantage_dataset::Inserted;
 
 use super::{MockShell, Rec};
 use crate::{
@@ -131,7 +132,11 @@ impl TableShell for MockShell {
     /// Stores the record and reports it back carrying its key in the id
     /// column the metadata declares. Without an id, the key is the record's
     /// own `id` field, else the next auto id.
-    async fn insert(&self, id: Option<&str>, record: &Rec) -> Result<(String, Rec)> {
+    async fn insert(
+        &self,
+        id: Option<&str>,
+        record: &Rec,
+    ) -> Result<(String, Inserted<CborValue>)> {
         let id = match id {
             Some(id) => id.to_string(),
             None => match record.get("id") {
@@ -144,13 +149,13 @@ impl TableShell for MockShell {
         let mut data = self.data.lock().unwrap();
         if let Some(existing) = data.get(&key) {
             if self.in_set(existing)? {
-                return Ok((key, existing.clone()));
+                return Ok((key, Inserted::Existed(existing.clone())));
             }
             return Err(error!("Record is held outside the set", id = id).mark_conflict());
         }
         let stored = self.fit(record, &key)?;
         data.insert(key.clone(), stored.clone());
-        Ok((key, stored))
+        Ok((key, Inserted::Created(stored)))
     }
 
     async fn replace(&self, id: &str, record: &Rec) -> Result<Rec> {

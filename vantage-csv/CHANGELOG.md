@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.0 — 2026-11-22
+
+- **Breaking:** `insert_table_value` returns `Inserted<…>` (vantage-table 5). CSV still refuses
+  inserts.
+- Requires vantage-dataset 2.0.0, vantage-table 5.0.0, vantage-vista 3.0.0.
+
 ## 0.8.0 — 2026-11-20
 
 - Columns declared `date`, `time` and `timestamp` read in the carrier forms of

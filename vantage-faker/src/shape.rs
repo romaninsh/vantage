@@ -117,7 +117,9 @@ impl ShapedShell {
             let into_period =
                 Duration::from_nanos((elapsed.as_nanos() % period.as_nanos().max(1)) as u64);
             if into_period >= period.saturating_sub(off.down) {
-                return Err(error!("shaped source is offline (scheduled outage)"));
+                return Err(
+                    error!("shaped source is offline (scheduled outage)").mark_unavailable()
+                );
             }
         }
 
@@ -145,7 +147,7 @@ impl ShapedShell {
             tokio::time::sleep(delay).await;
         }
         if failed {
-            return Err(error!("shaped source request failed (injected fault)"));
+            return Err(error!("shaped source request failed (injected fault)").mark_unavailable());
         }
         Ok(())
     }

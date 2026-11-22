@@ -774,6 +774,36 @@ async fn a_dotted_alias_on_a_typed_table_writes_the_nested_path() -> TestResult 
     Ok(())
 }
 
+/// A second insert of a stored id writes nothing and reports `Existed` with
+/// the stored row, read back through the vista's column paths.
+#[tokio::test]
+async fn mongodb_insert_existing_id_reports_existed() -> TestResult {
+    use vantage_table::column::core::Column;
+
+    let (db, name) = setup().await;
+    let table = Table::<MongoDB, EmptyEntity>::new("people", db.clone())
+        .with_id_column("_id")
+        .with_column(Column::<AnyMongoType>::new("city").with_alias("address.city"));
+    let vista = db.vista_factory().from_table(table)?;
+    let city = |c: &str| -> Record<CborValue> {
+        [("city".to_string(), CborValue::Text(c.into()))]
+            .into_iter()
+            .collect()
+    };
+
+    let first = vista.insert_value("p1", &city("Paris")).await?;
+    assert!(matches!(first, Inserted::Created(_)), "{first:?}");
+
+    let again = vista.insert_value("p1", &city("Rome")).await?;
+    let Inserted::Existed(stored) = again else {
+        panic!("expected Existed, got {again:?}");
+    };
+    assert_eq!(stored["city"], CborValue::Text("Paris".into()));
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
 /// A path two levels deep (`place.geo.lat`) makes a `contains_one` inside a
 /// `contains_one`: a patch merges into the stored `place.geo`, fields stored
 /// beside it at either level stay, an insert builds the nested documents,

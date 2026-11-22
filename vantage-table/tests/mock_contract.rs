@@ -1,11 +1,13 @@
 //! MockTableSource meets the write contract.
 
 use serde_json::{Value, json};
+use vantage_dataset::Inserted;
 use vantage_dataset::contract::{self, Fixture};
 use vantage_expressions::{Expression, ExpressiveEnum};
 use vantage_table::mocks::mock_table_source::MockTableSource;
 use vantage_table::table::Table;
-use vantage_types::EmptyEntity;
+use vantage_table::traits::table_source::TableSource;
+use vantage_types::{EmptyEntity, Record};
 
 fn eq(col: &str, v: Value) -> Expression<Value> {
     Expression::new(
@@ -59,6 +61,28 @@ macro_rules! mock_check {
 mock_check!(mock_contract_insert, contract::check_insert);
 mock_check!(mock_contract_patch, contract::check_patch);
 mock_check!(mock_contract_delete_all, contract::check_delete_all);
+
+#[tokio::test]
+async fn mock_insert_table_value_reports_created_then_existed() {
+    let (all, _) = tables().await;
+    let src = all.data_source();
+    let id = "k".to_string();
+
+    let created = src
+        .insert_table_value(&all, &id, &Record::from(json!({"name": "first"})))
+        .await
+        .unwrap();
+    let Inserted::Created(stored) = created else {
+        panic!("first insert is Created, got {created:?}");
+    };
+    assert_eq!(stored["name"], json!("first"));
+
+    let again = src
+        .insert_table_value(&all, &id, &Record::from(json!({"name": "second"})))
+        .await
+        .unwrap();
+    assert_eq!(again, Inserted::Existed(stored), "returns the stored row");
+}
 
 #[tokio::test]
 async fn mock_refuses_conditions_it_cannot_check() {

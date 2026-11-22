@@ -189,7 +189,12 @@ async fn vista_dotted_set_confines_inserts() {
     let err = set.insert_value("e", &Record::new()).await.unwrap_err();
     assert!(err.is_conflict(), "{err}");
 
-    let stored = set.insert_value("i", &origin("India")).await.unwrap();
+    let stored = set
+        .insert_value("i", &origin("India"))
+        .await
+        .unwrap()
+        .into_record()
+        .unwrap();
     assert_eq!(stored["origin"], origin("India")["origin"]);
     assert!(!stored.contains_key("origin.country"), "{stored:?}");
     let row = store.table("item").get("i").unwrap();

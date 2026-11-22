@@ -8,6 +8,7 @@
 //! v1 lists the collection and filters client-side.
 
 use serde_json::Value as JsonValue;
+use vantage_api_pool::is_retryable_status;
 use vantage_core::{Result, error};
 
 use crate::cluster::KubernetesCluster;
@@ -29,11 +30,16 @@ impl KubernetesCluster {
             })?;
 
         let resp: JsonValue = self.client().request(request).await.map_err(|e| {
-            error!(
+            let err = error!(
                 "Kubernetes list request failed",
                 path = path.clone(),
                 details = e.to_string()
-            )
+            );
+            if is_unavailable(&e) {
+                err.mark_unavailable()
+            } else {
+                err
+            }
         })?;
 
         match resp.get("items").and_then(|v| v.as_array()) {
@@ -54,6 +60,17 @@ impl KubernetesCluster {
                 ))
             }
         }
+    }
+}
+
+/// The API server couldn't be reached (connection, TLS stream, timeout) or
+/// answered a retryable status. Any other 4xx answer such as `Forbidden` or
+/// `NotFound` is a refusal.
+fn is_unavailable(e: &kube::Error) -> bool {
+    match e {
+        kube::Error::Api(resp) => is_retryable_status(resp.code),
+        kube::Error::HyperError(_) | kube::Error::Service(_) | kube::Error::ReadEvents(_) => true,
+        _ => false,
     }
 }
 

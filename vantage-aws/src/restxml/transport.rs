@@ -25,6 +25,7 @@ use vantage_core::{Result, VantageError, error};
 use crate::account::AwsAccount;
 use crate::condition::AwsCondition;
 use crate::sign::sign_v4;
+use crate::unavailable::{classify_send, classify_status};
 
 /// SHA256 of the empty body — used as the `x-amz-content-sha256`
 /// value for every read-only request we issue (always GET / no body).
@@ -210,30 +211,32 @@ pub(crate) async fn restxml_call(
     };
 
     let resp = req.send().await.map_err(|e| {
-        error!(
+        let err = error!(
             "AWS REST-XML request failed",
             url = url.as_str(),
             method = method,
-            detail = e
-        )
+            detail = &e
+        );
+        classify_send(err, &e)
     })?;
 
     let status = resp.status();
-    let response_text = resp
-        .text()
-        .await
-        .map_err(|e| error!("Failed to read AWS REST-XML response body", detail = e))?;
+    let response_text = resp.text().await.map_err(|e| {
+        let err = error!("Failed to read AWS REST-XML response body", detail = &e);
+        classify_send(err, &e)
+    })?;
 
     if !status.is_success() {
         if let Some(err) = s3_permanent_redirect_error(status.as_u16(), &response_text) {
             return Err(err);
         }
-        return Err(error!(
+        let err = error!(
             "AWS REST-XML request returned error status",
             url = url.as_str(),
             status = status.as_u16(),
-            body = response_text
-        ));
+            body = response_text.as_str()
+        );
+        return Err(classify_status(err, status.as_u16(), &response_text));
     }
 
     Ok(response_text)

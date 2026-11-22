@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::{ErrorKind, Result, VantageError};
+use vantage_dataset::Inserted;
 #[cfg(feature = "rhai")]
 use vantage_rhai::rhai;
 use vantage_types::Record;
@@ -94,6 +95,7 @@ fn reissue(err: &VantageError) -> VantageError {
         ErrorKind::Conflict => fresh.mark_conflict(),
         ErrorKind::Forbidden => fresh.mark_forbidden(),
         ErrorKind::InvalidValue => fresh.mark_invalid_value(),
+        ErrorKind::Unavailable => fresh.mark_unavailable(),
         _ => fresh,
     }
 }
@@ -164,7 +166,11 @@ impl TableShell for TxShell {
         self.ready_mut()?.add_order(column, dir)
     }
 
-    async fn insert(&self, id: Option<&str>, record: &Rec) -> Result<(String, Rec)> {
+    async fn insert(
+        &self,
+        id: Option<&str>,
+        record: &Rec,
+    ) -> Result<(String, Inserted<CborValue>)> {
         let out = self.ready()?.insert(id, record).await?;
         Ok(self.written(out))
     }

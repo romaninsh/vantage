@@ -170,9 +170,16 @@ impl CallPolicy {
     }
 }
 
-/// Statuses a retry may fix. Everything else in 4xx is final.
-pub(crate) fn is_retryable_status(status: u16) -> bool {
+/// Statuses a retry may fix (`408`, `429`, `5xx`). Everything else in 4xx is final.
+pub fn is_retryable_status(status: u16) -> bool {
     status == 408 || status == 429 || (500..600).contains(&status)
+}
+
+/// Whether a `reqwest` send or body-read error may pass on a retry. Every
+/// one is (connect, timeout, reset, body) except a builder error: a bad
+/// header, URL or client setting fails the same way each time.
+pub fn is_transient_reqwest_error(e: &reqwest::Error) -> bool {
+    !e.is_builder()
 }
 
 /// What one attempt's answer tells the circuit breaker. Retryability and

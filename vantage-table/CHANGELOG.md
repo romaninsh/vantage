@@ -1,5 +1,18 @@
 # Changelog
 
+## 5.0.0 — 2026-11-22
+
+- **Breaking:** `TableSource::insert_table_value` returns `Inserted<Self::Value>`. A backend
+  returns `Created` with the row as stored, `Existed` with the stored row when the id is already
+  in the set, or `Accepted` when it confirms later. `Table`'s `insert_value` passes it through;
+  use `.into_record()` where a `Record` was expected.
+- After-insert hooks no longer run on `Existed`: nothing was written. On `Accepted` they run with
+  the row as sent.
+- `WritableDataSet::insert` on a `Table` returns the entity as given when the backend answers
+  `Accepted`.
+- The mock `TableSource` reports `Created` and `Existed`.
+- Requires vantage-dataset 2.0.0, vantage-vista 3.0.0.
+
 ## 4.2.0 — 2026-11-20
 
 - Every insert, replace and patch that touches a contained relation's host column goes through the

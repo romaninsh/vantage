@@ -1,6 +1,7 @@
 use serde_json::{Value, json};
 
 use vantage_dataset::{
+    Inserted,
     im::{ImDataSource, ImTable},
     traits::{InsertableValueSet, ReadableValueSet, WritableValueSet},
 };
@@ -95,21 +96,19 @@ async fn insert_return_id_value_generates_an_id_for_a_null_id() {
 }
 
 #[tokio::test]
-async fn insert_value_is_idempotent() {
+async fn im_insert_value_reports_created_then_existed() {
     let ds = ImDataSource::new();
     let t = table(&ds, "users");
+    let first = rec(json!({"name": "first"}));
 
-    let stored = t
-        .insert_value("k", &rec(json!({"name": "first"})))
-        .await
-        .unwrap();
-    assert_eq!(stored["name"], json!("first"));
+    let created = t.insert_value("k", &first).await.unwrap();
+    assert_eq!(created, Inserted::Created(first.clone()));
 
     let again = t
         .insert_value("k", &rec(json!({"name": "second"})))
         .await
         .unwrap();
-    assert_eq!(again["name"], json!("first"), "returns the stored row");
+    assert_eq!(again, Inserted::Existed(first), "returns the stored row");
     let row = t.get_value("k").await.unwrap().unwrap();
     assert_eq!(row["name"], json!("first"), "never overwrites");
 }

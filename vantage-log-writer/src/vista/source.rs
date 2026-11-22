@@ -11,6 +11,7 @@ use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use serde_json::Value;
 use vantage_core::Result;
+use vantage_dataset::Inserted;
 use vantage_dataset::traits::WritableValueSet;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
@@ -120,24 +121,21 @@ impl TableShell for LogWriterTableShell {
         Ok(())
     }
 
-    /// Append one line. With no `id`, the record's own id column is used,
-    /// or a fresh ULID. The returned row is the projected line as queued.
+    /// Queue one line. With no `id`, the record's own id column is used,
+    /// or a fresh ULID. The line is appended later, so the answer is
+    /// [`Inserted::Accepted`].
     async fn insert(
         &self,
         id: Option<&str>,
         record: &Record<CborValue>,
-    ) -> Result<(String, Record<CborValue>)> {
+    ) -> Result<(String, Inserted<CborValue>)> {
         let json_record = cbor_record_to_json(record);
         let id = match id {
             Some(id) => id.to_string(),
             None => extract_or_generate_id(&json_record, self.table.data_source().id_column()),
         };
-        let stored = self.table.insert_value(&id, &json_record).await?;
-        let stored = stored
-            .into_iter()
-            .map(|(k, v)| (k, vantage_types::json_to_cbor(v)))
-            .collect();
-        Ok((id, stored))
+        self.table.insert_value(&id, &json_record).await?;
+        Ok((id, Inserted::Accepted))
     }
 
     /// A log file has no transactions: inside one, a line is appended as

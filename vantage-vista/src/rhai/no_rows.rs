@@ -11,6 +11,7 @@
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::{Result, VantageError, error};
+use vantage_dataset::Inserted;
 use vantage_types::Record;
 
 use crate::{
@@ -82,7 +83,11 @@ forward_table_shell!(NoRowsShell, inner, {
         unsupported(Capability::Subscribe)
     }
 
-    async fn insert(&self, _id: Option<&str>, _record: &Rec) -> Result<(String, Rec)> {
+    async fn insert(
+        &self,
+        _id: Option<&str>,
+        _record: &Rec,
+    ) -> Result<(String, Inserted<CborValue>)> {
         Err(nothing_to_write_into())
     }
     async fn replace(&self, _id: &str, _record: &Rec) -> Result<Rec> {

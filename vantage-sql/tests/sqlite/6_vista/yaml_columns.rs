@@ -76,7 +76,9 @@ async fn vista_temporal_columns_read_typed() -> TestResult {
                 id,
                 &cells(&[("due", "2026-12-10"), ("at", at), ("starts", starts)]),
             )
-            .await?;
+            .await?
+            .into_record()
+            .unwrap();
         assert_eq!(written["due"], tagged(1004, "2026-12-10"), "{id}");
         assert_eq!(
             written["at"],

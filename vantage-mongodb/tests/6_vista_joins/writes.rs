@@ -26,7 +26,11 @@ async fn dotted_column_stripped_on_write() -> TestResult {
     fresh.insert("client_id".into(), AnyMongoType::untyped(ids.marty.into()));
     fresh.insert("item".into(), AnyMongoType::untyped("plutonium".into()));
     fresh.insert("client.name".into(), AnyMongoType::untyped("Biff".into()));
-    let inserted = table.insert_value(MongoId::from("o5"), &fresh).await?;
+    let inserted = table
+        .insert_value(MongoId::from("o5"), &fresh)
+        .await?
+        .into_record()
+        .unwrap();
     assert_eq!(
         inserted.get("client.name").map(|v| v.value().clone()),
         Some(bson::Bson::String("Marty".into()))

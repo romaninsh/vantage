@@ -133,8 +133,9 @@ where
         .fetch_all(executor)
         .await
         .map_err(|e| {
-            let err =
-                refusal(&e).unwrap_or_else(|| error!(D::QUERY_FAILED, details = e.to_string()));
+            let err = refusal(&e).unwrap_or_else(|| {
+                mark_transport(error!(D::QUERY_FAILED, details = e.to_string()), &e)
+            });
             failure_context::<D>(err, sql, params)
         })?;
 
@@ -197,8 +198,10 @@ where
         Ok(done) => done,
         Err(e) => match refusal(&e) {
             Some(err) => return Err(failure_context::<D>(err, sql, params)),
-            None => Err(e)
-                .with_context(|| failure_context::<D>(error!(D::STATEMENT_FAILED), sql, params))?,
+            None => {
+                let err = mark_transport(error!(D::STATEMENT_FAILED), &e);
+                Err(e).with_context(|| failure_context::<D>(err, sql, params))?
+            }
         },
     };
     Ok(D::rows_affected(&done))
@@ -214,6 +217,19 @@ fn refusal(e: &sqlx::Error) -> Option<VantageError> {
     let code = db.code()?;
     matches!(code.as_ref(), "1811" | "P0001" | "45000")
         .then(|| error!(db.message().to_string(), refused_by = "database").mark_invalid_value())
+}
+
+/// `err` marked Unavailable when `e` says the database couldn't be reached
+/// or the pool had no connection to give: a retry may land. Errors the
+/// database itself returned (constraints, bad values) stay as they are.
+pub(crate) fn mark_transport(err: VantageError, e: &sqlx::Error) -> VantageError {
+    match e {
+        sqlx::Error::Io(_)
+        | sqlx::Error::PoolTimedOut
+        | sqlx::Error::PoolClosed
+        | sqlx::Error::WorkerCrashed => err.mark_unavailable(),
+        _ => err,
+    }
 }
 
 /// Resolve deferred parameters (which may query other databases), then

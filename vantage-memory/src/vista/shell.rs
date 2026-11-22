@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::{Context, Result, error};
+use vantage_dataset::Inserted;
 use vantage_dataset::invariants::conform;
 use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet, WritableValueSet};
 use vantage_table::pagination::Pagination;
@@ -248,16 +249,24 @@ impl TableShell for MemoryTableShell {
         self.push_order(column, dir)
     }
 
-    async fn insert(&self, id: Option<&str>, record: &Rec) -> Result<(String, Rec)> {
+    async fn insert(
+        &self,
+        id: Option<&str>,
+        record: &Rec,
+    ) -> Result<(String, Inserted<CborValue>)> {
         let Some(id) = id else {
             let native = self.native(record)?;
             let id = self.table.insert_return_id_value(&native).await?;
             let inserted = self.inserted(&id).await?;
-            return Ok((id, inserted));
+            return Ok((id, Inserted::Created(inserted)));
         };
         let native = self.native_as(id, record)?;
-        let inserted = self.table.insert_value(id.to_string(), &native).await?;
-        Ok((id.to_string(), self.read_form(&inserted)?))
+        let inserted = match self.table.insert_value(id.to_string(), &native).await? {
+            Inserted::Created(row) => Inserted::Created(self.read_form(&row)?),
+            Inserted::Existed(row) => Inserted::Existed(self.read_form(&row)?),
+            Inserted::Accepted => Inserted::Accepted,
+        };
+        Ok((id.to_string(), inserted))
     }
 
     async fn replace(&self, id: &str, record: &Rec) -> Result<Rec> {

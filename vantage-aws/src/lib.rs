@@ -62,6 +62,7 @@ mod query;
 mod restjson;
 mod restxml;
 mod sign;
+mod unavailable;
 
 pub mod dynamodb;
 pub mod models;

@@ -4,6 +4,7 @@ use std::pin::Pin;
 use async_trait::async_trait;
 use futures_core::Stream;
 use indexmap::IndexMap;
+use vantage_dataset::Inserted;
 use vantage_dataset::traits::Result;
 use vantage_expressions::{
     Expression, Expressive,
@@ -359,17 +360,19 @@ pub trait TableSource: DataSource + Clone + 'static {
         Self: Sized;
 
     /// Insert a record by ID. **Confined and idempotent:** when the id is
-    /// already stored in `table.conditions()`, return the stored row unchanged;
-    /// when it is held by a row outside the set, fail with `Conflict`; a new
-    /// row must fit the conditions, else `Conflict` and nothing is stored.
-    /// Refuse with `Unsupported` when a condition can be neither applied nor
-    /// evaluated. See `WritableValueSet` for the table.
+    /// already stored in `table.conditions()`, return `Existed` with the stored
+    /// row unchanged; when it is held by a row outside the set, fail with
+    /// `Conflict`; a new row must fit the conditions, else `Conflict` and
+    /// nothing is stored, and is `Created` with the row as stored. A backend
+    /// that confirms later returns `Accepted`. Refuse with `Unsupported` when
+    /// a condition can be neither applied nor evaluated. See
+    /// `WritableValueSet` for the table.
     async fn insert_table_value<E>(
         &self,
         table: &Table<Self, E>,
         id: &Self::Id,
         record: &Record<Self::Value>,
-    ) -> Result<Record<Self::Value>>
+    ) -> Result<Inserted<Self::Value>>
     where
         E: Entity<Self::Value>,
         Self: Sized;

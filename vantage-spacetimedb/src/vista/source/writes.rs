@@ -11,6 +11,7 @@
 
 use ciborium::Value as CborValue;
 use vantage_core::{Result, error};
+use vantage_dataset::Inserted;
 use vantage_vista::Capability;
 
 use super::{Rec, SpacetimeTableShell};
@@ -24,7 +25,7 @@ impl SpacetimeTableShell {
         &self,
         id: Option<&str>,
         record: &Rec,
-    ) -> Result<(String, Rec)> {
+    ) -> Result<(String, Inserted<CborValue>)> {
         self.require(Capability::Insert)?;
         let key = self.key_column()?;
         let Some(id) = id else {
@@ -36,17 +37,17 @@ impl SpacetimeTableShell {
             .mark_unsupported());
         };
         if let Some(stored) = self.get_row(id).await? {
-            return Ok((id.to_string(), stored));
+            return Ok((id.to_string(), Inserted::Existed(stored)));
         }
         if let Err(err) = self.insert_keyed(key, id, record).await {
             // A row created concurrently since the check above fails the
             // insert on its unique key; it is then the stored row.
             return match self.get_row(id).await? {
-                Some(stored) => Ok((id.to_string(), stored)),
+                Some(stored) => Ok((id.to_string(), Inserted::Existed(stored))),
                 None => Err(err),
             };
         }
-        Ok((id.to_string(), self.read_back(id).await?))
+        Ok((id.to_string(), Inserted::Created(self.read_back(id).await?)))
     }
 
     /// Replace row `id`, creating it when missing.

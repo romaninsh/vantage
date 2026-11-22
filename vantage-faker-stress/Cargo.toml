@@ -14,8 +14,8 @@ name = "faker-stress"
 path = "src/main.rs"
 
 [dependencies]
-vantage-faker = { version = "3.0.0", path = "../vantage-faker", features = ["sim", "serde"] }
-vantage-memory = { version = "4.0.0", path = "../vantage-memory" }
+vantage-faker = { version = "4.0.0", path = "../vantage-faker", features = ["sim", "serde"] }
+vantage-memory = { version = "5.0.0", path = "../vantage-memory" }
 vantage-diorama = { path = "../vantage-diorama" }
 vantage-vista = { path = "../vantage-vista" }
 vantage-core = { path = "../vantage-core" }

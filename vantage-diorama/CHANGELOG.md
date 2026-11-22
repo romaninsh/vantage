@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.0.0 — 2026-11-22
+
+- **Breaking:** a Dio's `TableShell::insert` returns `(String, Inserted<CborValue>)`. It is
+  `Existed` with the cached row when the Dio already holds the id, and `Created` otherwise. The
+  master's own outcome isn't passed through yet, so a master `Accepted` or `Existed` still
+  reports `Created`. Callers use `.into_record()`.
+- A master write that fails `Unavailable` stays `Unavailable` after the Dio wraps it.
+- Requires vantage-core 1.4.0, vantage-dataset 2.0.0, vantage-table 5.0.0, vantage-vista 3.0.0.
+
 ## 1.8.0 — 2026-11-20
 
 - Fix: after a write through a Dio settles, the cache, its confirmed copy and the write's

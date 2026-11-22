@@ -3,7 +3,7 @@
 
 use serde_json::Value;
 use vantage_dataset::{
-    InsertableValueSet, ReadableValueSet, WritableValueSet, im::ImTable, traits::Result,
+    InsertableValueSet, Inserted, ReadableValueSet, WritableValueSet, im::ImTable, traits::Result,
 };
 use vantage_types::{Entity, Record};
 
@@ -18,12 +18,12 @@ impl MockTableSource {
         table: &Table<Self, E>,
         id: &String,
         record: &Record<Value>,
-    ) -> Result<Record<Value>> {
+    ) -> Result<Inserted<Value>> {
         Self::ensure_confinable(table)?;
         let im_table = ImTable::<E>::new(&self.im_data_source, table.table_name());
         if let Some(existing) = im_table.get_value(id).await? {
             if Self::row_in_set(table, &existing)? {
-                return Ok(existing);
+                return Ok(Inserted::Existed(existing));
             }
             return Err(Self::outside(id));
         }
@@ -33,7 +33,7 @@ impl MockTableSource {
         if !Self::row_in_set(table, &full)? {
             return Err(Self::misfit(id));
         }
-        im_table.replace_value(id, &full).await
+        Ok(Inserted::Created(im_table.replace_value(id, &full).await?))
     }
 
     pub(super) async fn replace_row<E: Entity<Value>>(

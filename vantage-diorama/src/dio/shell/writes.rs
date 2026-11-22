@@ -5,6 +5,7 @@
 
 use ciborium::Value as CborValue;
 use vantage_core::{Result, error};
+use vantage_dataset::Inserted;
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_types::Record;
 
@@ -23,7 +24,7 @@ impl DioShell {
         &self,
         id: Option<&str>,
         record: &Record<CborValue>,
-    ) -> Result<(String, Record<CborValue>)> {
+    ) -> Result<(String, Inserted<CborValue>)> {
         let Some(id) = id else {
             let record = self.rule().conform(record)?;
             let outcome = self.dio().flash(ChangeFlash::insert_new(record)).await?;
@@ -34,10 +35,10 @@ impl DioShell {
                 )
             })?;
             let stored = self.stored(outcome, &id, None);
-            return Ok((id, stored));
+            return Ok((id, Inserted::Created(stored)));
         };
         if let Some(row) = self.row_in_view_or_conflict(id).await? {
-            return Ok((id.to_string(), row));
+            return Ok((id.to_string(), Inserted::Existed(row)));
         }
         let record = self.rule().conform(record)?;
         let outcome = self
@@ -46,7 +47,7 @@ impl DioShell {
             .await?;
         let settled = outcome.id.clone().unwrap_or_else(|| id.to_string());
         let stored = self.stored(outcome, &settled, Some(&record));
-        Ok((settled, stored))
+        Ok((settled, Inserted::Created(stored)))
     }
 
     pub(super) async fn replace_row(

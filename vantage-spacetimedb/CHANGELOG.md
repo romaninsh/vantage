@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.8.0 — 2026-11-22
+
+- **Breaking:** the vista shell's `insert` returns `(String, Inserted<CborValue>)`. Use
+  `.into_record()` for the row.
+- An insert reports `Created` with the row read back, or `Existed` with the stored row when the
+  id is already in the set.
+- HTTP requests that got no answer (connect, TLS, timeout, body read) and responses with a
+  retryable status (`408`, `429`, `5xx` other than the reducer-failure `530` / `531`) fail
+  `Unavailable`; so does a WebSocket connect that hit
+  an IO error or a retryable HTTP status.
+- Requires vantage-api-pool 1.4.0, vantage-core 1.4.0, vantage-dataset 2.0.0, vantage-vista 3.0.0.
+
 ## 0.7.2 — 2026-11-17
 
 - Lockfile follows the published feedback round-up crates; no code changes.

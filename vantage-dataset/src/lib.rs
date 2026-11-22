@@ -7,11 +7,13 @@ pub mod traits;
 #[cfg(feature = "contract")]
 pub mod contract;
 pub mod im;
+pub mod inserted;
 pub mod invariants;
 pub mod mocks;
 pub mod prelude;
 
 pub use im::{ImDataSource, ImTable};
+pub use inserted::Inserted;
 pub use mocks::csv::{AnyCsvType, CsvType, CsvTypePersistence};
 pub use record::ActiveEntity;
 pub use traits::{

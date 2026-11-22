@@ -4,7 +4,8 @@
 //! these endpoints cover everything else and are what a dynamic client needs,
 //! since none of them require generated bindings.
 
-use vantage_core::{Result, error};
+use vantage_api_pool::{is_retryable_status, is_transient_reqwest_error};
+use vantage_core::{Result, VantageError, error};
 
 use super::Inner;
 use crate::schema::SchemaVersion;
@@ -76,11 +77,12 @@ pub(crate) async fn database_info(inner: &Inner) -> Result<DatabaseInfo> {
         request = request.bearer_auth(token);
     }
     let response = request.send().await.map_err(|e| {
-        error!(
+        let err = error!(
             "could not read SpacetimeDB database info",
             url = url.clone(),
             error = e.to_string()
-        )
+        );
+        transport_error(err, &e)
     })?;
 
     let caller_identity = response
@@ -119,11 +121,12 @@ pub(crate) async fn sql_json(inner: &Inner, statement: &str) -> Result<String> {
         request = request.bearer_auth(token);
     }
     let response = request.send().await.map_err(|e| {
-        error!(
+        let err = error!(
             "SpacetimeDB SQL request failed",
             url = url.clone(),
             error = e.to_string()
-        )
+        );
+        transport_error(err, &e)
     })?;
     read_body(response, "sql", &url, Some(statement)).await
 }
@@ -153,11 +156,12 @@ pub(crate) async fn call_reducer(
         request = request.bearer_auth(token);
     }
     let response = request.send().await.map_err(|e| {
-        error!(
+        let err = error!(
             "SpacetimeDB reducer call failed",
             reducer = reducer.to_string(),
             error = e.to_string()
-        )
+        );
+        transport_error(err, &e)
     })?;
     read_body(response, "call", &url, None).await
 }
@@ -168,12 +172,13 @@ async fn get_text(inner: &Inner, url: &str, what: &str) -> Result<String> {
         request = request.bearer_auth(token);
     }
     let response = request.send().await.map_err(|e| {
-        error!(
+        let err = error!(
             "SpacetimeDB request failed",
             what = what.to_string(),
             url = url.to_string(),
             error = e.to_string()
-        )
+        );
+        transport_error(err, &e)
     })?;
     read_body(response, what, url, None).await
 }
@@ -198,13 +203,14 @@ async fn read_body(
     let body = match response.text().await {
         Ok(body) => body,
         Err(e) => {
-            return Err(error!(
+            let err = error!(
                 "could not read the SpacetimeDB response body",
                 what = what.to_string(),
                 url = url.to_string(),
                 status = status.as_u16() as i64,
                 error = e.to_string()
-            ));
+            );
+            return Err(transport_error(err, &e));
         }
     };
     if status.is_success() {
@@ -222,7 +228,7 @@ async fn read_body(
         _ => "",
     };
 
-    Err(error!(
+    let err = error!(
         format!(
             "SpacetimeDB {} request returned {}{}: {}",
             what,
@@ -234,5 +240,39 @@ async fn read_body(
         url = url.to_string(),
         status = status.as_u16() as i64,
         statement = statement.unwrap_or_default().to_string()
-    ))
+    );
+    Err(if is_unavailable_status(status.as_u16()) {
+        err.mark_unavailable()
+    } else {
+        err
+    })
+}
+
+/// Whether an error status is worth retrying. SpacetimeDB answers a reducer
+/// that failed or panicked with 530 / 531: the module's own refusal, final.
+fn is_unavailable_status(status: u16) -> bool {
+    is_retryable_status(status) && !matches!(status, 530 | 531)
+}
+
+/// A request that got no answer (connect, TLS, timeout, body read) is
+/// `Unavailable`; one reqwest refused to build is a bug and stays as is.
+fn transport_error(err: VantageError, source: &reqwest::Error) -> VantageError {
+    if is_transient_reqwest_error(source) {
+        err.mark_unavailable()
+    } else {
+        err
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn spacetimedb_reducer_failure_530_is_final() {
+        assert!(!is_unavailable_status(530));
+        assert!(!is_unavailable_status(531));
+        assert!(is_unavailable_status(503));
+        assert!(!is_unavailable_status(400));
+    }
 }

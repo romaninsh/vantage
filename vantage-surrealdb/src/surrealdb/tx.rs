@@ -19,6 +19,8 @@ use surreal_client::{SurrealClient, SurrealError};
 use vantage_core::{Result, VantageError, error};
 use vantage_vista::{TxBackend, TxSlot};
 
+use super::impls::expr_data_source::is_transport_failure;
+
 pub(crate) type SurrealTx = TxSlot<SurrealBegin>;
 
 /// `TransactionConflict`: another transaction committed to the same records.
@@ -46,8 +48,12 @@ impl TxBackend for SurrealBegin {
     type Open = SurrealOpen;
 
     async fn begin(&self) -> Result<SurrealOpen> {
-        let begin_failed =
-            |e: SurrealError| error!("couldn't begin the transaction", details = e.to_string());
+        let begin_failed = |e: SurrealError| {
+            marked(
+                error!("couldn't begin the transaction", details = e.to_string()),
+                &e,
+            )
+        };
         // The shared lock is held only to copy the connection settings.
         let shared = self.shared.lock().await.clone();
         let client = shared.reconnect().await.map_err(begin_failed)?;
@@ -67,10 +73,12 @@ impl TxBackend for SurrealBegin {
     /// A failed explicit cancel still cancels: the connection closes when
     /// `open` drops.
     async fn rollback(&self, open: SurrealOpen) -> Result<()> {
-        open.client
-            .cancel(&open.txn)
-            .await
-            .map_err(|e| error!("transaction rollback failed", details = e.to_string()))
+        open.client.cancel(&open.txn).await.map_err(|e| {
+            marked(
+                error!("transaction rollback failed", details = e.to_string()),
+                &e,
+            )
+        })
     }
 }
 
@@ -79,6 +87,7 @@ fn marked(err: VantageError, cause: &SurrealError) -> VantageError {
         SurrealError::ServerError { code, .. } if *code == TRANSACTION_CONFLICT => {
             err.mark_conflict()
         }
+        _ if is_transport_failure(cause) => err.mark_unavailable(),
         _ => err,
     }
 }

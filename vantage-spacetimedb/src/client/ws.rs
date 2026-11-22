@@ -37,9 +37,11 @@ use spacetimedb_client_api_messages::websocket::v2::{
 };
 use spacetimedb_sats::ProductType;
 use tokio::sync::mpsc;
+use tokio_tungstenite::tungstenite::Error as WsError;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::header::{AUTHORIZATION, SEC_WEBSOCKET_PROTOCOL};
 use tokio_tungstenite::tungstenite::protocol::Message;
+use vantage_api_pool::is_retryable_status;
 use vantage_core::{Result, error};
 
 use super::Inner;
@@ -113,11 +115,18 @@ pub(crate) async fn subscribe(
     let (mut socket, _response) = tokio_tungstenite::connect_async(request)
         .await
         .map_err(|e| {
-            error!(
+            let err = error!(
                 "could not open a SpacetimeDB subscription socket",
                 url = ws_url.clone(),
                 error = e.to_string()
-            )
+            );
+            match &e {
+                WsError::Io(_) => err.mark_unavailable(),
+                WsError::Http(resp) if is_retryable_status(resp.status().as_u16()) => {
+                    err.mark_unavailable()
+                }
+                _ => err,
+            }
         })?;
 
     let query_set_id = QuerySetId::new(NEXT_QUERY_SET.fetch_add(1, Ordering::Relaxed) as u32);

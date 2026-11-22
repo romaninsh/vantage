@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.0.0 — 2026-11-22
+
+- **Breaking:** `TableShell::insert` returns `(String, Inserted<CborValue>)` instead of
+  `(String, Record<CborValue>)`, and `Vista::insert_value` returns `Inserted<CborValue>`. Shell
+  implementors wrap the stored row in `Inserted::Created` or `Inserted::Existed`, or answer
+  `Inserted::Accepted` when the backend confirms later; callers use `.into_record()`.
+- Forwarding, contained and transaction shells pass the outcome through; inserting a row with
+  children reports the main row's outcome. The mock shell reports `Created` and `Existed`.
+- A transaction re-issues an `Unavailable` error as `Unavailable`, so a caller can still tell
+  retry from refusal.
+- Requires vantage-core 1.4.0, vantage-dataset 2.0.0.
+
 ## 2.13.0 — 2026-11-20
 
 - `contract::check_temporal` (feature `contract`): dates, times and instants written through a

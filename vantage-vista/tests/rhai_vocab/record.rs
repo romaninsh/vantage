@@ -292,7 +292,7 @@ forward_table_shell!(SpyShell, inner, {
         &self,
         id: Option<&str>,
         record: &Record<CborValue>,
-    ) -> Result<(String, Record<CborValue>)> {
+    ) -> Result<(String, vantage_dataset::Inserted<CborValue>)> {
         let stored = self.inner.insert(id, record).await?;
         if self.lose_next_insert.swap(false, Ordering::SeqCst) {
             return Err(vantage_core::error!("connection reset"));

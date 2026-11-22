@@ -12,6 +12,7 @@ use vantage_core::error;
 
 use crate::account::AwsAccount;
 use crate::sign::sign_v4;
+use crate::unavailable::{classify_send, classify_status};
 
 /// Issue an AWS Query request and return the XML response body as a
 /// string. `service` is both the SigV4 service name and the URL
@@ -82,27 +83,29 @@ pub(crate) async fn query_call(
     }
 
     let resp = req.send().await.map_err(|e| {
-        error!(
+        let err = error!(
             "AWS Query request failed",
             url = url.as_str(),
             service = service,
-            detail = e
-        )
+            detail = &e
+        );
+        classify_send(err, &e)
     })?;
 
     let status = resp.status();
-    let response_text = resp
-        .text()
-        .await
-        .map_err(|e| error!("Failed to read AWS Query response body", detail = e))?;
+    let response_text = resp.text().await.map_err(|e| {
+        let err = error!("Failed to read AWS Query response body", detail = &e);
+        classify_send(err, &e)
+    })?;
 
     if !status.is_success() {
-        return Err(error!(
+        let err = error!(
             "AWS Query request returned error status",
             service = service,
             status = status.as_u16(),
-            body = response_text
-        ));
+            body = response_text.as_str()
+        );
+        return Err(classify_status(err, status.as_u16(), &response_text));
     }
 
     Ok(response_text)

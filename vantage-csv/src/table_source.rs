@@ -2,6 +2,7 @@ use crate::operation::CsvOperation;
 use async_trait::async_trait;
 use indexmap::IndexMap;
 use vantage_core::error;
+use vantage_dataset::Inserted;
 use vantage_dataset::traits::Result;
 use vantage_expressions::Expression;
 use vantage_expressions::Expressive;
@@ -185,7 +186,7 @@ impl TableSource for Csv {
         _table: &Table<Self, E>,
         _id: &Self::Id,
         _record: &Record<Self::Value>,
-    ) -> Result<Record<Self::Value>>
+    ) -> Result<Inserted<Self::Value>>
     where
         E: Entity<Self::Value>,
         Self: Sized,

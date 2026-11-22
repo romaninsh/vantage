@@ -95,6 +95,34 @@ macro_rules! safe_writes_tests {
             .await;
         }
 
+        /// A second insert of a stored id writes nothing and reports the
+        /// stored row as `Existed`.
+        #[tokio::test]
+        async fn sql_insert_existing_id_reports_existed() {
+            use vantage_dataset::Inserted;
+            let all = item("insert_existing_id_reports_existed").await;
+            let name = |s: &str| <$value>::from(s.to_string());
+            let first = all
+                .insert_value("a", &rec(&[("name", "first".into())]))
+                .await
+                .unwrap();
+            let Inserted::Created(created) = first else {
+                panic!("a new id is Created, got: {first:?}");
+            };
+            assert_eq!(created.get("name"), Some(&name("first")));
+
+            let second = all
+                .insert_value("a", &rec(&[("name", "second".into())]))
+                .await
+                .unwrap();
+            let Inserted::Existed(existed) = second else {
+                panic!("a stored id is Existed, got: {second:?}");
+            };
+            assert_eq!(existed.get("name"), Some(&name("first")));
+            let stored = all.get_value("a").await.unwrap().expect("row a");
+            assert_eq!(stored.get("name"), Some(&name("first")));
+        }
+
         #[tokio::test]
         async fn operator_condition_on_absent_column_is_a_conflict() {
             let all = item("operator_condition_on_absent_column_is_a_conflict").await;
