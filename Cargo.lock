@@ -5726,7 +5726,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-aws"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -5782,7 +5782,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-cmd"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "async-trait",
  "ciborium",
