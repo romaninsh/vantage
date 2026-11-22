@@ -193,7 +193,7 @@ async fn commit(
     let stored = outcome.record.as_ref();
     let accepted = outcome.confirmation == Confirmation::Accepted;
     let whole = stored.filter(|_| outcome.confirmation == Confirmation::Existed);
-    let confirmed = confirm(pending, flash, staged, stored, whole.is_some());
+    let confirmed = confirm(pending, flash, staged, stored, whole.is_some(), accepted);
     if confirmed {
         match whole {
             Some(row) => inner.cache.insert_value(id, row).await?,

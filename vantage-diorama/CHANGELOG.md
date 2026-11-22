@@ -9,7 +9,8 @@
 - An insert the master reports `Existed` caches the stored row as the master holds it and
   publishes that row, not the flash's values.
 - An `Accepted` insert is cached as `CacheStatus::Unconfirmed` and not published. The next read
-  confirms it, or drops it when the master doesn't list it.
+  confirms it, or drops it when the master doesn't list it. A failed write over such a row puts
+  it back still unconfirmed.
 - Writes to the master run under `Priority::Essential`, so the transports retry `Unavailable`
   failures. `Tuning::write_deadline` (default 180 s, `with_write_deadline`) bounds each write:
   past it the flash fails `Unavailable`, rolls back and reports the error. Each Dio has its own

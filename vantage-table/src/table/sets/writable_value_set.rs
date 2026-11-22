@@ -147,10 +147,11 @@ where
         };
         let erased = self.as_entity_erased();
         let outcome = run_before_delete(self.before_delete_hooks(), &id, &former, erased).await?;
-        if let HookReturn::Proceed = outcome {
-            self.retry_unavailable(delete).await?;
-        }
-        run_after(self.after_delete_hooks(), &id, &former, None, erased).await?;
+        let deleted = match outcome {
+            HookReturn::Proceed => self.delete_judged(self, &id, &former).await?,
+            HookReturn::Handled => former,
+        };
+        run_after(self.after_delete_hooks(), &id, &deleted, None, erased).await?;
         Ok(())
     }
 
@@ -224,13 +225,45 @@ where
             proceed.push(matches!(outcome, HookReturn::Proceed));
         }
         for ((id, former), proceed) in rows.iter().zip(proceed) {
-            if proceed {
-                self.retry_unavailable(|_| self.data_source().delete_table_value(&whole, id))
-                    .await?;
-            }
-            run_after(self.after_delete_hooks(), id, former, None, erased).await?;
+            let deleted = if proceed {
+                self.delete_judged(&whole, id, former).await?
+            } else {
+                former.clone()
+            };
+            run_after(self.after_delete_hooks(), id, &deleted, None, erased).await?;
         }
         Ok(())
+    }
+
+    /// Delete `id` from `table` once its before-delete hooks passed on
+    /// `former`, retrying an unavailable source. A retry may follow an
+    /// attempt that landed, and the id may hold another row by then, so it
+    /// re-reads the row: gone means the earlier attempt deleted it, and a row
+    /// still there goes through the before-delete hooks again before it is
+    /// deleted. Returns the row the after-delete hooks get.
+    async fn delete_judged<E2: Entity<T::Value>>(
+        &self,
+        table: &Table<T, E2>,
+        id: &T::Id,
+        former: &Record<T::Value>,
+    ) -> Result<Record<T::Value>> {
+        self.retry_unavailable(|retried| async move {
+            if !retried {
+                self.data_source().delete_table_value(table, id).await?;
+                return Ok(former.clone());
+            }
+            let Some(current) = table.stored_value(id).await? else {
+                return Ok(former.clone());
+            };
+            let erased = self.as_entity_erased();
+            if let HookReturn::Proceed =
+                run_before_delete(self.before_delete_hooks(), id, &current, erased).await?
+            {
+                self.data_source().delete_table_value(table, id).await?;
+            }
+            Ok(current)
+        })
+        .await
     }
 
     /// The replace after its checks, over the row as the set holds it

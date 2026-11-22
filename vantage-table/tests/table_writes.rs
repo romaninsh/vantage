@@ -1834,3 +1834,31 @@ async fn no_single_op_retry_inside_a_transaction() {
     assert!(err.is_unavailable(), "{err}");
     assert_eq!(table.data_source().write_attempts(), 1);
 }
+
+/// The first delete lands but its reply is lost; during the back-off another
+/// writer puts a new row under the id. The retry judges that row with the
+/// before-delete hooks before deleting it.
+#[tokio::test(start_paused = true)]
+async fn a_retried_delete_judges_the_row_it_finds() {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let src = MockTableSource::new()
+        .with_data("t", vec![json!({"id": "1", "name": "old"})])
+        .await
+        .with_lost_write_replies(1);
+    let table = declared(MockTable::new("t", src).with_id_column("id"))
+        .with_hook(Hook::BeforeDelete(seeing_former(seen.clone())));
+    let writer = declared(MockTable::new("t", table.data_source().clone()).with_id_column("id"));
+    let other = tokio::spawn(async move {
+        while writer.data_source().write_attempts() == 0 {
+            tokio::task::yield_now().await;
+        }
+        writer
+            .insert_value("1", &rec(json!({"name": "new"})))
+            .await
+            .unwrap();
+    });
+    Priority::Essential.scope(table.delete("1")).await.unwrap();
+    other.await.unwrap();
+    assert_eq!(*seen.lock().unwrap(), [json!("old"), json!("new")]);
+    assert!(table.get_value("1").await.unwrap().is_none());
+}

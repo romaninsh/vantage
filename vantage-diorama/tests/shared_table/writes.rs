@@ -438,6 +438,12 @@ async fn accepted_insert_stays_unconfirmed_until_read() -> Result<()> {
     assert_eq!(cached_cell(&a, "y", "amount").await.as_deref(), Some("3"));
     assert_eq!(statuses(&backend, "y").await?, [CacheStatus::Unconfirmed]);
 
+    // The master doesn't hold y, so a patch of it fails; the rollback puts
+    // the accepted row back as it was, still unconfirmed.
+    assert!(a.flash(patch("y", &[("amount", "4")])).await.is_err());
+    assert_eq!(cached_cell(&a, "y", "amount").await.as_deref(), Some("3"));
+    assert_eq!(statuses(&backend, "y").await?, [CacheStatus::Unconfirmed]);
+
     // The sentinel: a write B hears, published after y would have been.
     a.flash(patch("x", &[("amount", "11")])).await?;
     assert_eq!(events_until(&mut b_bus, "changed x").await, ["changed x"]);

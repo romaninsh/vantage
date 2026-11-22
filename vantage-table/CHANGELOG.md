@@ -8,6 +8,9 @@
   inside a transaction and generated-id inserts make one attempt.
 - An insert retried after an `Unavailable` failure that then comes back `Existed` reports
   `Created`: the earlier attempt landed, so after-insert hooks run once.
+- A retried delete on a table with before-delete hooks re-reads the row first. A row that is gone
+  was deleted by the earlier attempt; a row still there, possibly a new one under the same id,
+  goes through the before-delete hooks again, and the after-delete hooks get it.
 - `MockTableSource` gains `with_unavailable_writes(n)`, `with_lost_write_replies(n)`,
   `write_attempts()` and `with_transaction(tx)`.
 - Requires vantage-core 1.5.0.
