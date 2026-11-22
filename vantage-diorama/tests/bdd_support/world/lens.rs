@@ -140,9 +140,13 @@ impl LensBuilderState {
             });
         }
 
+        // Writes wait on the real-time sqlite runtime, so this paused clock
+        // would jump straight to a write deadline.
+        let mut tuning = Tuning::default().without_write_deadline();
         if let Some(enabled) = self.refresh_on_open {
-            b = b.tuning(Tuning::default().with_refresh_on_open(enabled));
+            tuning = tuning.with_refresh_on_open(enabled);
         }
+        b = b.tuning(tuning);
 
         b.build()
     }

@@ -1615,7 +1615,7 @@ pub vantage_diorama::Tuning::aggregate_debounce: core::time::Duration
 pub vantage_diorama::Tuning::augment_workers: usize
 pub vantage_diorama::Tuning::refresh_on_open: bool
 pub vantage_diorama::Tuning::viewport_debounce: core::time::Duration
-pub vantage_diorama::Tuning::write_deadline: core::time::Duration
+pub vantage_diorama::Tuning::write_deadline: core::option::Option<core::time::Duration>
 pub vantage_diorama::Tuning::write_queue: usize
 impl vantage_diorama::Tuning
 pub fn vantage_diorama::Tuning::with_aggregate_debounce(self, core::time::Duration) -> Self
@@ -1624,6 +1624,7 @@ pub fn vantage_diorama::Tuning::with_refresh_on_open(self, bool) -> Self
 pub fn vantage_diorama::Tuning::with_viewport_debounce(self, core::time::Duration) -> Self
 pub fn vantage_diorama::Tuning::with_write_deadline(self, core::time::Duration) -> Self
 pub fn vantage_diorama::Tuning::with_write_queue(self, usize) -> Self
+pub fn vantage_diorama::Tuning::without_write_deadline(self) -> Self
 impl core::clone::Clone for vantage_diorama::Tuning
 pub fn vantage_diorama::Tuning::clone(&self) -> Self
 impl core::default::Default for vantage_diorama::Tuning

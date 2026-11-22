@@ -103,20 +103,29 @@ pub(crate) fn writing_for(inner: &Arc<DioInner>) -> bool {
 /// fails `Unavailable` and rolls back like any other failure, and a panicking
 /// route is a failed write too, so the worker carries on with the next flash.
 async fn write_within_deadline(dio: &Dio, flash: ChangeFlash) -> Result<FlashOutcome> {
-    let deadline = dio.inner.lens.tuning().write_deadline;
     let write = AssertUnwindSafe(run_write_through(dio, flash)).catch_unwind();
+    let Some(deadline) = dio.inner.lens.tuning().write_deadline else {
+        return Priority::Essential
+            .scope(write)
+            .await
+            .unwrap_or_else(|_| Err(panicked(dio)));
+    };
     match Priority::Essential.scope(timeout(deadline, write)).await {
         Ok(Ok(written)) => written,
-        Ok(Err(_)) => Err(error!(
-            "the write route panicked",
-            table = dio.inner.cache_table_name
-        )),
+        Ok(Err(_)) => Err(panicked(dio)),
         Err(_) => Err(error!(
             format!("the write gave up after {deadline:?}"),
             table = dio.inner.cache_table_name
         )
         .mark_unavailable()),
     }
+}
+
+fn panicked(dio: &Dio) -> VantageError {
+    error!(
+        "the write route panicked",
+        table = dio.inner.cache_table_name
+    )
 }
 
 /// Run a flash through the Lens's writer, or the default write-to-master
