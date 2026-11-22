@@ -445,6 +445,8 @@ async fn accepted_insert_stays_unconfirmed_until_read() -> Result<()> {
             .is_some_and(|row| row.status == RowStatus::Unconfirmed)
     })
     .await;
+    let y = a.record_scenery("y").open().await?;
+    assert_eq!(y.status(), RecordStatus::Unconfirmed);
 
     // The master doesn't hold y, so a patch of it fails; the rollback puts
     // the accepted row back as it was, still unconfirmed.

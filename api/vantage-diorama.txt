@@ -876,6 +876,7 @@ pub vantage_diorama::RecordStatus::Fresh
 pub vantage_diorama::RecordStatus::Incomplete
 pub vantage_diorama::RecordStatus::Loading
 pub vantage_diorama::RecordStatus::NotFound
+pub vantage_diorama::RecordStatus::Unconfirmed
 impl core::clone::Clone for vantage_diorama::RecordStatus
 pub fn vantage_diorama::RecordStatus::clone(&self) -> Self
 impl core::cmp::Eq for vantage_diorama::RecordStatus
