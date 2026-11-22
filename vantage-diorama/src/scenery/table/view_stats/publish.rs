@@ -90,6 +90,7 @@ impl SharedRows {
             filters: Vec::new(),
             state: ViewState::derive(&load, &rows, fetching),
             pending_writes: rows.pending_write,
+            unconfirmed: rows.unconfirmed,
             failed: rows.failed,
         }
     }

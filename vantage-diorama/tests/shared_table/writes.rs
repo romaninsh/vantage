@@ -10,7 +10,7 @@ use vantage_dataset::Inserted;
 use vantage_dataset::traits::{ReadableValueSet, WritableValueSet};
 use vantage_diorama::{
     Cache, CacheBackend, CacheStatus, CacheTable, ChangeFlash, Confirmation, FlashKind,
-    FlashOutcome, Lens, MemoryCache, RecordStatus,
+    FlashOutcome, Lens, MemoryCache, RecordStatus, RowStatus,
 };
 use vantage_types::Record;
 use vantage_vista::{TableShell, Vista, forward_table_shell};
@@ -429,6 +429,7 @@ async fn accepted_insert_stays_unconfirmed_until_read() -> Result<()> {
     let a = lens.dio(master).build().await?;
     let b = a.derive().with_condition(client("7")).build().await?;
     let _b_view = view_showing(&b, &["x"]).await;
+    let a_view = view_showing(&a, &["x", "z"]).await;
     let mut b_bus = b.subscribe_events();
 
     let outcome = a
@@ -437,6 +438,13 @@ async fn accepted_insert_stays_unconfirmed_until_read() -> Result<()> {
     assert_eq!(outcome.confirmation, Confirmation::Accepted);
     assert_eq!(cached_cell(&a, "y", "amount").await.as_deref(), Some("3"));
     assert_eq!(statuses(&backend, "y").await?, [CacheStatus::Unconfirmed]);
+    // A's own view shows the row, marked queued.
+    until("A's view shows y unconfirmed", async || {
+        a_view
+            .row_by_id("y")
+            .is_some_and(|row| row.status == RowStatus::Unconfirmed)
+    })
+    .await;
 
     // The master doesn't hold y, so a patch of it fails; the rollback puts
     // the accepted row back as it was, still unconfirmed.

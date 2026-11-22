@@ -38,11 +38,12 @@ pub(crate) use reindex::refresh_index;
 pub(crate) use splice::{splice_inserted, splice_removed};
 
 /// A cached row as the view shows it: `Fresh` once hydrated, `Incomplete`
-/// before.
+/// before, `Unconfirmed` while an accepted insert waits for a read.
 fn enriched(record: Record<ciborium::Value>, status: CacheStatus) -> EnrichedRecord {
     match status {
-        // An unconfirmed row is the whole value this Dio's insert staged.
-        CacheStatus::Complete | CacheStatus::Unconfirmed => EnrichedRecord::fresh(record),
+        CacheStatus::Complete => EnrichedRecord::fresh(record),
+        // The whole value this Dio's insert staged, not yet seen upstream.
+        CacheStatus::Unconfirmed => EnrichedRecord::unconfirmed(record),
         CacheStatus::Incomplete => EnrichedRecord::incomplete(record),
     }
 }

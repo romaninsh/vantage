@@ -110,6 +110,8 @@ pub struct RowStatusSummary {
     pub fresh: usize,
     pub incomplete: usize,
     pub pending_write: usize,
+    /// Accepted inserts no read has confirmed yet.
+    pub unconfirmed: usize,
     /// `LoadFailed` + `WriteFailed` combined.
     pub failed: usize,
 }

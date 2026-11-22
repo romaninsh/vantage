@@ -897,6 +897,7 @@ pub vantage_diorama::RowStatus::Incomplete
 pub vantage_diorama::RowStatus::LoadFailed
 pub vantage_diorama::RowStatus::LoadFailed::error: alloc::string::String
 pub vantage_diorama::RowStatus::PendingWrite
+pub vantage_diorama::RowStatus::Unconfirmed
 pub vantage_diorama::RowStatus::WriteFailed
 pub vantage_diorama::RowStatus::WriteFailed::error: alloc::string::String
 impl core::clone::Clone for vantage_diorama::RowStatus
@@ -1186,6 +1187,7 @@ pub fn vantage_diorama::EnrichedRecord::detail_failed(vantage_types::record::Rec
 pub fn vantage_diorama::EnrichedRecord::fresh(vantage_types::record::Record<ciborium::value::Value>) -> Self
 pub fn vantage_diorama::EnrichedRecord::incomplete(vantage_types::record::Record<ciborium::value::Value>) -> Self
 pub fn vantage_diorama::EnrichedRecord::pending_write(vantage_types::record::Record<ciborium::value::Value>) -> Self
+pub fn vantage_diorama::EnrichedRecord::unconfirmed(vantage_types::record::Record<ciborium::value::Value>) -> Self
 pub fn vantage_diorama::EnrichedRecord::write_failed(vantage_types::record::Record<ciborium::value::Value>, alloc::string::String) -> Self
 impl core::clone::Clone for vantage_diorama::EnrichedRecord
 pub fn vantage_diorama::EnrichedRecord::clone(&self) -> Self
@@ -1519,6 +1521,7 @@ pub vantage_diorama::RowStatusSummary::fresh: usize
 pub vantage_diorama::RowStatusSummary::incomplete: usize
 pub vantage_diorama::RowStatusSummary::loaded: usize
 pub vantage_diorama::RowStatusSummary::pending_write: usize
+pub vantage_diorama::RowStatusSummary::unconfirmed: usize
 impl core::clone::Clone for vantage_diorama::RowStatusSummary
 pub fn vantage_diorama::RowStatusSummary::clone(&self) -> Self
 impl core::cmp::Eq for vantage_diorama::RowStatusSummary
@@ -1679,6 +1682,7 @@ pub vantage_diorama::ViewStats::showing: core::option::Option<core::ops::range::
 pub vantage_diorama::ViewStats::state: vantage_diorama::ViewState
 pub vantage_diorama::ViewStats::total: core::option::Option<usize>
 pub vantage_diorama::ViewStats::total_exact: bool
+pub vantage_diorama::ViewStats::unconfirmed: usize
 impl vantage_diorama::ViewStats
 pub fn vantage_diorama::ViewStats::capped(self, usize) -> Self
 pub fn vantage_diorama::ViewStats::count(&self) -> vantage_diorama::ViewCount
