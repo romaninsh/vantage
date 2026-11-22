@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.0 — 2026-11-22
+
+- `Backoff { base, max }`: the exponential retry schedule (doubling from `base`, capped at `max`,
+  +0–25% jitter), moved here from vantage-api-pool so every retry loop shares it.
+  `Backoff::ESSENTIAL` is 250 ms → 10 s, the values essential calls use.
+
 ## 1.4.0 — 2026-11-22
 
 - `ErrorKind::Unavailable` for a backend that couldn't be reached or asked the caller to back

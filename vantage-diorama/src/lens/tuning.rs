@@ -29,6 +29,11 @@ pub struct Tuning {
     /// in a burst is acted on at once; whatever arrives during the cooldown
     /// is flushed once at its end, never dropped.
     pub aggregate_debounce: Duration,
+    /// How long one master write may take, its transport's retries included.
+    /// Past it the flash fails `Unavailable` and rolls back; the next read
+    /// brings in a write that landed just before the cut. Must be non-zero.
+    /// `None` lets a write retry until it lands.
+    pub write_deadline: Option<Duration>,
 }
 
 impl Default for Tuning {
@@ -39,6 +44,7 @@ impl Default for Tuning {
             augment_workers: 1,
             refresh_on_open: true,
             aggregate_debounce: Duration::from_millis(250),
+            write_deadline: Some(Duration::from_secs(180)),
         }
     }
 }
@@ -69,6 +75,19 @@ impl Tuning {
         self
     }
 
+    pub fn with_write_deadline(mut self, deadline: Duration) -> Self {
+        self.write_deadline = Some(deadline);
+        self
+    }
+
+    /// No write deadline. A test on paused tokio time whose writes wait on
+    /// another runtime needs this: the paused clock jumps to any deadline
+    /// while nothing local is runnable.
+    pub fn without_write_deadline(mut self) -> Self {
+        self.write_deadline = None;
+        self
+    }
+
     pub(crate) fn validate(&self) -> Result<()> {
         if self.write_queue == 0 {
             return Err(error!(
@@ -80,6 +99,12 @@ impl Tuning {
             return Err(error!(
                 "Tuning::augment_workers must be non-zero",
                 setting = "tuning.augment_workers"
+            ));
+        }
+        if self.write_deadline.is_some_and(|d| d.is_zero()) {
+            return Err(error!(
+                "Tuning::write_deadline must be non-zero",
+                setting = "tuning.write_deadline"
             ));
         }
         Ok(())

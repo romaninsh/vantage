@@ -114,9 +114,10 @@ pub(crate) struct PendingFlashGuard {
 }
 
 impl PendingFlashGuard {
-    /// The flash stages now over `pre`, the row the cache held before it.
-    pub(crate) fn stage(&mut self, pre: Option<&Record<CborValue>>) {
-        let seq = self.flight(|flight| flight.stage(pre));
+    /// The flash stages now over `pre`, the row the cache held before it;
+    /// `unconfirmed` when the cache held it as `CacheStatus::Unconfirmed`.
+    pub(crate) fn stage(&mut self, pre: Option<&Record<CborValue>>, unconfirmed: bool) {
+        let seq = self.flight(|flight| flight.stage(pre, unconfirmed));
         self.seq = Some(seq);
     }
 

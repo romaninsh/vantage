@@ -41,7 +41,8 @@ pub(crate) use splice::{splice_inserted, splice_removed};
 /// before.
 fn enriched(record: Record<ciborium::Value>, status: CacheStatus) -> EnrichedRecord {
     match status {
-        CacheStatus::Complete => EnrichedRecord::fresh(record),
+        // An unconfirmed row is the whole value this Dio's insert staged.
+        CacheStatus::Complete | CacheStatus::Unconfirmed => EnrichedRecord::fresh(record),
         CacheStatus::Incomplete => EnrichedRecord::incomplete(record),
     }
 }

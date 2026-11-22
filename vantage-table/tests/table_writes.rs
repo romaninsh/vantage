@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
+use vantage_core::Priority;
 use vantage_dataset::prelude::*;
 use vantage_table::prelude::*;
 use vantage_table::table::{
@@ -17,7 +18,7 @@ use vantage_table::table::{
 };
 use vantage_table::write_context::{RequestContext, Transport, WriteContext};
 use vantage_types::{EmptyEntity, Record};
-use vantage_vista::Capability;
+use vantage_vista::{Capability, Transaction};
 
 type MockTable = Table<MockTableSource, EmptyEntity>;
 type Log = Arc<Mutex<Vec<String>>>;
@@ -1758,4 +1759,106 @@ async fn write_context_carries_the_request() {
             );
         })
         .await;
+}
+
+// ---- unavailable sources ----
+// The clock is paused, so the back-off between attempts takes no real time.
+
+async fn source_with(faults: impl FnOnce(MockTableSource) -> MockTableSource) -> MockTable {
+    let src = MockTableSource::new().with_data("t", vec![]).await;
+    declared(MockTable::new("t", faults(src)))
+}
+
+#[tokio::test(start_paused = true)]
+async fn essential_write_retries_unavailable_until_it_lands() {
+    let table = source_with(|src| src.with_unavailable_writes(2)).await;
+    let inserted = Priority::Essential
+        .scope(table.insert_value("k1", &rec(json!({"name": "a"}))))
+        .await
+        .unwrap();
+    assert!(matches!(inserted, Inserted::Created(_)), "{inserted:?}");
+    assert_eq!(table.data_source().write_attempts(), 3);
+    assert!(table.get_value("k1").await.unwrap().is_some());
+}
+
+#[tokio::test(start_paused = true)]
+async fn background_write_makes_one_attempt() {
+    let table = source_with(|src| src.with_unavailable_writes(2)).await;
+    let err = table
+        .insert_value("k1", &rec(json!({"name": "a"})))
+        .await
+        .unwrap_err();
+    assert!(err.is_unavailable(), "{err}");
+    assert_eq!(table.data_source().write_attempts(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn conflict_is_never_retried() {
+    let (_, set) = sets().await;
+    let err = Priority::Essential
+        .scope(set.insert_value("out1", &rec(json!({"name": "x"}))))
+        .await
+        .unwrap_err();
+    assert!(err.is_conflict(), "{err}");
+    assert_eq!(set.data_source().write_attempts(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn essential_retry_after_an_ambiguous_failure_reports_created() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let table = source_with(|src| src.with_lost_write_replies(1))
+        .await
+        .with_hook(Hook::AfterInsert(counting_after(calls.clone())));
+    let inserted = Priority::Essential
+        .scope(table.insert_value("k1", &rec(json!({"name": "a"}))))
+        .await
+        .unwrap();
+    assert!(matches!(inserted, Inserted::Created(_)), "{inserted:?}");
+    assert_eq!(table.data_source().write_attempts(), 2);
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        1,
+        "after-insert hooks run once"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn no_single_op_retry_inside_a_transaction() {
+    let tx = Transaction::new();
+    let table =
+        source_with(|src| src.with_unavailable_writes(1).with_transaction(tx.clone())).await;
+    let err = Priority::Essential
+        .scope(table.insert_value("k1", &rec(json!({"name": "a"}))))
+        .await
+        .unwrap_err();
+    assert!(err.is_unavailable(), "{err}");
+    assert_eq!(table.data_source().write_attempts(), 1);
+}
+
+/// The first delete lands but its reply is lost; during the back-off another
+/// writer puts a new row under the id. The retry judges that row with the
+/// before-delete hooks before deleting it.
+#[tokio::test(start_paused = true)]
+async fn a_retried_delete_judges_the_row_it_finds() {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let src = MockTableSource::new()
+        .with_data("t", vec![json!({"id": "1", "name": "old"})])
+        .await
+        .with_lost_write_replies(1);
+    let table = declared(MockTable::new("t", src).with_id_column("id"))
+        .with_hook(Hook::BeforeDelete(seeing_former(seen.clone())));
+    let writer = declared(MockTable::new("t", table.data_source().clone()).with_id_column("id"));
+    let other = tokio::spawn(async move {
+        while writer.data_source().write_attempts() == 0 {
+            tokio::task::yield_now().await;
+        }
+        writer
+            .insert_value("1", &rec(json!({"name": "new"})))
+            .await
+            .unwrap();
+    });
+    Priority::Essential.scope(table.delete("1")).await.unwrap();
+    other.await.unwrap();
+    assert_eq!(*seen.lock().unwrap(), [json!("old"), json!("new")]);
+    assert!(table.get_value("1").await.unwrap().is_none());
 }

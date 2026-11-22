@@ -632,6 +632,7 @@ pub fn vantage_diorama::stats::reset_fetch_stats()
 #[non_exhaustive] pub enum vantage_diorama::CacheStatus
 pub vantage_diorama::CacheStatus::Complete
 pub vantage_diorama::CacheStatus::Incomplete
+pub vantage_diorama::CacheStatus::Unconfirmed
 impl core::clone::Clone for vantage_diorama::CacheStatus
 pub fn vantage_diorama::CacheStatus::clone(&self) -> Self
 impl core::cmp::Eq for vantage_diorama::CacheStatus
@@ -694,6 +695,29 @@ impl core::marker::Unpin for vantage_diorama::Clause
 impl core::marker::UnsafeUnpin for vantage_diorama::Clause
 impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::Clause
 impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::Clause
+#[non_exhaustive] pub enum vantage_diorama::Confirmation
+pub vantage_diorama::Confirmation::Accepted
+pub vantage_diorama::Confirmation::Applied
+pub vantage_diorama::Confirmation::Created
+pub vantage_diorama::Confirmation::Existed
+impl core::clone::Clone for vantage_diorama::Confirmation
+pub fn vantage_diorama::Confirmation::clone(&self) -> Self
+impl core::cmp::Eq for vantage_diorama::Confirmation
+impl core::cmp::PartialEq for vantage_diorama::Confirmation
+pub fn vantage_diorama::Confirmation::eq(&self, &Self) -> bool
+impl core::default::Default for vantage_diorama::Confirmation
+pub fn vantage_diorama::Confirmation::default() -> Self
+impl core::fmt::Debug for vantage_diorama::Confirmation
+pub fn vantage_diorama::Confirmation::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vantage_diorama::Confirmation
+impl core::marker::StructuralPartialEq for vantage_diorama::Confirmation
+impl core::marker::Freeze for vantage_diorama::Confirmation
+impl core::marker::Send for vantage_diorama::Confirmation
+impl core::marker::Sync for vantage_diorama::Confirmation
+impl core::marker::Unpin for vantage_diorama::Confirmation
+impl core::marker::UnsafeUnpin for vantage_diorama::Confirmation
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::Confirmation
+impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::Confirmation
 #[non_exhaustive] pub enum vantage_diorama::Detail
 pub vantage_diorama::Detail::Fixed(alloc::rcs::arc::Arc<vantage_vista::vista::Vista>)
 pub vantage_diorama::Detail::Resolved
@@ -1189,10 +1213,12 @@ impl core::marker::UnsafeUnpin for vantage_diorama::Fetched
 impl core::panic::unwind_safe::RefUnwindSafe for vantage_diorama::Fetched
 impl core::panic::unwind_safe::UnwindSafe for vantage_diorama::Fetched
 #[non_exhaustive] pub struct vantage_diorama::FlashOutcome
+pub vantage_diorama::FlashOutcome::confirmation: vantage_diorama::Confirmation
 pub vantage_diorama::FlashOutcome::id: core::option::Option<alloc::string::String>
 pub vantage_diorama::FlashOutcome::record: core::option::Option<vantage_types::record::Record<ciborium::value::Value>>
 impl vantage_diorama::FlashOutcome
 pub fn vantage_diorama::FlashOutcome::applied() -> Self
+pub fn vantage_diorama::FlashOutcome::with_confirmation(self, vantage_diorama::Confirmation) -> Self
 pub fn vantage_diorama::FlashOutcome::with_id(self, impl core::convert::Into<alloc::string::String>) -> Self
 pub fn vantage_diorama::FlashOutcome::with_record(self, vantage_types::record::Record<ciborium::value::Value>) -> Self
 impl core::clone::Clone for vantage_diorama::FlashOutcome
@@ -1589,13 +1615,16 @@ pub vantage_diorama::Tuning::aggregate_debounce: core::time::Duration
 pub vantage_diorama::Tuning::augment_workers: usize
 pub vantage_diorama::Tuning::refresh_on_open: bool
 pub vantage_diorama::Tuning::viewport_debounce: core::time::Duration
+pub vantage_diorama::Tuning::write_deadline: core::option::Option<core::time::Duration>
 pub vantage_diorama::Tuning::write_queue: usize
 impl vantage_diorama::Tuning
 pub fn vantage_diorama::Tuning::with_aggregate_debounce(self, core::time::Duration) -> Self
 pub fn vantage_diorama::Tuning::with_augment_workers(self, usize) -> Self
 pub fn vantage_diorama::Tuning::with_refresh_on_open(self, bool) -> Self
 pub fn vantage_diorama::Tuning::with_viewport_debounce(self, core::time::Duration) -> Self
+pub fn vantage_diorama::Tuning::with_write_deadline(self, core::time::Duration) -> Self
 pub fn vantage_diorama::Tuning::with_write_queue(self, usize) -> Self
+pub fn vantage_diorama::Tuning::without_write_deadline(self) -> Self
 impl core::clone::Clone for vantage_diorama::Tuning
 pub fn vantage_diorama::Tuning::clone(&self) -> Self
 impl core::default::Default for vantage_diorama::Tuning

@@ -49,6 +49,7 @@ pub(super) async fn seed_new_row(
     Ok(FlashOutcome {
         id: Some(id),
         record: Some(record),
+        confirmation: outcome.confirmation,
     })
 }
 

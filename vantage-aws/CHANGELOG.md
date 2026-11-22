@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.11.1 — 2026-11-22
+
+- Cargo.lock refreshed for vantage-core 1.5.0, vantage-api-pool 1.4.1 and vantage-table 5.1.0.
+  No code change.
+
 ## 0.11.0 — 2026-11-22
 
 - **Breaking:** `insert_table_value` returns `Inserted<…>`. Use `.into_record()` for the row.

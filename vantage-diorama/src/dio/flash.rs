@@ -27,6 +27,7 @@ use vantage_vista::{Capability, ColumnFlag, VistaQuery, forbidden, forbidden_col
 
 use super::worker::QueuedFlash;
 use super::{Dio, DioEvent, DioInner, DioShell};
+use crate::lens::CacheStatus;
 use crate::ops::{ChangeFlash, FlashKind, FlashOutcome};
 use confine::SetRule;
 pub(crate) use confirmed::Flight;
@@ -97,14 +98,20 @@ impl Dio {
 
         let id = flash.id().map(str::to_string);
         let pending = id.clone().map(|id| inner.pending_flashes.begin(id));
-        let pre = match &id {
-            // The row is judged hydrated when the set names an augmented
-            // value, so the rule sees the value and not the gap.
-            Some(id) if rule.needs_hydration() => {
-                inner.read_hydrated(inner.cache.as_ref(), id, set).await?
+        let (pre, pre_unconfirmed) = match &id {
+            Some(id) => {
+                let cached = inner.cache.get_value_with_status(id).await?;
+                let unconfirmed = matches!(cached, Some((_, CacheStatus::Unconfirmed)));
+                // The row is judged hydrated when the set names an augmented
+                // value, so the rule sees the value and not the gap.
+                let pre = if rule.needs_hydration() {
+                    inner.read_hydrated(inner.cache.as_ref(), id, set).await?
+                } else {
+                    cached.map(|(row, _)| row)
+                };
+                (pre, unconfirmed)
             }
-            Some(id) => inner.cache.get_value(id).await?,
-            None => None,
+            None => (None, false),
         };
         flash.ensure_before(pre.as_ref());
         let mut held = None;
@@ -151,7 +158,7 @@ impl Dio {
             let base = queued.pre.as_ref().or(held.as_ref());
             let staged = stage::staged_value(&queued.flash, base);
             if let Some(guard) = queued.pending.as_mut() {
-                guard.stage(queued.pre.as_ref());
+                guard.stage(queued.pre.as_ref(), pre_unconfirmed);
             }
             let unstage = Unstage::new(
                 inner,

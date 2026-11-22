@@ -87,6 +87,8 @@ async fn zero_sized_tuning_is_refused() {
     assert_eq!(setting(&err), Some("tuning.write_queue"));
     let err = refused(memory().tuning(Tuning::default().with_augment_workers(0)));
     assert_eq!(setting(&err), Some("tuning.augment_workers"));
+    let err = refused(memory().tuning(Tuning::default().with_write_deadline(Duration::ZERO)));
+    assert_eq!(setting(&err), Some("tuning.write_deadline"));
 }
 
 #[tokio::test]

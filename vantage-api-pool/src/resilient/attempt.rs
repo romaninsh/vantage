@@ -10,8 +10,10 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use vantage_core::Backoff;
+
 use super::breaker::{Gate, ProbeGuard};
-use super::policy::{self, Health, with_jitter};
+use super::policy::{self, Health};
 use super::{BreakerMode, CallPolicy, ClientError, ErrorKind, ResilientClient, TransportEvent};
 
 /// How much of a failing response body is kept on [`ClientError::body`].
@@ -284,7 +286,7 @@ where
                 };
                 self.attempt += 1;
                 let cap = self.policy.retry_after_cap().unwrap_or(delay);
-                let after = with_jitter(hint.map_or(delay, |h| h.min(cap)));
+                let after = Backoff::jitter(hint.map_or(delay, |h| h.min(cap)));
                 self.client.report(TransportEvent::RetryScheduled {
                     after,
                     attempt: self.attempt,

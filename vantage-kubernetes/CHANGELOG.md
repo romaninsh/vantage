@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.1 — 2026-11-22
+
+- Cargo.lock refreshed: it lacked vantage-api-pool's dependencies. url 2.5.9, rustls 0.23.46
+  and rustls-webpki 0.103.17 clear their advisories. No code change.
+
 ## 0.8.0 — 2026-11-22
 
 - **Breaking:** `insert_table_value` returns `Inserted<…>` (vantage-table 5). Kubernetes tables

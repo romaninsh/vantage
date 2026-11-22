@@ -2197,16 +2197,17 @@ dependencies = [
 
 [[package]]
 name = "vantage-api-pool"
-version = "1.4.0"
+version = "1.4.1"
 dependencies = [
  "anyhow",
  "reqwest",
  "tokio",
+ "vantage-core",
 ]
 
 [[package]]
 name = "vantage-aws"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2252,7 +2253,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-core"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "atty",
  "indexmap",
@@ -2291,7 +2292,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "5.0.0"
+version = "5.1.0"
 dependencies = [
  "async-stream",
  "async-trait",

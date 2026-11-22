@@ -16,6 +16,7 @@ use vantage_types::Record;
 use super::stage::{adopted, staged_value, write_row};
 use crate::dio::DioInner;
 use crate::dio::pending::PendingFlashGuard;
+use crate::lens::CacheStatus;
 use crate::ops::{ChangeFlash, FlashKind};
 
 /// One id's flashes in flight. Lives in the pending registry and goes when
@@ -29,15 +30,21 @@ pub(crate) struct Flight {
     staged: BTreeSet<u64>,
     /// The row the master last confirmed, set once the first flash stages.
     confirmed: Option<Option<Record<CborValue>>>,
+    /// The confirmed row is only accepted, not confirmed by a read: a
+    /// rollback restores it as `CacheStatus::Unconfirmed`.
+    unconfirmed: bool,
 }
 
 impl Flight {
     /// A flash stages over `pre`; returns its place in the stage order.
-    pub(crate) fn stage(&mut self, pre: Option<&Record<CborValue>>) -> u64 {
+    pub(crate) fn stage(&mut self, pre: Option<&Record<CborValue>>, unconfirmed: bool) -> u64 {
         let seq = self.next;
         self.next += 1;
         self.staged.insert(seq);
-        self.confirmed.get_or_insert_with(|| pre.cloned());
+        if self.confirmed.is_none() {
+            self.confirmed = Some(pre.cloned());
+            self.unconfirmed = unconfirmed;
+        }
         seq
     }
 
@@ -57,36 +64,41 @@ impl Flight {
     /// The row a failed flash at `seq` puts back, or `None` to leave the row
     /// to a later flash staged over it. With an earlier flash still staged
     /// that is `pre` (its staged value, which it settles itself); otherwise
-    /// the last confirmed row.
-    fn rollback_to(
-        &self,
-        seq: u64,
-        pre: Option<&Record<CborValue>>,
-    ) -> Option<Option<Record<CborValue>>> {
+    /// the last confirmed row, with whether it is only accepted.
+    fn rollback_to(&self, seq: u64, pre: Option<&Record<CborValue>>) -> Option<Restore> {
         if self.later_staged(seq) {
             return None;
         }
         if self.staged.range(..seq).next().is_some() {
-            return Some(pre.cloned());
+            return Some((pre.cloned(), false));
         }
-        Some(self.confirmed.clone().unwrap_or_else(|| pre.cloned()))
+        match &self.confirmed {
+            Some(row) => Some((row.clone(), self.unconfirmed)),
+            None => Some((pre.cloned(), false)),
+        }
     }
 
     /// The flash at `seq` committed: its value over the last confirmed row,
     /// with the row the backend reported storing (`stored`) over that, is
     /// now the confirmed one. A patch of a row the cache didn't hold staged
     /// over the master's row, so with no confirmed row its own `staged`
-    /// value is the confirmed one. `true` when it may re-assert its fields in
-    /// the cache, which is only while no later flash is staged over it.
+    /// value is the confirmed one. With `whole`, `stored` is the whole row
+    /// and is the confirmed one as it is; `accepted` marks it only accepted.
+    /// `true` when it may re-assert its fields in the cache, which is only
+    /// while no later flash is staged over it.
     fn confirm(
         &mut self,
         seq: u64,
         flash: &ChangeFlash,
         staged: Option<&Record<CborValue>>,
         stored: Option<&Record<CborValue>>,
+        whole: bool,
+        accepted: bool,
     ) -> bool {
+        self.unconfirmed = accepted;
         let before = self.confirmed.take().flatten();
         let value = match before {
+            _ if whole => stored.cloned(),
             None if *flash.kind() == FlashKind::Patch => staged.cloned(),
             before => staged_value(flash, before.as_ref()),
         };
@@ -108,29 +120,47 @@ pub(crate) async fn roll_back(
 ) -> Result<bool> {
     let target = match pending.and_then(|guard| Some((guard, guard.seq()?))) {
         Some((guard, seq)) => guard.flight(|flight| flight.rollback_to(seq, pre)),
-        None => Some(pre.cloned()),
+        None => Some((pre.cloned(), false)),
     };
-    let Some(target) = target else {
+    let Some((target, unconfirmed)) = target else {
         return Ok(false);
     };
     if inner.cache.get_value(id).await?.as_ref() != staged {
         return Ok(false);
     }
-    write_row(inner, id, target.as_ref()).await?;
+    match target {
+        Some(row) if unconfirmed => {
+            inner
+                .cache
+                .insert_value_with_status(id, &row, CacheStatus::Unconfirmed)
+                .await?
+        }
+        target => write_row(inner, id, target.as_ref()).await?,
+    }
     Ok(true)
 }
+
+/// The row a rollback puts back (`None` removes it), and whether it goes
+/// back as `CacheStatus::Unconfirmed`.
+type Restore = (Option<Record<CborValue>>, bool);
 
 /// Record a committed flash, which staged `staged` and which the backend
 /// reported storing as `stored`, as confirmed. `true` when it may re-assert
 /// its fields in the cache: no later flash on the id is staged over it.
+/// `whole` says `stored` is the whole row, `accepted` that the backend only
+/// accepted it (see [`Flight::confirm`]).
 pub(crate) fn confirm(
     pending: Option<&PendingFlashGuard>,
     flash: &ChangeFlash,
     staged: Option<&Record<CborValue>>,
     stored: Option<&Record<CborValue>>,
+    whole: bool,
+    accepted: bool,
 ) -> bool {
     match pending.and_then(|guard| Some((guard, guard.seq()?))) {
-        Some((guard, seq)) => guard.flight(|flight| flight.confirm(seq, flash, staged, stored)),
+        Some((guard, seq)) => {
+            guard.flight(|flight| flight.confirm(seq, flash, staged, stored, whole, accepted))
+        }
         None => true,
     }
 }

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.1 — 2026-11-22
+
+- Cargo.lock refreshed: it still named the 1.x vantage crates. No code change.
+
 ## 0.8.0 — 2026-11-22
 
 - **Breaking:** `insert_table_value` returns `Inserted<…>` (vantage-table 5). vantage-cmd is

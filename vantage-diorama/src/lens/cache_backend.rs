@@ -62,6 +62,10 @@ pub enum CacheStatus {
     Complete,
     /// Only partially loaded (list pass) — awaiting detail hydration.
     Incomplete,
+    /// An insert the backend accepted without confirming it stored the row.
+    /// Shown by this Dio, never published to the others; a read of the
+    /// master that returns the row confirms it, one that lacks it drops it.
+    Unconfirmed,
 }
 
 /// Per-Dio cache handle. Stores `id -> (status, Record<CborValue>)` rows.

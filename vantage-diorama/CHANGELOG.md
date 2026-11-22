@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.1.0 — 2026-11-22
+
+- A flash's `FlashOutcome` carries `confirmation: Confirmation` (`Applied`, `Created`, `Existed`,
+  `Accepted`), taken from the master's `Inserted`. A Lens writer reports one with
+  `FlashOutcome::with_confirmation`. A Dio's `TableShell::insert` now passes `Existed` and
+  `Accepted` through instead of always answering `Created`.
+- An insert the master reports `Existed` caches the stored row as the master holds it and
+  publishes that row, not the flash's values.
+- An `Accepted` insert is cached as `CacheStatus::Unconfirmed` and not published. The next read
+  confirms it, or drops it when the master doesn't list it. A failed write over such a row puts
+  it back still unconfirmed.
+- Writes to the master run under `Priority::Essential`, so the transports retry `Unavailable`
+  failures. `Tuning::write_deadline` (default 180 s, `with_write_deadline`) bounds each write:
+  past it the flash fails `Unavailable`, rolls back and reports the error. Each Dio has its own
+  write worker, so a stuck datasource doesn't hold up writes to another.
+  `without_write_deadline` removes the limit; a test on paused tokio time whose writes wait on
+  another runtime needs it, because the paused clock jumps to the deadline.
+- An import that stops at a row keeps the error's `Unavailable` kind.
+
 ## 2.0.0 — 2026-11-22
 
 - **Breaking:** a Dio's `TableShell::insert` returns `(String, Inserted<CborValue>)`. It is

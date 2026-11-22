@@ -5714,18 +5714,19 @@ dependencies = [
 
 [[package]]
 name = "vantage-api-pool"
-version = "1.4.0"
+version = "1.4.1"
 dependencies = [
  "anyhow",
  "futures-util",
  "reqwest",
  "tokio",
+ "vantage-core",
  "wiremock",
 ]
 
 [[package]]
 name = "vantage-aws"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -5781,7 +5782,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-cmd"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -5802,7 +5803,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-core"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "atty",
  "indexmap 2.14.0",
@@ -5854,7 +5855,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-diorama"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -6123,7 +6124,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "5.0.0"
+version = "5.1.0"
 dependencies = [
  "async-stream",
  "async-trait",

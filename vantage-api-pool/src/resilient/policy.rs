@@ -2,9 +2,7 @@
 
 use std::time::Duration;
 
-/// The shortest sleep any retry mode may schedule. A policy configured with a
-/// zero base (or a zero ceiling) would otherwise spin.
-const MIN_BACKOFF: Duration = Duration::from_millis(1);
+use vantage_core::Backoff;
 
 /// Bounded retry: exponential from `base_backoff` (doubling per attempt),
 /// capped at `max_backoff`, with jitter added before each sleep.
@@ -39,28 +37,9 @@ impl RetryPolicy {
         }
     }
 
-    pub(crate) fn backoff(&self, attempt: usize) -> Duration {
-        exponential(self.base_backoff, self.max_backoff, attempt)
+    fn schedule(&self) -> Backoff {
+        Backoff::new(self.base_backoff, self.max_backoff)
     }
-}
-
-/// `base × 2^attempt`, capped at `max`. Both bounds are floored at
-/// [`MIN_BACKOFF`], so a policy configured with zeros still sleeps.
-fn exponential(base: Duration, max: Duration, attempt: usize) -> Duration {
-    let factor = 2u32.saturating_pow(attempt.min(31) as u32);
-    base.max(MIN_BACKOFF)
-        .saturating_mul(factor)
-        .min(max.max(MIN_BACKOFF))
-}
-
-/// Add up to +25% jitter so retrying clients don't synchronize.
-pub(crate) fn with_jitter(d: Duration) -> Duration {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|t| t.subsec_nanos())
-        .unwrap_or(0);
-    let frac = (nanos % 250) as f64 / 1000.0;
-    d + d.mul_f64(frac)
 }
 
 /// How many times, and how long apart, a failed attempt is repeated.
@@ -128,7 +107,7 @@ impl CallPolicy {
     /// Cold loads, uncached viewports, writes.
     pub fn essential() -> Self {
         Self {
-            retry: RetryMode::until_cancelled(Duration::from_millis(250), Duration::from_secs(10)),
+            retry: RetryMode::until_cancelled(Backoff::ESSENTIAL.base, Backoff::ESSENTIAL.max),
             breaker: BreakerMode::WaitForProbe,
         }
     }
@@ -153,8 +132,10 @@ impl CallPolicy {
     pub(crate) fn next_backoff(&self, attempt: usize) -> Option<Duration> {
         match &self.retry {
             RetryMode::None => None,
-            RetryMode::Bounded(p) => (attempt < p.max_retries).then(|| p.backoff(attempt)),
-            RetryMode::UntilCancelled { base, max } => Some(exponential(*base, *max, attempt)),
+            RetryMode::Bounded(p) => (attempt < p.max_retries).then(|| p.schedule().step(attempt)),
+            RetryMode::UntilCancelled { base, max } => {
+                Some(Backoff::new(*base, *max).step(attempt))
+            }
         }
     }
 
@@ -164,8 +145,8 @@ impl CallPolicy {
     pub(crate) fn retry_after_cap(&self) -> Option<Duration> {
         match &self.retry {
             RetryMode::None => None,
-            RetryMode::Bounded(p) => Some(p.max_backoff.max(MIN_BACKOFF)),
-            RetryMode::UntilCancelled { max, .. } => Some((*max).max(MIN_BACKOFF)),
+            RetryMode::Bounded(p) => Some(p.schedule().ceiling()),
+            RetryMode::UntilCancelled { base, max } => Some(Backoff::new(*base, *max).ceiling()),
         }
     }
 }
