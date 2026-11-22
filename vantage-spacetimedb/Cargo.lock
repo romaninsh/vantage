@@ -2557,7 +2557,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-spacetimedb"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "async-stream",
  "async-trait",

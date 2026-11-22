@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.1 — 2026-11-22
+
+- Cargo.lock refreshed for vantage-core 1.5.0 and vantage-api-pool 1.4.1. No code change.
+
 ## 0.8.0 — 2026-11-22
 
 - **Breaking:** the vista shell's `insert` returns `(String, Inserted<CborValue>)`. Use
