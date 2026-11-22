@@ -33,7 +33,9 @@ pub use column::FakerColumn;
 pub use dataset::{DatasetGen, ExtraFields, TableGen};
 pub use generator::{ColumnGen, Spread};
 pub use relational::{FanOut, Reference, check_plan, relational_rows, seed_id};
-pub use shape::{BackendShape, FaultSchedule, Latency, LatencyModel, Offline, ShapedShell};
+pub use shape::{
+    BackendShape, FaultSchedule, Latency, LatencyModel, Offline, ShapedShell, WriteRefusal,
+};
 #[cfg(feature = "sim")]
 pub use sim::{DEFAULT_OPS, SimDef, SimEngine, SimEngineBuilder, SimStats, Spawn};
 pub use value_gen::ValueGen;

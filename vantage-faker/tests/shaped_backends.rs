@@ -9,12 +9,14 @@
 use std::time::Duration;
 
 use ciborium::Value as CborValue;
-use vantage_dataset::prelude::ReadableValueSet as _;
+use vantage_dataset::Inserted;
+use vantage_dataset::prelude::{ReadableValueSet as _, WritableValueSet as _};
 use vantage_faker::{
     BackendShape, DatasetGen, ExtraFields, FakerColumn, FaultSchedule, Latency, LatencyModel,
-    Offline, ShapedShell, TableGen,
+    Offline, ShapedShell, TableGen, WriteRefusal,
 };
 use vantage_memory::{MemoryStore, MemoryVistaFactory, MemoryVistaSpec};
+use vantage_types::Record;
 use vantage_vista::{
     Capability, ColumnFlag, ColumnSpec, FilterOp, Vista, VistaCapabilities, VistaFactory,
 };
@@ -461,4 +463,182 @@ async fn a_shaped_memory_table_pushes_changes() {
         change,
         vantage_vista::VistaChange::Inserted { .. }
     ));
+}
+
+/// Three rows behind a writable shape with these faults.
+fn writable(faults: FaultSchedule, latency: LatencyModel) -> Vista {
+    shaped(
+        3,
+        BackendShape {
+            faults,
+            latency,
+            seed: Some(9),
+            ..BackendShape::default()
+        },
+    )
+}
+
+fn ada() -> Record<CborValue> {
+    [(
+        "name".to_string(),
+        CborValue::Text("written by the test".into()),
+    )]
+    .into_iter()
+    .collect()
+}
+
+#[tokio::test(start_paused = true)]
+async fn writes_pay_the_write_latency() {
+    let vista = writable(
+        FaultSchedule::default(),
+        LatencyModel {
+            write: Some(Latency::fixed(Duration::from_millis(700))),
+            ..LatencyModel::default()
+        },
+    );
+
+    let started = tokio::time::Instant::now();
+    vista.insert_value("new", &ada()).await.unwrap();
+    assert!(started.elapsed() >= Duration::from_millis(700));
+
+    let started = tokio::time::Instant::now();
+    vista.delete("new").await.unwrap();
+    assert!(started.elapsed() >= Duration::from_millis(700));
+
+    let started = tokio::time::Instant::now();
+    vista.list_values().await.unwrap();
+    assert!(
+        started.elapsed().is_zero(),
+        "reads do not pay the write band"
+    );
+}
+
+#[tokio::test]
+async fn write_error_rate_fails_writes_and_leaves_reads_alone() {
+    let vista = writable(
+        FaultSchedule {
+            write_error_rate: 1.0,
+            ..FaultSchedule::default()
+        },
+        LatencyModel::default(),
+    );
+
+    let err = vista.insert_value("new", &ada()).await.unwrap_err();
+    assert!(err.is_unavailable(), "{err}");
+    assert!(err.to_string().contains("write failed"), "{err}");
+    let first = vista
+        .list_values()
+        .await
+        .unwrap()
+        .into_keys()
+        .next()
+        .unwrap();
+    assert!(
+        vista
+            .patch_value(&first, &ada())
+            .await
+            .unwrap_err()
+            .is_unavailable()
+    );
+
+    let rows = vista.list_values().await.unwrap();
+    assert_eq!(rows.len(), 3, "nothing was inserted");
+    assert!(vista.get_value("new").await.unwrap().is_none());
+    assert_ne!(
+        rows[&first].get("name"),
+        ada().get("name"),
+        "nothing was patched"
+    );
+}
+
+#[tokio::test]
+async fn a_lost_reply_fails_the_write_after_it_lands() {
+    let vista = writable(
+        FaultSchedule {
+            lost_reply_rate: 1.0,
+            ..FaultSchedule::default()
+        },
+        LatencyModel::default(),
+    );
+
+    let err = vista.insert_value("new", &ada()).await.unwrap_err();
+    assert!(err.is_unavailable(), "{err}");
+    assert!(err.to_string().contains("lost the write's reply"), "{err}");
+    let stored = vista
+        .get_value("new")
+        .await
+        .unwrap()
+        .expect("the row landed");
+    assert_eq!(stored.get("name"), ada().get("name"));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_queued_insert_is_accepted_now_and_lands_later() {
+    let vista = writable(
+        FaultSchedule {
+            queue: Some(Duration::from_secs(2)),
+            ..FaultSchedule::default()
+        },
+        LatencyModel::default(),
+    );
+
+    let inserted = vista.insert_value("new", &ada()).await.unwrap();
+    assert!(matches!(inserted, Inserted::Accepted));
+    assert!(vista.get_value("new").await.unwrap().is_none());
+
+    tokio::time::sleep(Duration::from_millis(2001)).await;
+    assert!(vista.get_value("new").await.unwrap().is_some());
+}
+
+#[tokio::test]
+async fn a_refusing_source_refuses_every_write_by_kind() {
+    for refusal in [
+        WriteRefusal::Conflict,
+        WriteRefusal::InvalidValue,
+        WriteRefusal::Forbidden,
+    ] {
+        let vista = writable(
+            FaultSchedule {
+                refuse: Some(refusal),
+                ..FaultSchedule::default()
+            },
+            LatencyModel::default(),
+        );
+        let err = vista.insert_value("new", &ada()).await.unwrap_err();
+        let marked = match refusal {
+            WriteRefusal::Conflict => err.is_conflict(),
+            WriteRefusal::InvalidValue => err.is_invalid_value(),
+            WriteRefusal::Forbidden => err.is_forbidden(),
+        };
+        assert!(marked, "{refusal:?}: {err}");
+        let first = vista
+            .list_values()
+            .await
+            .unwrap()
+            .into_keys()
+            .next()
+            .unwrap();
+        assert!(vista.delete(&first).await.is_err(), "{refusal:?}: delete");
+        assert_eq!(vista.list_values().await.unwrap().len(), 3, "{refusal:?}");
+    }
+}
+
+#[tokio::test]
+async fn an_offline_source_refuses_writes_too() {
+    let vista = writable(
+        FaultSchedule {
+            offline: Some(Offline {
+                down: Duration::from_secs(60),
+                period: Duration::from_secs(60),
+            }),
+            ..FaultSchedule::default()
+        },
+        LatencyModel::default(),
+    );
+
+    let err = vista.insert_value("new", &ada()).await.unwrap_err();
+    assert!(
+        err.is_unavailable() && err.to_string().contains("offline"),
+        "{err}"
+    );
 }

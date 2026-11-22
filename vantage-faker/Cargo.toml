@@ -1,6 +1,6 @@
 [package]
 name = "vantage-faker"
-version = "4.0.0"
+version = "4.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -31,9 +31,9 @@ ciborium = "0.2"
 indexmap = { version = "2", features = ["serde"] }
 async-trait = "0.1"
 
-# `ShapedShell` sleeps out its configured latency and reads the clock for
-# offline schedules and cursor-token ages.
-tokio = { version = "1", features = ["time"] }
+# `ShapedShell` sleeps out its configured latency, reads the clock for
+# offline schedules and cursor-token ages, and spawns queued inserts.
+tokio = { version = "1", features = ["rt", "time"] }
 
 # Third-party realistic value generation (names, emails, addresses, …).
 fake = "5"

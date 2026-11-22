@@ -49,6 +49,9 @@ pub struct LatencyModel {
     /// Added on top of `list`/`window` while a search filter is active —
     /// the "search is the expensive endpoint" personality.
     pub search_extra: Option<Latency>,
+    /// Paid by every write: insert, replace, upsert, patch, delete and
+    /// delete_all.
+    pub write: Option<Latency>,
 }
 
 /// Scheduled unavailability: within every `period`, the backend is down for
@@ -60,12 +63,32 @@ pub struct Offline {
     pub period: Duration,
 }
 
+/// How a refusing backend answers every write.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WriteRefusal {
+    Conflict,
+    InvalidValue,
+    Forbidden,
+}
+
 /// The vices. All default off.
 #[derive(Clone, Debug, Default)]
 pub struct FaultSchedule {
-    /// Fraction of tolled requests failing with an injected error.
+    /// Fraction of reads failing with an injected error. Writes have their
+    /// own `write_error_rate`, so a flaky-writes backend still reads fine.
     pub error_rate: f64,
+    /// Applies to reads and writes alike.
     pub offline: Option<Offline>,
+    /// Fraction of writes failing before they reach the store.
+    pub write_error_rate: f64,
+    /// Fraction of writes that land in the store and then fail anyway: the
+    /// reply was lost. A retried insert finds its row `Existed`.
+    pub lost_reply_rate: f64,
+    /// Inserts answer `Inserted::Accepted` at once and land after this
+    /// delay. Other writes are unaffected.
+    pub queue: Option<Duration>,
+    /// Every write is refused with this kind of error; nothing is stored.
+    pub refuse: Option<WriteRefusal>,
     /// A `fetch_cursor` token older than this is dead (the 410 case).
     pub cursor_expiry: Option<Duration>,
     /// Reported totals are off by this much from the truth (clamped ≥ 0).
