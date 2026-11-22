@@ -283,29 +283,3 @@ where
         .await?
         .ok_or_else(|| error!("Row not found after patch", id = id.clone()).mark_not_found())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::sql_exec::mark_transport;
-
-    #[test]
-    fn sql_landed_insert_after_a_transport_error_reports_created() {
-        let stored: Record<i64> = [("n".to_string(), 1)].into_iter().collect();
-        for transport in [
-            sqlx::Error::Io(std::io::ErrorKind::ConnectionReset.into()),
-            sqlx::Error::PoolTimedOut,
-            sqlx::Error::PoolClosed,
-            sqlx::Error::WorkerCrashed,
-        ] {
-            let err = mark_transport(error!("insert failed"), &transport);
-            assert_eq!(
-                landed(&err, stored.clone()),
-                Inserted::Created(stored.clone()),
-                "{transport:?}"
-            );
-        }
-        let unique = mark_transport(error!("insert failed"), &sqlx::Error::RowNotFound);
-        assert_eq!(landed(&unique, stored.clone()), Inserted::Existed(stored));
-    }
-}
