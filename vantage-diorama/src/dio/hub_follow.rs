@@ -389,7 +389,10 @@ impl DioInner {
             }
         }
         let status = if lift_all {
-            held.map_or(CacheStatus::Incomplete, |(_, status)| *status)
+            match held {
+                Some((_, CacheStatus::Complete)) => CacheStatus::Complete,
+                _ => CacheStatus::Incomplete,
+            }
         } else if super::augment_passes::has_augment_gap(&row, &self.augmented_columns) {
             CacheStatus::Incomplete
         } else {

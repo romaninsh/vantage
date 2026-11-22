@@ -211,7 +211,8 @@ async fn stub_statuses(
                     .await;
                 forget(&id);
             }
-            None => {
+            // The master listed a row this Dio only staged: it holds it now.
+            Some((_, CacheStatus::Unconfirmed)) | None => {
                 let status = if gap_aware && !has_augment_gap(&rec, augmented) {
                     CacheStatus::Complete
                 } else {

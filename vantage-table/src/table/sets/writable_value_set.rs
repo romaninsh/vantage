@@ -1,6 +1,9 @@
+use std::future::Future;
+
 use async_trait::async_trait;
 use indexmap::IndexMap;
-use vantage_core::Result;
+use tokio::time::sleep;
+use vantage_core::{Backoff, Priority, Result};
 use vantage_dataset::{Inserted, WritableValueSet};
 use vantage_types::{Entity, InvariantValue, Record};
 use vantage_vista::{Capability, forbidden};
@@ -29,9 +32,18 @@ where
     ) -> Result<Inserted<Self::Value>> {
         let record = self.prepare_insert(record).await?;
         let id = id.into();
+        let (source, id_ref, record_ref) = (self.data_source(), &id, &record);
+        // After an `Unavailable` attempt that may have landed, a row found
+        // existing is this call's own write: the hooks below run once for it.
         let result = self
-            .data_source()
-            .insert_table_value(self, &id, &record)
+            .retry_unavailable(move |after_unavailable| async move {
+                match source.insert_table_value(self, id_ref, record_ref).await {
+                    Ok(Inserted::Existed(stored)) if after_unavailable => {
+                        Ok(Inserted::Created(stored))
+                    }
+                    out => out,
+                }
+            })
             .await?;
         // An `Existed` insert wrote nothing, so no after-insert hook runs;
         // `Accepted` has no stored row, so the hooks see the row as sent.
@@ -104,8 +116,7 @@ where
             .await?;
         validate_invariants(&partial, &self.typed_invariants())?;
         let result = self
-            .data_source()
-            .patch_table_value(self, &id, &partial)
+            .retry_unavailable(|_| self.data_source().patch_table_value(self, &id, &partial))
             .await?;
         run_after(
             self.after_update_hooks(),
@@ -124,8 +135,9 @@ where
         let id = id.into();
         let has_hooks =
             !self.before_delete_hooks().is_empty() || !self.after_delete_hooks().is_empty();
+        let delete = |_: bool| self.data_source().delete_table_value(self, &id);
         if !has_hooks {
-            return self.data_source().delete_table_value(self, &id).await;
+            return self.retry_unavailable(delete).await;
         }
         // Read through the set: a row outside it (or a missing one) gets no
         // hooks and no delete — the source would leave it alone anyway, and
@@ -136,7 +148,7 @@ where
         let erased = self.as_entity_erased();
         let outcome = run_before_delete(self.before_delete_hooks(), &id, &former, erased).await?;
         if let HookReturn::Proceed = outcome {
-            self.data_source().delete_table_value(self, &id).await?;
+            self.retry_unavailable(delete).await?;
         }
         run_after(self.after_delete_hooks(), &id, &former, None, erased).await?;
         Ok(())
@@ -148,7 +160,8 @@ where
         let erased = self.as_entity_erased();
         run_delete_all(self.before_delete_all_hooks(), erased).await?;
         if self.before_delete_hooks().is_empty() {
-            self.data_source().delete_table_all_values(self).await?;
+            self.retry_unavailable(|_| self.data_source().delete_table_all_values(self))
+                .await?;
         } else {
             self.delete_row_by_row().await?;
         }
@@ -212,7 +225,8 @@ where
         }
         for ((id, former), proceed) in rows.iter().zip(proceed) {
             if proceed {
-                self.data_source().delete_table_value(&whole, id).await?;
+                self.retry_unavailable(|_| self.data_source().delete_table_value(&whole, id))
+                    .await?;
             }
             run_after(self.after_delete_hooks(), id, former, None, erased).await?;
         }
@@ -271,8 +285,7 @@ where
         }
         enforce_invariants(&mut record, &self.typed_invariants())?;
         let result = self
-            .data_source()
-            .replace_table_value(self, &id, &record)
+            .retry_unavailable(|_| self.data_source().replace_table_value(self, &id, &record))
             .await?;
         run_after(
             self.after_update_hooks(),
@@ -320,5 +333,31 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     async fn stored_values(&self) -> Result<IndexMap<T::Id, Record<T::Value>>> {
         self.check_read().await?;
         self.data_source().list_table_values(self).await
+    }
+
+    /// Runs a source write once, or, for an `Essential` request outside a
+    /// transaction, again after each `Unavailable` failure, with the essential
+    /// back-off between attempts and no attempt limit: the caller's deadline
+    /// drops the future. `op` is told whether an earlier attempt failed
+    /// `Unavailable` (and so may have landed). Inside a transaction a failed
+    /// statement has already failed the whole transaction, so only the
+    /// transaction can be retried.
+    async fn retry_unavailable<R, F, Fut>(&self, mut op: F) -> Result<R>
+    where
+        F: FnMut(bool) -> Fut,
+        Fut: Future<Output = Result<R>>,
+    {
+        let retries =
+            Priority::current().is_essential() && self.data_source().transaction().is_none();
+        let mut attempt = 0;
+        loop {
+            match op(attempt > 0).await {
+                Err(e) if retries && e.is_unavailable() => {
+                    sleep(Backoff::ESSENTIAL.delay(attempt)).await;
+                    attempt += 1;
+                }
+                out => return out,
+            }
+        }
     }
 }

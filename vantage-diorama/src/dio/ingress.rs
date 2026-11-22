@@ -130,11 +130,18 @@ impl Dio {
         // table would be flooded with rows they already hold.
         let diffs = inner.publishes() && inner.holds_whole_copy().await;
         let keep: HashSet<String> = snapshot.keys().cloned().collect();
-        let cached = cache.list_values().await?;
-        // A row the cache already holds unchanged is not rewritten.
+        let cached = cache.list_values_with_status().await?;
+        // A row the cache already holds unchanged is not rewritten, unless
+        // it is an unconfirmed insert the master now confirms.
         let rows: IndexMap<_, _> = snapshot
             .into_iter()
-            .filter(|(id, row)| !pending.guarded_since(mark, id) && cached.get(id) != Some(row))
+            .filter(|(id, row)| {
+                let unchanged = matches!(
+                    cached.get(id),
+                    Some((held, status)) if held == row && *status != CacheStatus::Unconfirmed
+                );
+                !pending.guarded_since(mark, id) && !unchanged
+            })
             .collect();
         // A snapshot row comes from the master, never through a detail pass.
         let written: Vec<_> = match diffs {

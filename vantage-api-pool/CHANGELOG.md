@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.1 — 2026-11-22
+
+- The back-off schedule comes from `vantage_core::Backoff`; no behaviour or API change.
+- Requires vantage-core 1.5.0.
+
 ## 1.4.0 — 2026-11-22
 
 - `is_retryable_status(status)` is public: `true` for `408`, `429` and `5xx`, the statuses a retry

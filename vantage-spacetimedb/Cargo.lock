@@ -2518,16 +2518,17 @@ dependencies = [
 
 [[package]]
 name = "vantage-api-pool"
-version = "1.4.0"
+version = "1.4.1"
 dependencies = [
  "anyhow",
  "reqwest",
  "tokio",
+ "vantage-core",
 ]
 
 [[package]]
 name = "vantage-core"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "atty",
  "indexmap 2.14.0",

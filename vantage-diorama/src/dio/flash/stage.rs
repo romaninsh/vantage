@@ -10,8 +10,9 @@ use vantage_types::Record;
 use super::confirmed::{confirm, roll_back};
 use crate::dio::pending::PendingFlashGuard;
 use crate::dio::{Dio, DioEvent, DioInner};
+use crate::lens::CacheStatus;
 use crate::lens::hub::TableChange;
-use crate::ops::{ChangeFlash, FlashKind, FlashOutcome};
+use crate::ops::{ChangeFlash, Confirmation, FlashKind, FlashOutcome};
 use seed::{merged, seed_new_row, stored_id};
 
 /// The row `flash` stages in the cache, `None` for one it removes. `Patch`
@@ -175,16 +176,37 @@ async fn commit(
         return Ok(FlashOutcome {
             id: Some(settled),
             record,
+            confirmation: outcome.confirmation,
         });
     }
     // With a later flash on the id staged over this one, the cache shows
     // that flash's unconfirmed value: nothing is published until it settles.
     // Its commit publishes the row then, and its rollback, which restores
     // this flash's value, asks the others to re-check it.
+    //
+    // An insert that found its id `Existed` wrote nothing: the row the
+    // backend holds is not the flash's value at all, and the cache takes it
+    // as it is. A `Created` row keeps the flash's fields the stored row
+    // doesn't report (nested children the master stores apart). An
+    // `Accepted` insert stays unconfirmed in this Dio's cache, unpublished,
+    // until a read of the master finds it.
     let stored = outcome.record.as_ref();
-    let confirmed = confirm(pending, flash, staged, stored);
+    let accepted = outcome.confirmation == Confirmation::Accepted;
+    let whole = stored.filter(|_| outcome.confirmation == Confirmation::Existed);
+    let confirmed = confirm(pending, flash, staged, stored, whole.is_some());
     if confirmed {
-        reassert_confirmed(inner, flash, stored).await?;
+        match whole {
+            Some(row) => inner.cache.insert_value(id, row).await?,
+            None if accepted => {
+                let current = inner.cache.get_value(id).await?;
+                let row = merged(current.as_ref(), flash);
+                inner
+                    .cache
+                    .insert_value_with_status(id, &row, CacheStatus::Unconfirmed)
+                    .await?
+            }
+            None => reassert_confirmed(inner, flash, stored).await?,
+        }
     }
     let id_owned = id.to_string();
     let event = match (flash.kind(), pre) {
@@ -197,6 +219,7 @@ async fn commit(
         // A confirmed delete removed the row from the table, whatever set
         // this Dio narrows it to.
         FlashKind::Delete => inner.publish(TableChange::Deleted { id: id.to_string() }),
+        _ if accepted => {}
         // Another Dio changed the row while this flash was in flight, and
         // that change was skipped here: the cached row is current only in
         // this flash's own fields. The others re-read it instead.
@@ -209,6 +232,7 @@ async fn commit(
     Ok(FlashOutcome {
         id: Some(id.to_string()),
         record: outcome.record,
+        confirmation: outcome.confirmation,
     })
 }
 

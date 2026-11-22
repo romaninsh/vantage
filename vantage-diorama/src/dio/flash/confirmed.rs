@@ -76,17 +76,21 @@ impl Flight {
     /// with the row the backend reported storing (`stored`) over that, is
     /// now the confirmed one. A patch of a row the cache didn't hold staged
     /// over the master's row, so with no confirmed row its own `staged`
-    /// value is the confirmed one. `true` when it may re-assert its fields in
-    /// the cache, which is only while no later flash is staged over it.
+    /// value is the confirmed one. With `whole`, `stored` is the whole row
+    /// and is the confirmed one as it is. `true` when it may re-assert its
+    /// fields in the cache, which is only while no later flash is staged over
+    /// it.
     fn confirm(
         &mut self,
         seq: u64,
         flash: &ChangeFlash,
         staged: Option<&Record<CborValue>>,
         stored: Option<&Record<CborValue>>,
+        whole: bool,
     ) -> bool {
         let before = self.confirmed.take().flatten();
         let value = match before {
+            _ if whole => stored.cloned(),
             None if *flash.kind() == FlashKind::Patch => staged.cloned(),
             before => staged_value(flash, before.as_ref()),
         };
@@ -123,14 +127,18 @@ pub(crate) async fn roll_back(
 /// Record a committed flash, which staged `staged` and which the backend
 /// reported storing as `stored`, as confirmed. `true` when it may re-assert
 /// its fields in the cache: no later flash on the id is staged over it.
+/// `whole` says `stored` is the whole row (see [`Flight::confirm`]).
 pub(crate) fn confirm(
     pending: Option<&PendingFlashGuard>,
     flash: &ChangeFlash,
     staged: Option<&Record<CborValue>>,
     stored: Option<&Record<CborValue>>,
+    whole: bool,
 ) -> bool {
     match pending.and_then(|guard| Some((guard, guard.seq()?))) {
-        Some((guard, seq)) => guard.flight(|flight| flight.confirm(seq, flash, staged, stored)),
+        Some((guard, seq)) => {
+            guard.flight(|flight| flight.confirm(seq, flash, staged, stored, whole))
+        }
         None => true,
     }
 }

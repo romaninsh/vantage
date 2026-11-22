@@ -29,6 +29,10 @@ async fn status_persists_across_reopen() {
             .unwrap();
         // The status-agnostic write defaults to Complete.
         table.insert_value("b", &rec("b")).await.unwrap();
+        table
+            .insert_value_with_status("c", &rec("c"), CacheStatus::Unconfirmed)
+            .await
+            .unwrap();
 
         assert_eq!(
             table.get_value_with_status("a").await.unwrap().unwrap().1,
@@ -50,6 +54,10 @@ async fn status_persists_across_reopen() {
     assert_eq!(
         table.get_value_with_status("b").await.unwrap().unwrap().1,
         CacheStatus::Complete
+    );
+    assert_eq!(
+        table.get_value_with_status("c").await.unwrap().unwrap().1,
+        CacheStatus::Unconfirmed
     );
 
     // The status-agnostic read still returns the record.

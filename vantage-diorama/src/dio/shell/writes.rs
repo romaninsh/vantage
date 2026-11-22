@@ -11,7 +11,7 @@ use vantage_types::Record;
 
 use crate::dio::flash::confine::SetRule;
 use crate::dio::shell::DioShell;
-use crate::ops::{ChangeFlash, FlashOutcome};
+use crate::ops::{ChangeFlash, Confirmation, FlashOutcome};
 
 impl DioShell {
     /// With an id, insert-if-absent: an id already in view returns the stored
@@ -46,8 +46,12 @@ impl DioShell {
             .flash(ChangeFlash::insert(id, record.clone()))
             .await?;
         let settled = outcome.id.clone().unwrap_or_else(|| id.to_string());
-        let stored = self.stored(outcome, &settled, Some(&record));
-        Ok((settled, Inserted::Created(stored)))
+        let inserted = match outcome.confirmation {
+            Confirmation::Accepted => Inserted::Accepted,
+            Confirmation::Existed => Inserted::Existed(self.stored(outcome, &settled, None)),
+            _ => Inserted::Created(self.stored(outcome, &settled, Some(&record))),
+        };
+        Ok((settled, inserted))
     }
 
     pub(super) async fn replace_row(

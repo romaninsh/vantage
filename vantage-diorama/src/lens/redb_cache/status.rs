@@ -1,7 +1,7 @@
 //! Stored row layout: a one-byte [`CacheStatus`] tag followed by the
 //! CBOR-encoded record map.
 //!
-//! The tag bytes (0/1) are distinct from a CBOR map's leading byte (major
+//! The tag bytes (0/1/2) are distinct from a CBOR map's leading byte (major
 //! type 5, 0xA0..=0xBF), so a raw-CBOR row written without a tag is detected
 //! on read and treated as `Complete`.
 
@@ -13,11 +13,13 @@ use crate::lens::cache_backend::CacheStatus;
 
 const TAG_COMPLETE: u8 = 0;
 const TAG_INCOMPLETE: u8 = 1;
+const TAG_UNCONFIRMED: u8 = 2;
 
 fn status_tag(status: CacheStatus) -> u8 {
     match status {
         CacheStatus::Complete => TAG_COMPLETE,
         CacheStatus::Incomplete => TAG_INCOMPLETE,
+        CacheStatus::Unconfirmed => TAG_UNCONFIRMED,
     }
 }
 
@@ -38,6 +40,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<(Record<CborValue>, CacheStatus)> {
     let (status, body) = match bytes.first() {
         Some(&TAG_COMPLETE) => (CacheStatus::Complete, &bytes[1..]),
         Some(&TAG_INCOMPLETE) => (CacheStatus::Incomplete, &bytes[1..]),
+        Some(&TAG_UNCONFIRMED) => (CacheStatus::Unconfirmed, &bytes[1..]),
         // Untagged row (raw CBOR map) — treat as complete.
         _ => (CacheStatus::Complete, bytes),
     };

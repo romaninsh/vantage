@@ -5,5 +5,5 @@
 
 pub mod request;
 pub mod util;
-pub use request::Priority;
+pub use request::{Backoff, Priority};
 pub use util::{Context, ErrorKind, IntoVec, Result, VantageError};

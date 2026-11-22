@@ -8,6 +8,7 @@ use vantage_expressions::{
     traits::expressive::ExpressiveEnum,
 };
 use vantage_types::{Entity, Record};
+use vantage_vista::Transaction;
 
 use super::MockTableSource;
 use crate::column::core::ColumnType;
@@ -44,6 +45,17 @@ impl TableSource for MockTableSource {
 
     fn can_confine_writes(&self) -> bool {
         self.confines
+    }
+
+    fn transaction(&self) -> Option<Transaction> {
+        self.transaction.clone()
+    }
+
+    fn without_transaction(&self) -> Self {
+        Self {
+            transaction: None,
+            ..self.clone()
+        }
     }
 
     fn coerce_column_value<E>(
@@ -263,7 +275,7 @@ impl TableSource for MockTableSource {
         E: Entity,
         Self: Sized,
     {
-        self.insert_row(table, id, record).await
+        self.faulty(self.insert_row(table, id, record)).await
     }
 
     async fn replace_table_value<E>(
@@ -276,7 +288,7 @@ impl TableSource for MockTableSource {
         E: Entity,
         Self: Sized,
     {
-        self.replace_row(table, id, record).await
+        self.faulty(self.replace_row(table, id, record)).await
     }
 
     async fn patch_table_value<E>(
@@ -289,7 +301,7 @@ impl TableSource for MockTableSource {
         E: Entity,
         Self: Sized,
     {
-        self.patch_row(table, id, partial).await
+        self.faulty(self.patch_row(table, id, partial)).await
     }
 
     async fn delete_table_value<E>(&self, table: &Table<Self, E>, id: &Self::Id) -> Result<()>
@@ -297,7 +309,7 @@ impl TableSource for MockTableSource {
         E: Entity,
         Self: Sized,
     {
-        self.delete_row(table, id).await
+        self.faulty(self.delete_row(table, id)).await
     }
 
     async fn delete_table_all_values<E>(&self, table: &Table<Self, E>) -> Result<()>
@@ -305,7 +317,7 @@ impl TableSource for MockTableSource {
         E: Entity,
         Self: Sized,
     {
-        self.delete_rows(table).await
+        self.faulty(self.delete_rows(table)).await
     }
 
     async fn insert_table_return_id_value<E>(
@@ -317,7 +329,7 @@ impl TableSource for MockTableSource {
         E: Entity,
         Self: Sized,
     {
-        self.insert_row_return_id(table, record).await
+        self.faulty(self.insert_row_return_id(table, record)).await
     }
 
     fn related_in_condition<SourceE: Entity<Self::Value> + 'static>(

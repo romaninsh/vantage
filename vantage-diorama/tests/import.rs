@@ -134,7 +134,7 @@ async fn fallback_stops_at_first_failure_and_names_the_row() -> Result<()> {
         .cache(Cache::memory())
         .writer(|_cx, flash| async move {
             if flash.id() == Some("t3") {
-                return Err(vantage_core::error!("route rejected the flash"));
+                return Err(vantage_core::error!("route unavailable").mark_unavailable());
             }
             Ok(FlashOutcome::applied())
         })
@@ -160,6 +160,7 @@ async fn fallback_stops_at_first_failure_and_names_the_row() -> Result<()> {
         message.contains("row: 3, of: 5") && message.contains("\"t3\""),
         "the error names the failing row and id: {message}"
     );
+    assert!(err.is_unavailable(), "the stop keeps the cause's kind");
     assert_eq!(
         *progress.lock().unwrap(),
         vec![(1, 5), (2, 5)],

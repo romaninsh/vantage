@@ -1,3 +1,5 @@
+use std::future::Future;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
@@ -10,6 +12,7 @@ use vantage_expressions::{
     mocks::datasource::MockSelectableDataSource, traits::datasource::DataSource,
 };
 use vantage_types::Record;
+use vantage_vista::Transaction;
 
 mod conditions;
 mod expr_sources;
@@ -33,9 +36,19 @@ pub struct MockTableSource {
     query_source: Option<Arc<Mutex<vantage_expressions::mocks::mock_builder::MockBuilder>>>,
     confines: bool,
     coercion: Option<ColumnCoercion>,
+    faults: Arc<WriteFaults>,
+    transaction: Option<Transaction>,
 }
 
 type ColumnCoercion = Arc<dyn Fn(&str, Value) -> Result<Value> + Send + Sync>;
+
+/// Shared by every clone, so a table's copy of the source sees them too.
+#[derive(Default)]
+struct WriteFaults {
+    attempts: AtomicUsize,
+    unavailable: AtomicUsize,
+    lost_replies: AtomicUsize,
+}
 
 impl MockTableSource {
     pub fn new() -> Self {
@@ -45,7 +58,50 @@ impl MockTableSource {
             query_source: None,
             confines: true,
             coercion: None,
+            faults: Arc::default(),
+            transaction: None,
         }
+    }
+
+    /// Fail the next `n` writes `Unavailable` before they touch the store,
+    /// standing in for a backend that couldn't be reached.
+    pub fn with_unavailable_writes(self, n: usize) -> Self {
+        self.faults.unavailable.store(n, Ordering::SeqCst);
+        self
+    }
+
+    /// Store the next `n` writes, then fail them `Unavailable`, standing in
+    /// for a reply lost after the backend applied the write.
+    pub fn with_lost_write_replies(self, n: usize) -> Self {
+        self.faults.lost_replies.store(n, Ordering::SeqCst);
+        self
+    }
+
+    /// How many writes (insert, replace, patch, delete, delete-all) reached
+    /// this source, failed ones included, across all its clones.
+    pub fn write_attempts(&self) -> usize {
+        self.faults.attempts.load(Ordering::SeqCst)
+    }
+
+    /// Report [`TableSource::transaction`](crate::traits::table_source::TableSource::transaction)
+    /// as `tx`, standing in for a datasource in transaction mode. Writes
+    /// still go straight to the store.
+    pub fn with_transaction(mut self, tx: Transaction) -> Self {
+        self.transaction = Some(tx);
+        self
+    }
+
+    /// Runs `write` unless a fault is due, counting the attempt either way.
+    async fn faulty<R>(&self, write: impl Future<Output = Result<R>>) -> Result<R> {
+        self.faults.attempts.fetch_add(1, Ordering::SeqCst);
+        if take_one(&self.faults.unavailable) {
+            return Err(vantage_core::error!("mock backend unreachable").mark_unavailable());
+        }
+        let out = write.await?;
+        if take_one(&self.faults.lost_replies) {
+            return Err(vantage_core::error!("mock backend reply lost").mark_unavailable());
+        }
+        Ok(out)
     }
 
     /// Answer [`TableSource::coerce_column_value`](crate::traits::table_source::TableSource::coerce_column_value)
@@ -105,6 +161,12 @@ impl MockTableSource {
         self.query_source = Some(Arc::new(Mutex::new(query_source)));
         self
     }
+}
+
+fn take_one(counter: &AtomicUsize) -> bool {
+    counter
+        .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+        .is_ok()
 }
 
 impl Default for MockTableSource {

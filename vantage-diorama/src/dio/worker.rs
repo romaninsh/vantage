@@ -18,14 +18,16 @@ use std::sync::Arc;
 use ciborium::Value as CborValue;
 use futures::FutureExt as _;
 use tokio::sync::{mpsc, oneshot};
-use vantage_core::{Context as _, ErrorKind, Result, VantageError, error};
+use tokio::time::timeout;
+use vantage_core::{Context as _, ErrorKind, Priority, Result, VantageError, error};
+use vantage_dataset::Inserted;
 use vantage_dataset::traits::{InsertableValueSet as _, WritableValueSet};
 use vantage_types::Record;
 
 use super::flash::settle;
 use super::pending::PendingFlashGuard;
 use crate::dio::{Dio, DioInner};
-use crate::ops::{ChangeFlash, FlashKind, FlashOutcome};
+use crate::ops::{ChangeFlash, Confirmation, FlashKind, FlashOutcome};
 
 /// One unit of queued work. The temporary reference cycle (`DioInner` →
 /// sender → channel buffer → `Arc<DioInner>`) resolves as the worker drains;
@@ -59,17 +61,7 @@ pub(crate) async fn write_worker_loop(mut rx: mpsc::Receiver<QueuedFlash>) {
             keep_alive,
         } = queued;
         let dio = Dio { inner: keep_alive };
-        // A panicking route is a failed write: the flash rolls back and the
-        // worker carries on with the next one.
-        let written = AssertUnwindSafe(run_write_through(&dio, flash.clone()))
-            .catch_unwind()
-            .await
-            .unwrap_or_else(|_| {
-                Err(error!(
-                    "the write route panicked",
-                    table = dio.inner.cache_table_name
-                ))
-            });
+        let written = write_within_deadline(&dio, flash.clone()).await;
         let settled = settle(
             &dio,
             &flash,
@@ -103,6 +95,28 @@ pub(crate) fn writing_for(inner: &Arc<DioInner>) -> bool {
     WRITING_FOR
         .try_with(|writing| *writing == Arc::as_ptr(inner) as usize)
         .unwrap_or(false)
+}
+
+/// The write-through of one flash, as `Essential`: someone waits on it, so the
+/// transport retries an unavailable backend. The deadline bounds those
+/// retries; dropping the write at it is what stops them. A write cut off there
+/// fails `Unavailable` and rolls back like any other failure, and a panicking
+/// route is a failed write too, so the worker carries on with the next flash.
+async fn write_within_deadline(dio: &Dio, flash: ChangeFlash) -> Result<FlashOutcome> {
+    let deadline = dio.inner.lens.tuning().write_deadline;
+    let write = AssertUnwindSafe(run_write_through(dio, flash)).catch_unwind();
+    match Priority::Essential.scope(timeout(deadline, write)).await {
+        Ok(Ok(written)) => written,
+        Ok(Err(_)) => Err(error!(
+            "the write route panicked",
+            table = dio.inner.cache_table_name
+        )),
+        Err(_) => Err(error!(
+            format!("the write gave up after {deadline:?}"),
+            table = dio.inner.cache_table_name
+        )
+        .mark_unavailable()),
+    }
 }
 
 /// Run a flash through the Lens's writer, or the default write-to-master
@@ -144,15 +158,20 @@ async fn default_write(dio: &Dio, flash: ChangeFlash) -> Result<FlashOutcome> {
             master
                 .insert_value(id, flash.patch())
                 .await
-                .map(|inserted| match inserted.into_record() {
-                    Some(record) => stored(record),
-                    None => FlashOutcome::applied(),
+                .map(|inserted| match inserted {
+                    Inserted::Created(record) => {
+                        stored(record).with_confirmation(Confirmation::Created)
+                    }
+                    Inserted::Existed(record) => {
+                        stored(record).with_confirmation(Confirmation::Existed)
+                    }
+                    Inserted::Accepted => applied.with_confirmation(Confirmation::Accepted),
                 })
         }
         (FlashKind::Insert, None) => master
             .insert_return_id_value(flash.patch())
             .await
-            .map(|id| applied.with_id(id)),
+            .map(|id| applied.with_id(id).with_confirmation(Confirmation::Created)),
         (FlashKind::Replace, Some(id)) => master.replace_value(id, flash.patch()).await.map(stored),
         (FlashKind::Upsert, Some(id)) => master.upsert_value(id, flash.patch()).await.map(stored),
         (FlashKind::Patch, Some(id)) => master.patch_value(id, flash.patch()).await.map(stored),

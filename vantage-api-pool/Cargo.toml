@@ -1,13 +1,14 @@
 [package]
 edition = "2024"
 name = "vantage-api-pool"
-version = "1.4.0"
+version = "1.4.1"
 license = "MIT OR Apache-2.0"
 description = "Resilient async HTTP client for Vantage: bounded parallelism, retry, circuit breaker, rate limit and auth refresh"
 
 [dependencies]
 anyhow = "1.0"
 reqwest = "0.12"
+vantage-core = { version = "1.5.0", path = "../vantage-core" }
 tokio = { version = "1", features = ["sync", "time"] }
 
 [dev-dependencies]

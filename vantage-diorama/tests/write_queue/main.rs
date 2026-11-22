@@ -1,8 +1,10 @@
 //! The write queue's edge cases: a caller cancelled mid-stage, a failure
 //! under a flash stacked on the same row, a writer that writes its own Dio,
-//! a writer that panics, a writer over a natively narrowed master, and the
-//! settle event a two-pass view needs to follow membership.
+//! a writer that panics, a writer over a natively narrowed master, the
+//! settle event a two-pass view needs to follow membership, and a master
+//! write that never answers.
 
+mod deadline;
 mod membership;
 mod staging;
 #[path = "../support/mod.rs"]

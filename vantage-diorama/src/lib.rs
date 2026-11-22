@@ -33,7 +33,7 @@ pub use lens::{
     Cache, CacheBackend, CacheStatus, CacheTable, ChunkSink, Lens, LensBuilder, Loader, LoaderCx,
     MemoryCache, MemoryCacheTable, RedbCache, RedbCacheTable, Refresher, Tuning,
 };
-pub use ops::{ChangeEvent, ChangeFlash, FlashKind, FlashOutcome, FlashRejection};
+pub use ops::{ChangeEvent, ChangeFlash, Confirmation, FlashKind, FlashOutcome, FlashRejection};
 pub use scenery::{
     Clause, EnrichedRecord, FilterOrigin, LoadFailure, LoadState, RecordScenery,
     RecordSceneryBuilder, RecordStatus, RowStatus, RowStatusSummary, Sugar, SugarFn, SugarFuture,

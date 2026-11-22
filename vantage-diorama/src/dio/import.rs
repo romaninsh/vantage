@@ -15,7 +15,7 @@ use std::ops::ControlFlow;
 
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
-use vantage_core::{Context, Result, error};
+use vantage_core::{Context, Result, VantageError, error};
 use vantage_dataset::traits::ReadableValueSet as _;
 use vantage_types::Record;
 
@@ -126,17 +126,12 @@ impl Dio {
             // as the stored record, not an error — so the count would
             // otherwise claim every row landed. Ask first; an id already
             // present is skipped and not counted.
-            let exists = master
-                .get_value(id)
-                .await
-                .with_context(|| stopped_at(index, id))?
-                .is_some();
+            let exists = stopped(master.get_value(id).await, || stopped_at(index, id))?.is_some();
             if exists {
                 outcome.skipped += 1;
             } else {
-                self.flash(ChangeFlash::insert(id.clone(), record.clone()))
-                    .await
-                    .with_context(|| stopped_at(index, id))?;
+                let flash = ChangeFlash::insert(id.clone(), record.clone());
+                stopped(self.flash(flash).await, || stopped_at(index, id))?;
                 outcome.inserted += 1;
             }
             if progress(index + 1, total).is_break() {
@@ -165,5 +160,17 @@ impl Dio {
             .into_iter()
             .map(|(id, record)| Ok((id, rule.conform(&record)?)))
             .collect()
+    }
+}
+
+/// `written` with the row the walk stopped at as its error, which stays
+/// `Unavailable` when the backend was: a caller can tell "try again later"
+/// from a row it must fix.
+fn stopped<T>(written: Result<T>, at: impl FnOnce() -> VantageError) -> Result<T> {
+    let unavailable = written.as_ref().is_err_and(VantageError::is_unavailable);
+    let wrapped = written.with_context(at);
+    match unavailable {
+        true => wrapped.map_err(VantageError::mark_unavailable),
+        false => wrapped,
     }
 }

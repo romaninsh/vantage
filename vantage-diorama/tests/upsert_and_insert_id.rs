@@ -6,9 +6,10 @@
 use std::sync::{Arc, Mutex};
 
 use ciborium::Value as CborValue;
-use vantage_core::{Result, error};
+use vantage_core::{Priority, Result, error};
+use vantage_dataset::Inserted;
 use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet};
-use vantage_diorama::{Cache, ChangeFlash, Dio, DioEvent, FlashOutcome, Lens};
+use vantage_diorama::{Cache, ChangeFlash, Confirmation, Dio, DioEvent, FlashOutcome, Lens};
 use vantage_types::Record;
 use vantage_vista::{
     Capability, Column, TableShell, Vista, VistaMetadata, forward_table_shell, mocks::MockShell,
@@ -58,6 +59,24 @@ forward_table_shell!(StrictReplace, inner, {
     }
 });
 
+/// A shell that notes the priority each insert runs under.
+#[derive(Clone)]
+struct NotesPriority {
+    inner: Box<dyn TableShell>,
+    seen: Arc<Mutex<Vec<Priority>>>,
+}
+
+forward_table_shell!(NotesPriority, inner, {
+    async fn insert(
+        &self,
+        id: Option<&str>,
+        record: &Record<CborValue>,
+    ) -> Result<(String, Inserted<CborValue>)> {
+        self.seen.lock().unwrap().push(Priority::current());
+        self.inner.insert(id, record).await
+    }
+});
+
 async fn dio_over(master: Vista) -> Result<Dio> {
     let lens = Lens::builder().cache(Cache::memory()).build()?;
     lens.dio(master).build().await
@@ -92,6 +111,44 @@ async fn upsert_inserts_then_replaces() -> Result<()> {
 
     vista.upsert_value("k", &rec(&[("name", "b")])).await?;
     assert_eq!(master_name(&dio, "k").await?, Some(text("b")));
+    Ok(())
+}
+
+/// An insert of an id the master holds writes nothing: the flash settles
+/// `Existed` with the stored row, not the flash's.
+#[tokio::test]
+async fn insert_existing_id_settles_as_existed() -> Result<()> {
+    let shell = empty_shell().with_record("a", rec(&[("id", "a"), ("name", "12")]));
+    let dio = dio_over(Vista::new("items", shell)).await?;
+
+    let outcome = dio
+        .flash(ChangeFlash::insert(
+            "a",
+            rec(&[("id", "a"), ("name", "99")]),
+        ))
+        .await?;
+    assert_eq!(outcome.confirmation, Confirmation::Existed);
+    let stored = outcome.record.expect("the stored row");
+    assert_eq!(stored.get("name"), Some(&text("12")));
+    assert_eq!(master_name(&dio, "a").await?, Some(text("12")));
+    Ok(())
+}
+
+/// Someone waits on every master write, so it runs `Essential` and the
+/// transport retries an unavailable backend.
+#[tokio::test]
+async fn master_writes_run_essential() -> Result<()> {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let noted = seen.clone();
+    let master =
+        Vista::new("items", empty_shell()).map_shell(|inner| NotesPriority { inner, seen: noted });
+    let dio = dio_over(master).await?;
+
+    let outcome = dio
+        .flash(ChangeFlash::insert("k", rec(&[("id", "k"), ("name", "a")])))
+        .await?;
+    assert_eq!(outcome.confirmation, Confirmation::Created);
+    assert_eq!(*seen.lock().unwrap(), [Priority::Essential]);
     Ok(())
 }
 

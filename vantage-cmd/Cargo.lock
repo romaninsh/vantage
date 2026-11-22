@@ -1303,7 +1303,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-cli-util"
-version = "0.6.9"
+version = "0.7.0"
 dependencies = [
  "async-trait",
  "ciborium",
@@ -1320,7 +1320,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-cmd"
-version = "0.7.7"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1343,7 +1343,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-core"
-version = "1.3.2"
+version = "1.5.0"
 dependencies = [
  "atty",
  "indexmap",
@@ -1355,9 +1355,8 @@ dependencies = [
 
 [[package]]
 name = "vantage-dataset"
-version = "1.2.1"
+version = "2.0.0"
 dependencies = [
- "anyhow",
  "async-stream",
  "async-trait",
  "csv",
@@ -1373,12 +1372,11 @@ dependencies = [
 
 [[package]]
 name = "vantage-expressions"
-version = "1.3.1"
+version = "1.3.2"
 dependencies = [
  "async-trait",
  "serde",
  "serde_json",
- "thiserror",
  "vantage-core",
 ]
 
@@ -1395,7 +1393,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "4.0.1"
+version = "5.1.0"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1417,7 +1415,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-types"
-version = "1.1.1"
+version = "1.2.0"
 dependencies = [
  "chrono",
  "ciborium",
@@ -1438,7 +1436,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "2.12.1"
+version = "3.0.0"
 dependencies = [
  "async-stream",
  "async-trait",
