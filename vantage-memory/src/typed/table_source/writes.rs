@@ -2,6 +2,7 @@
 //! checks read first; the mutation itself goes through [`MemoryDB::write`].
 
 use vantage_core::{Result, error};
+use vantage_dataset::Inserted;
 use vantage_table::table::Table;
 use vantage_types::{Entity, Record};
 
@@ -19,9 +20,9 @@ impl MemoryDB {
         table: &Table<Self, E>,
         id: &str,
         record: &Record<AnyMemoryType>,
-    ) -> Result<Record<AnyMemoryType>> {
+    ) -> Result<Inserted<AnyMemoryType>> {
         if let Some(existing) = self.row_in_set(table, id).await? {
-            return Ok(from_cbor_record(&existing));
+            return Ok(Inserted::Existed(from_cbor_record(&existing)));
         }
         let row = self.row_for(table, id, record);
         if self.fit(table, id, Row::new(row.clone())).await?.is_none() {
@@ -32,10 +33,10 @@ impl MemoryDB {
             .write(table, |store| Ok(store.insert_as(id, row)))
             .await?
         {
-            Ok(stored) => self.returned(table, id, stored).await,
+            Ok(stored) => Ok(Inserted::Created(self.returned(table, id, stored).await?)),
             // Lost a race to another writer: take whatever it stored.
             Err(e) => match self.row_in_set(table, id).await? {
-                Some(existing) => Ok(from_cbor_record(&existing)),
+                Some(existing) => Ok(Inserted::Existed(from_cbor_record(&existing))),
                 None => Err(e),
             },
         }

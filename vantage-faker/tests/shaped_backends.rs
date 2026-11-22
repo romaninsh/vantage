@@ -307,6 +307,7 @@ async fn offline_windows_refuse_on_schedule() {
     tokio::time::advance(Duration::from_secs(55)).await;
     let err = vista.fetch_window(0, 5).await.unwrap_err();
     assert!(err.to_string().contains("offline"), "got: {err}");
+    assert!(err.is_unavailable(), "an outage is transient: {err}");
 
     // t=65s: next period, online again.
     tokio::time::advance(Duration::from_secs(10)).await;
@@ -327,7 +328,7 @@ async fn error_rate_one_fails_everything_and_totals_lie() {
             ..BackendShape::default()
         },
     );
-    assert!(vista.fetch_window(0, 5).await.is_err());
+    assert!(vista.fetch_window(0, 5).await.unwrap_err().is_unavailable());
     assert!(vista.list_values().await.is_err());
 
     let honest_free = shaped(

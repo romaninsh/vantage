@@ -9,6 +9,7 @@ use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::{Result, error};
+use vantage_dataset::Inserted;
 use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet, WritableValueSet};
 use vantage_table::conditions::ConditionHandle;
 use vantage_table::pagination::Pagination;
@@ -165,15 +166,19 @@ where
         &self,
         id: Option<&str>,
         record: &Record<CborValue>,
-    ) -> Result<(String, Record<CborValue>)> {
+    ) -> Result<(String, Inserted<CborValue>)> {
         let native = native_record::<T>(record);
         let Some(id) = id else {
             let id = self.table.insert_return_id_value(&native).await?;
             let stored = self.read_back(&id).await?;
-            return Ok((id, stored));
+            return Ok((id, Inserted::Created(stored)));
         };
-        let inserted = self.table.insert_value(id, &native).await?;
-        Ok((id.to_string(), cbor_record::<T>(inserted)))
+        let inserted = match self.table.insert_value(id, &native).await? {
+            Inserted::Created(r) => Inserted::Created(cbor_record::<T>(r)),
+            Inserted::Existed(r) => Inserted::Existed(cbor_record::<T>(r)),
+            Inserted::Accepted => Inserted::Accepted,
+        };
+        Ok((id.to_string(), inserted))
     }
 
     async fn replace(&self, id: &str, record: &Record<CborValue>) -> Result<Record<CborValue>> {

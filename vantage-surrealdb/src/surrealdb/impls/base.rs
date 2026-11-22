@@ -6,6 +6,7 @@ use vantage_core::{Context, Result, error};
 use vantage_expressions::{Expression, ExpressionFlattener, Flatten};
 use vantage_vista::{Transaction, TxKey};
 
+use super::expr_data_source::is_transport_failure;
 use crate::surrealdb::tx::{SurrealBegin, SurrealTx};
 use crate::{AnySurrealType, surrealdb::SurrealDB};
 
@@ -55,10 +56,16 @@ impl SurrealDB {
     /// waits.
     pub async fn live(&self, resource: &str) -> Result<LiveStream> {
         let client = self.inner.lock().await.clone();
-        client
-            .live(resource)
-            .await
-            .context(error!("surrealdb live query failed", resource = resource))
+        let live = client.live(resource).await;
+        let unavailable = live.as_ref().is_err_and(is_transport_failure);
+        live.context(error!("surrealdb live query failed", resource = resource))
+            .map_err(|err| {
+                if unavailable {
+                    err.mark_unavailable()
+                } else {
+                    err
+                }
+            })
     }
 
     /// Replace each `{}` scalar with a `$_argN` placeholder and collect the

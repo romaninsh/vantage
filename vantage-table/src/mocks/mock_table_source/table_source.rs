@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use serde_json::Value;
-use vantage_dataset::{ReadableValueSet, im::ImTable, traits::Result};
+use vantage_dataset::{Inserted, ReadableValueSet, im::ImTable, traits::Result};
 use vantage_expressions::{
     Expression, traits::associated_expressions::AssociatedExpression,
     traits::expressive::ExpressiveEnum,
@@ -258,7 +258,7 @@ impl TableSource for MockTableSource {
         table: &Table<Self, E>,
         id: &Self::Id,
         record: &Record<Self::Value>,
-    ) -> Result<Record<Self::Value>>
+    ) -> Result<Inserted<Self::Value>>
     where
         E: Entity,
         Self: Sized,

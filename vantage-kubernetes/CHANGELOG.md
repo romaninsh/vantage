@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.0 — 2026-11-22
+
+- **Breaking:** `insert_table_value` returns `Inserted<…>` (vantage-table 5). Kubernetes tables
+  still refuse inserts.
+- API calls fail `Unavailable` when the API server couldn't be reached (connection, TLS stream,
+  timeout) or answered a retryable status (`408`, `429`, `5xx`). Other answers, such as
+  `Forbidden` or `NotFound`, are not.
+- Requires vantage-api-pool 1.4.0, vantage-core 1.4.0, vantage-dataset 2.0.0, vantage-table 5.0.0,
+  vantage-vista 3.0.0.
+
 ## 0.7.5 — 2026-11-17
 
 - Lockfile follows the published feedback round-up crates; no code changes.

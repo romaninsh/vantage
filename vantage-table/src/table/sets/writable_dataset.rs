@@ -21,7 +21,10 @@ where
             .try_into_record()
             .map_err(|e| vantage_core::error!("Failed to serialize entity to record", error = e))?;
 
-        let result_record = self.insert_value(id, &record).await?;
+        // `Accepted` has no stored row yet: the entity as given stands in.
+        let Some(result_record) = self.insert_value(id, &record).await?.into_record() else {
+            return Ok(entity.clone());
+        };
 
         E::try_from_record(&result_record)
             .map_err(|_| vantage_core::error!("Failed to convert record to entity"))

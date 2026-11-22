@@ -12,6 +12,7 @@ use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 
 use vantage_core::error;
+use vantage_dataset::Inserted;
 use vantage_dataset::traits::Result as DatasetResult;
 use vantage_expressions::{
     Expression, Expressive, expr_any,
@@ -246,7 +247,7 @@ impl TableSource for KubernetesCluster {
         _table: &Table<Self, E>,
         _id: &Self::Id,
         _record: &Record<Self::Value>,
-    ) -> DatasetResult<Record<Self::Value>>
+    ) -> DatasetResult<Inserted<Self::Value>>
     where
         E: Entity<Self::Value>,
         Self: Sized,

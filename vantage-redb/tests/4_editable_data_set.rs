@@ -54,7 +54,9 @@ async fn test_insert() {
         ("name", AnyRedbType::new("Gamma".to_string())),
         ("price", AnyRedbType::new(30i64)),
     ]);
-    let result = table.insert_value("c", &rec).await.unwrap();
+    let Inserted::Created(result) = table.insert_value("c", &rec).await.unwrap() else {
+        panic!("a new id reports Created");
+    };
     assert_eq!(result["name"].try_get::<String>(), Some("Gamma".into()));
     assert_eq!(result["price"].try_get::<i64>(), Some(30));
 
@@ -72,7 +74,9 @@ async fn test_insert_of_an_existing_id_keeps_the_stored_row() {
         ("name", AnyRedbType::new("Changed".to_string())),
         ("price", AnyRedbType::new(999i64)),
     ]);
-    let returned = table.insert_value("a", &other).await.unwrap();
+    let Inserted::Existed(returned) = table.insert_value("a", &other).await.unwrap() else {
+        panic!("an existing id reports Existed");
+    };
 
     assert_eq!(returned["name"].try_get::<String>(), Some("Alpha".into()));
     let stored = table.get_value("a").await.unwrap().expect("row exists");

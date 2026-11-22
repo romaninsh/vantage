@@ -14,12 +14,13 @@
 use bson::{Document, doc};
 use futures_util::StreamExt;
 use mongodb::change_stream::event::OperationType;
-use vantage_core::{Result, error};
+use vantage_core::Result;
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_vista::{VistaChange, VistaChangeStream};
 
 use super::{MongoTableShell, project_record};
 use crate::id::MongoId;
+use crate::mongodb::driver_error::driver_error;
 use crate::mongodb::view::undeclared_view;
 
 /// Event kinds the stream is opened for. Anything else (index builds,
@@ -57,19 +58,13 @@ pub(super) async fn watch(shell: &MongoTableShell) -> Result<VistaChangeStream> 
         .pipeline(pipeline)
         .await
         .map_err(|e| {
-            undeclared_view(&e, name).unwrap_or_else(|| {
-                error!(
-                    "Failed to open MongoDB change stream",
-                    details = e.to_string()
-                )
-            })
+            undeclared_view(&e, name)
+                .unwrap_or_else(|| driver_error("Failed to open MongoDB change stream", &e))
         })?;
 
     Ok(Box::pin(async_stream::try_stream! {
         while let Some(event) = events.next().await {
-            let event = event.map_err(|e| {
-                error!("MongoDB change stream failed", details = e.to_string())
-            })?;
+            let event = event.map_err(|e| driver_error("MongoDB change stream failed", &e))?;
 
             match event.operation_type {
                 OperationType::Insert

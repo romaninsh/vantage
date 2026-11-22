@@ -657,7 +657,7 @@ async fn admits_outside(b_of_a: &Vista, id: &str, a_id: &str) -> Result<()> {
 
 /// Whether `inserted` is the refusal of a record outside the set; any other
 /// error is the probe's.
-fn refused(inserted: Result<Rec>) -> Result<bool> {
+fn refused<T>(inserted: Result<T>) -> Result<bool> {
     match inserted {
         Ok(_) => Ok(false),
         Err(e) if matches!(e.kind(), ErrorKind::Conflict) => Ok(true),

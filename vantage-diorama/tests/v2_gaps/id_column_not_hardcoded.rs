@@ -44,7 +44,9 @@ async fn id_column_not_hardcoded() -> Result<()> {
     let inserted = dio
         .cached()
         .insert_value("k1", &record(&[("name", "first")]))
-        .await?;
+        .await?
+        .into_record()
+        .unwrap();
 
     // Let the queued write land, so the master can be checked and nothing
     // outlives the test.

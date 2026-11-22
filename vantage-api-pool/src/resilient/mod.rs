@@ -20,7 +20,10 @@ pub use breaker::BreakerState;
 pub use builder::ResilientClientBuilder;
 pub use error::{ClientError, ErrorKind};
 pub use observer::{TransportEvent, TransportObserver};
-pub use policy::{BreakerMode, CallPolicy, RetryMode, RetryPolicy};
+pub use policy::{
+    BreakerMode, CallPolicy, RetryMode, RetryPolicy, is_retryable_status,
+    is_transient_reqwest_error,
+};
 pub use rate::TokenBucket;
 
 use std::sync::Arc;

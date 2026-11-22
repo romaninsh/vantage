@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.0 — 2026-11-22
+
+- Requires vantage-dataset 2.0.0, vantage-table 5.0.0, vantage-vista 3.0.0. No code change.
+
 ## 0.6.9 — 2026-11-16
 
 - Requires vantage-table 4.0.0.

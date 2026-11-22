@@ -56,6 +56,8 @@ fn error_response(e: VantageError) -> ApiError {
         StatusCode::CONFLICT
     } else if e.is_invalid_value() {
         StatusCode::UNPROCESSABLE_ENTITY
+    } else if e.is_unavailable() {
+        StatusCode::SERVICE_UNAVAILABLE
     } else {
         tracing::error!(error = ?e, "model action failed");
         StatusCode::INTERNAL_SERVER_ERROR

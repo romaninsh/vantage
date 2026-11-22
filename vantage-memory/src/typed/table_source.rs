@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::Result;
+use vantage_dataset::Inserted;
 use vantage_expressions::{AssociatedExpression, ExprDataSource, Expression, ExpressiveEnum};
 use vantage_table::column::core::{Column, ColumnType};
 use vantage_table::table::Table;
@@ -256,7 +257,7 @@ impl TableSource for MemoryDB {
         table: &Table<Self, E>,
         id: &Self::Id,
         record: &Record<Self::Value>,
-    ) -> Result<Record<Self::Value>>
+    ) -> Result<Inserted<Self::Value>>
     where
         E: Entity<Self::Value>,
     {

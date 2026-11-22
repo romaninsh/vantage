@@ -16,6 +16,9 @@ pub enum ErrorKind {
     BreakerOpen,
     /// The auth refresher returned an error.
     Auth(String),
+    /// The request or the HTTP client could not be built: a bad header, URL
+    /// or client setting. A bug or a config error, so a retry won't help.
+    Build(String),
 }
 
 /// The failure of a call, once its retries (if any) are used up. The client
@@ -63,13 +66,14 @@ impl ClientError {
     }
 
     /// Whether no retry, now or later, could change this answer: a `4xx`
-    /// other than `408` / `429`, or an auth refresher that failed. Everything
-    /// else (`5xx`, transport, an open breaker) is the transient kind a later
-    /// call may get past, so callers log it quietly.
+    /// other than `408` / `429`, an auth refresher that failed, or a request
+    /// that could not be built. Everything else (`5xx`, transport, an open
+    /// breaker) is the transient kind a later call may get past, so callers
+    /// log it quietly.
     pub fn is_final(&self) -> bool {
         match self.kind {
             ErrorKind::Status(s) => !super::policy::is_retryable_status(s),
-            ErrorKind::Auth(_) => true,
+            ErrorKind::Auth(_) | ErrorKind::Build(_) => true,
             ErrorKind::Transport(_) | ErrorKind::BreakerOpen => false,
         }
     }
@@ -89,6 +93,7 @@ impl ClientError {
             ErrorKind::Transport(_) => "transport",
             ErrorKind::BreakerOpen => "breaker_open",
             ErrorKind::Auth(_) => "auth",
+            ErrorKind::Build(_) => "build",
         }
     }
 }
@@ -105,6 +110,7 @@ impl fmt::Display for ClientError {
             ErrorKind::Transport(e) => write!(f, "{e} after {} {plural}", self.attempts),
             ErrorKind::BreakerOpen => write!(f, "circuit breaker open"),
             ErrorKind::Auth(e) => write!(f, "auth refresh failed: {e}"),
+            ErrorKind::Build(e) => write!(f, "request build failed: {e}"),
         }
     }
 }

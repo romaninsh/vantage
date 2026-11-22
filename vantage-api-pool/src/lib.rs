@@ -8,5 +8,5 @@ pub mod resilient;
 pub use resilient::{
     AuthFuture, AuthRefresher, BreakerMode, BreakerState, CallPolicy, ClientError, ErrorKind,
     ResilientClient, ResilientClientBuilder, RetryMode, RetryPolicy, TokenBucket, TransportEvent,
-    TransportObserver,
+    TransportObserver, is_retryable_status, is_transient_reqwest_error,
 };

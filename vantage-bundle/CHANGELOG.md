@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.0 — 2026-11-22
+
+- Requires vantage-vista 3.0.0: `ModelBundle::build_vista` returns a 3.0 `Vista`. No code change.
+
 ## 0.6.2 — 2026-10-14
 
 - Requires vantage-vista 2.0.0: `ModelBundle::build_vista` returns a 2.0 `Vista`, so a bundle

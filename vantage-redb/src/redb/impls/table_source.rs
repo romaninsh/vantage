@@ -6,6 +6,7 @@ use indexmap::IndexMap;
 
 use redb::ReadableTable;
 use vantage_core::{Result, error};
+use vantage_dataset::Inserted;
 use vantage_expressions::{
     AssociatedExpression, DeferredFn, ExprDataSource, Expression, ExpressiveEnum, expr_any,
 };
@@ -234,7 +235,7 @@ impl TableSource for Redb {
         table: &Table<Self, E>,
         id: &Self::Id,
         record: &Record<Self::Value>,
-    ) -> Result<Record<Self::Value>>
+    ) -> Result<Inserted<Self::Value>>
     where
         E: Entity<Self::Value>,
     {
@@ -260,7 +261,7 @@ impl TableSource for Redb {
                 .transpose()?;
             if let Some(existing) = existing {
                 if fits(&conditions, &with_id(&existing, &id_col, id)) {
-                    return Ok(existing);
+                    return Ok(Inserted::Existed(existing));
                 }
                 return Err(error!("Row exists outside this set", id = id.as_str()).mark_conflict());
             }
@@ -277,7 +278,7 @@ impl TableSource for Redb {
         txn.commit()
             .map_err(|e| error!("Insert commit failed", details = e.to_string()))?;
 
-        Ok(record.clone())
+        Ok(Inserted::Created(record.clone()))
     }
 
     async fn replace_table_value<E>(

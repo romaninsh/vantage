@@ -92,8 +92,8 @@ anything that would rather poll.
 ## Errors
 
 `ClientError { kind, attempts, body }` with `ErrorKind::{Status(u16),
-Transport(String), BreakerOpen, Auth(String)}`, `status()` and
-`kind_name()`. `Display` is `HTTP 503 after 3 attempts`; the URL and the
+Transport(String), BreakerOpen, Auth(String), Build(String)}`, `status()`,
+`is_final()` and `kind_name()`. `Display` is `HTTP 503 after 3 attempts`; the URL and the
 body are never in the message.
 
 ## HTTP client and timeout
@@ -103,8 +103,8 @@ Unless you pass one with `http_client(..)`, the client builds its own
 `ResilientClient` does no system proxy lookup). That client times a request
 out after 30 s; change it with `request_timeout(..)` or turn it off with
 `no_request_timeout()`. A client you supply keeps its own settings. If the
-default client cannot be built, every attempt fails with a retryable
-`ErrorKind::Transport`, so an `essential()` call keeps retrying.
+default client cannot be built, the call fails with a final
+`ErrorKind::Build`; the next call tries the build again.
 
 ## License
 

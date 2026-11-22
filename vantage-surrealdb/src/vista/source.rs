@@ -13,6 +13,7 @@ use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::{Result, error};
+use vantage_dataset::Inserted;
 use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet, WritableValueSet};
 use vantage_expressions::traits::selectable::Selectable;
 use vantage_table::conditions::ConditionHandle;
@@ -353,16 +354,20 @@ where
         &self,
         id: Option<&str>,
         record: &Record<CborValue>,
-    ) -> Result<(String, Record<CborValue>)> {
+    ) -> Result<(String, Inserted<CborValue>)> {
         let native = to_native_record(record);
         let Some(id) = id else {
             let thing = self.table.insert_return_id_value(&native).await?;
             let stored = self.read_back(&thing).await?;
-            return Ok((thing.to_string(), stored));
+            return Ok((thing.to_string(), Inserted::Created(stored)));
         };
         let thing = self.parse_id(id);
-        let inserted = self.table.insert_value(thing.clone(), &native).await?;
-        Ok((thing.to_string(), to_cbor_record(&self.table, inserted)?))
+        let inserted = match self.table.insert_value(thing.clone(), &native).await? {
+            Inserted::Created(stored) => Inserted::Created(to_cbor_record(&self.table, stored)?),
+            Inserted::Existed(stored) => Inserted::Existed(to_cbor_record(&self.table, stored)?),
+            Inserted::Accepted => Inserted::Accepted,
+        };
+        Ok((thing.to_string(), inserted))
     }
 
     async fn replace(&self, id: &str, record: &Record<CborValue>) -> Result<Record<CborValue>> {

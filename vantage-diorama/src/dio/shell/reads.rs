@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::{Result, error};
+use vantage_dataset::Inserted;
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_types::Record;
 use vantage_vista::{
@@ -127,7 +128,7 @@ impl TableShell for DioShell {
         &self,
         id: Option<&str>,
         record: &Record<CborValue>,
-    ) -> Result<(String, Record<CborValue>)> {
+    ) -> Result<(String, Inserted<CborValue>)> {
         self.insert_row(id, record).await
     }
 

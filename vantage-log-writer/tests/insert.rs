@@ -3,6 +3,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use tempfile::tempdir;
 use tokio::time::sleep;
+use vantage_dataset::Inserted;
 use vantage_dataset::traits::{InsertableDataSet, ReadableValueSet, WritableValueSet};
 use vantage_expressions::{Expression, ExpressiveEnum};
 use vantage_log_writer::LogWriter;
@@ -70,10 +71,10 @@ async fn insert_with_an_explicit_id_uses_it() {
 
     let mut record = Record::<serde_json::Value>::new();
     record.insert("name".into(), serde_json::Value::String("hello".into()));
-    let stored = WritableValueSet::insert_value(&table, "my-id", &record)
+    let inserted = WritableValueSet::insert_value(&table, "my-id", &record)
         .await
         .unwrap();
-    assert_eq!(stored["id"], "my-id");
+    assert_eq!(inserted, Inserted::Accepted, "the line is only queued");
 
     sleep(Duration::from_millis(100)).await;
 

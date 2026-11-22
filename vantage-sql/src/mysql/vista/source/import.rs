@@ -68,10 +68,13 @@ struct Prepared {
 type Tx = Transaction<'static, MySql>;
 
 fn failed(table: &str, e: sqlx::Error) -> VantageError {
-    error!(
-        "MySQL import failed",
-        table = table,
-        details = e.to_string()
+    crate::sql_exec::mark_transport(
+        error!(
+            "MySQL import failed",
+            table = table,
+            details = e.to_string()
+        ),
+        &e,
     )
 }
 

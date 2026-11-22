@@ -148,6 +148,28 @@ fn each_mark_sets_exactly_its_kind() {
 }
 
 #[test]
+fn unavailable_is_the_only_retryable_kind() {
+    assert!(ErrorKind::Unavailable.retryable());
+    for kind in [
+        ErrorKind::Generic,
+        ErrorKind::Unsupported,
+        ErrorKind::Unimplemented,
+        ErrorKind::IncorrectUsage,
+        ErrorKind::NotFound,
+        ErrorKind::Conflict,
+        ErrorKind::Forbidden,
+        ErrorKind::InvalidValue,
+    ] {
+        assert!(!kind.retryable(), "{kind:?} must not be retryable");
+    }
+
+    let e = error!("x").mark_unavailable();
+    assert_eq!(e.kind(), ErrorKind::Unavailable);
+    assert!(e.is_unavailable());
+    assert!(!error!("x").is_unavailable());
+}
+
+#[test]
 fn marking_again_replaces_the_kind() {
     let e = error!("x").mark_unsupported().mark_not_found();
     assert_eq!(e.kind(), ErrorKind::NotFound);

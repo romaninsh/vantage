@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.0 — 2026-11-22
+
+- **Breaking:** `insert_table_value` returns `Inserted<…>` (vantage-table 5). vantage-cmd is
+  still read-only.
+- Requires vantage-dataset 2.0.0, vantage-table 5.0.0, vantage-vista 3.0.0.
+
 ## 0.7.7 — 2026-11-17
 
 - Lockfile follows the published feedback round-up crates; no code changes.

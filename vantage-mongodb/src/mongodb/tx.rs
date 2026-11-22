@@ -12,6 +12,8 @@ use mongodb::{Client, ClientSession};
 use vantage_core::{Result, error};
 use vantage_vista::{TxBackend, TxSlot};
 
+use crate::mongodb::driver_error::driver_error;
+
 pub(crate) type MongoTx = TxSlot<MongoBegin>;
 
 /// Runs the driver action `$op` in `$db`'s transaction when it has one,
@@ -66,14 +68,15 @@ impl TxBackend for MongoBegin {
     type Open = ClientSession;
 
     async fn begin(&self) -> Result<ClientSession> {
-        let begin_failed = |e: mongodb::error::Error| {
-            error!("couldn't begin the transaction", details = e.to_string())
-        };
+        let begin_failed =
+            |e: mongodb::error::Error| driver_error("couldn't begin the transaction", &e);
         let mut session = self.client.start_session().await.map_err(begin_failed)?;
         session.start_transaction().await.map_err(begin_failed)?;
         Ok(session)
     }
 
+    /// A commit lost to the network may still have applied, so its failure
+    /// is never marked unavailable.
     async fn commit(&self, mut session: ClientSession) -> Result<()> {
         session
             .commit_transaction()
@@ -87,6 +90,6 @@ impl TxBackend for MongoBegin {
         session
             .abort_transaction()
             .await
-            .map_err(|e| error!("transaction rollback failed", details = e.to_string()))
+            .map_err(|e| driver_error("transaction rollback failed", &e))
     }
 }

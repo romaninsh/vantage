@@ -48,6 +48,18 @@ pub enum ErrorKind {
     /// (the row is fine, the set disagrees) and from `IncorrectUsage` (a
     /// bug, where this is bad input). Transports map this to 422.
     InvalidValue,
+    /// The backend couldn't be reached or asked the caller to back off;
+    /// transports map it to 503. The only kind worth retrying.
+    Unavailable,
+}
+
+impl ErrorKind {
+    /// `true` when the same request may succeed later. Every other kind,
+    /// `Generic` included, is a refusal: retrying an unclassified error would
+    /// loop instead of failing loudly.
+    pub fn retryable(self) -> bool {
+        self == ErrorKind::Unavailable
+    }
 }
 
 /// VantageError with location tracking and context information
@@ -300,6 +312,12 @@ impl VantageError {
         self
     }
 
+    /// Classify this error as [`ErrorKind::Unavailable`] (builder).
+    pub fn mark_unavailable(mut self) -> Self {
+        self.kind = ErrorKind::Unavailable;
+        self
+    }
+
     /// Emit a `tracing::error!` event with this error's kind, location,
     /// message and context, then return `self` so it can be chained:
     /// `error!(...).mark_unsupported().traced()`. Classification and logging
@@ -357,6 +375,11 @@ impl VantageError {
     /// `true` if this error is classified as [`ErrorKind::InvalidValue`].
     pub fn is_invalid_value(&self) -> bool {
         self.kind == ErrorKind::InvalidValue
+    }
+
+    /// `true` if this error is classified as [`ErrorKind::Unavailable`].
+    pub fn is_unavailable(&self) -> bool {
+        self.kind == ErrorKind::Unavailable
     }
 
     fn emit_trace(&self) {

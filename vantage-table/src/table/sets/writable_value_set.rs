@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use indexmap::IndexMap;
 use vantage_core::Result;
-use vantage_dataset::WritableValueSet;
+use vantage_dataset::{Inserted, WritableValueSet};
 use vantage_types::{Entity, InvariantValue, Record};
 use vantage_vista::{Capability, forbidden};
 
@@ -26,14 +26,20 @@ where
         &self,
         id: impl Into<Self::Id> + Send,
         record: &Record<Self::Value>,
-    ) -> Result<Record<Self::Value>> {
+    ) -> Result<Inserted<Self::Value>> {
         let record = self.prepare_insert(record).await?;
         let id = id.into();
         let result = self
             .data_source()
             .insert_table_value(self, &id, &record)
             .await?;
-        self.finish_insert(&id, &result).await?;
+        // An `Existed` insert wrote nothing, so no after-insert hook runs;
+        // `Accepted` has no stored row, so the hooks see the row as sent.
+        match &result {
+            Inserted::Created(stored) => self.finish_insert(&id, stored).await?,
+            Inserted::Accepted => self.finish_insert(&id, &record).await?,
+            Inserted::Existed(_) => {}
+        }
         Ok(result)
     }
 
@@ -179,7 +185,11 @@ where
         self.require_allowed(Capability::Update)?;
         self.require_confined_writes("upsert")?;
         match self.stored_value(&id).await? {
-            None => self.insert_value(id, record).await,
+            None => Ok(self
+                .insert_value(id, record)
+                .await?
+                .into_record()
+                .unwrap_or_else(|| record.clone())),
             Some(former) => self.replace_over(id, record, Some(former)).await,
         }
     }

@@ -1,5 +1,13 @@
 # Changelog
 
+## 5.0.0 — 2026-11-22
+
+- **Breaking:** `insert_table_value` returns `Inserted<AnyMemoryType>` and the vista shell's
+  `insert` returns `(String, Inserted<CborValue>)`. Use `.into_record()` for the row.
+- An insert reports `Created`, or `Existed` with the stored row when the id is already in the
+  set.
+- Requires vantage-dataset 2.0.0, vantage-table 5.0.0, vantage-vista 3.0.0.
+
 ## 4.1.0 — 2026-11-20
 
 - `date`, `time` and `timestamp` columns store and read the carrier forms of

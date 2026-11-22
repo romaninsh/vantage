@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use vantage_types::Record;
 
-use crate::{im::ImTable, traits::WritableValueSet};
+use crate::{im::ImTable, inserted::Inserted, traits::WritableValueSet};
 
 #[async_trait]
 impl<E, V> WritableValueSet for ImTable<E, V>
@@ -13,15 +13,15 @@ where
         &self,
         id: impl Into<Self::Id> + Send,
         record: &Record<Self::Value>,
-    ) -> crate::traits::Result<Record<Self::Value>> {
+    ) -> crate::traits::Result<Inserted<Self::Value>> {
         let id = id.into();
         let stored = self.data_source.with_table_mut(&self.table_name, |table| {
             if let Some(existing_record) = table.get(&id) {
-                return existing_record.clone();
+                return Inserted::Existed(existing_record.clone());
             }
 
             table.insert(id.clone(), record.clone());
-            record.clone()
+            Inserted::Created(record.clone())
         });
 
         Ok(stored)

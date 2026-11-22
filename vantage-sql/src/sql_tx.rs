@@ -7,6 +7,8 @@ use sqlx::{Database, Pool};
 use vantage_core::{Result, error};
 use vantage_vista::{TxBackend, TxSlot};
 
+use crate::sql_exec::mark_transport;
+
 pub(crate) type SqlTx<DB> = TxSlot<SqlBegin<DB>>;
 
 pub(crate) struct SqlBegin<DB: Database> {
@@ -25,16 +27,21 @@ impl<DB: Database> TxBackend for SqlBegin<DB> {
     type Open = sqlx::Transaction<'static, DB>;
 
     async fn begin(&self) -> Result<Self::Open> {
-        self.pool
-            .begin_with(self.begin)
-            .await
-            .map_err(|e| error!("couldn't begin the transaction", details = e.to_string()))
+        self.pool.begin_with(self.begin).await.map_err(|e| {
+            mark_transport(
+                error!("couldn't begin the transaction", details = e.to_string()),
+                &e,
+            )
+        })
     }
 
     async fn commit(&self, open: Self::Open) -> Result<()> {
-        open.commit()
-            .await
-            .map_err(|e| error!("transaction commit failed", details = e.to_string()))
+        open.commit().await.map_err(|e| {
+            mark_transport(
+                error!("transaction commit failed", details = e.to_string()),
+                &e,
+            )
+        })
     }
 
     /// A failed explicit rollback still rolls back: sqlx queues one when the

@@ -1,5 +1,5 @@
 use ciborium::Value as CborValue;
-use surreal_client::SurrealClient;
+use surreal_client::{SurrealClient, SurrealError};
 use vantage_core::{Context, Result};
 use vantage_expressions::{DeferredFn, ExprDataSource, Expression};
 
@@ -60,9 +60,10 @@ async fn run_query(
         None => client.query_cbor(query_str, params_cbor).await,
         Some(txn) => client.query_cbor_in(txn, query_str, params_cbor).await,
     };
+    let unavailable = sent.as_ref().is_err_and(is_transport_failure);
     let result = sent
         .map_err(|e| match e {
-            surreal_client::SurrealError::ServerError { code, message } => {
+            SurrealError::ServerError { code, message } => {
                 vantage_core::error!(
                     "SurrealDB server error",
                     error_code = code,
@@ -76,7 +77,14 @@ async fn run_query(
         .context(vantage_core::error!(
             "Failed to execute expression",
             expression = query_str.to_string()
-        ))?;
+        ))
+        .map_err(|err| {
+            if unavailable {
+                err.mark_unavailable()
+            } else {
+                err
+            }
+        })?;
 
     // One statement is sent, so exactly one response comes back.
     let responses = result
@@ -135,6 +143,27 @@ async fn run_query(
             query_error = error_message,
             error_type = "query_execution"
         ))
+    }
+}
+
+/// The server was not reached or the socket went away: a dropped or refused
+/// connection, a reply that never came, a reconnect still backing off. A
+/// statement the server answered with an error is a refusal, never this.
+pub(crate) fn is_transport_failure(err: &SurrealError) -> bool {
+    match err {
+        SurrealError::Connection(_)
+        | SurrealError::Timeout(_)
+        | SurrealError::WebSocket(_)
+        | SurrealError::Io(_) => true,
+        SurrealError::Network(e) => {
+            e.is_connect() || e.is_timeout() || e.status().is_some_and(|s| s.is_server_error())
+        }
+        SurrealError::Auth(_)
+        | SurrealError::Serialization(_)
+        | SurrealError::ServerError { .. }
+        | SurrealError::Protocol(_)
+        | SurrealError::Json(_)
+        | SurrealError::UrlParse(_) => false,
     }
 }
 

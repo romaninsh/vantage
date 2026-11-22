@@ -112,6 +112,32 @@ async fn a_row_can_be_updated_and_read_back() {
 
 #[tokio::test]
 #[ignore = "needs a running SpacetimeDB host with `cardroom` published"]
+async fn spacetimedb_insert_existing_id_reports_existed() {
+    use vantage_dataset::Inserted;
+    use vantage_dataset::traits::WritableValueSet;
+
+    // The stored `config` row is found before any statement is sent, so the
+    // shared singleton is never written.
+    let mut factory = authed().vista_factory();
+    let vista = factory.from_relation("config").await.expect("build vista");
+
+    let rows = vista.list_values().await.expect("list config");
+    let (id, before) = rows.iter().next().expect("cardroom seeds a config row");
+
+    let mut changed = before.clone();
+    changed.insert(
+        "turn_timeout_secs".into(),
+        ciborium::Value::Integer(9999.into()),
+    );
+    let inserted = vista
+        .insert_value(id.clone(), &changed)
+        .await
+        .expect("insert of a stored id");
+    assert_eq!(inserted, Inserted::Existed(before.clone()));
+}
+
+#[tokio::test]
+#[ignore = "needs a running SpacetimeDB host with `cardroom` published"]
 async fn a_write_is_visible_on_the_change_feed() {
     use futures::StreamExt;
     use std::time::Duration;

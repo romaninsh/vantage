@@ -403,7 +403,7 @@ impl TableSource for Type3TableSource {
         _table: &Table<Self, E>,
         _id: &Self::Id,
         _record: &Record<Self::Value>,
-    ) -> Result<Record<Self::Value>>
+    ) -> Result<vantage_dataset::Inserted<Self::Value>>
     where
         E: Entity<Self::Value>,
         Self: Sized,

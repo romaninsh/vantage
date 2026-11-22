@@ -20,6 +20,7 @@
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::{Result, error};
+use vantage_dataset::Inserted;
 use vantage_dataset::traits::InsertableValueSet;
 use vantage_types::Record;
 
@@ -261,12 +262,13 @@ impl Vista {
     }
 
     /// Nested insert for an explicitly-keyed main row (the `insert_value` path).
-    /// Returns the inserted main record as the driver stored it.
+    /// Returns what the driver reported for the main row; the children don't
+    /// change it.
     pub(crate) async fn insert_nested_value(
         &self,
         id: &str,
         record: &Record<CborValue>,
-    ) -> Result<Record<CborValue>> {
+    ) -> Result<Inserted<CborValue>> {
         let (mut main, has_one, has_many) = self.classify_insert(&self.without_computed(record))?;
         self.insert_has_one_children(&mut main, has_one).await?;
         let (_, inserted) = self.shell().insert(Some(id), &main).await?;

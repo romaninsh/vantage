@@ -1,4 +1,5 @@
 use std::sync::atomic::{AtomicU32, Ordering};
+use vantage_dataset::Inserted;
 use vantage_expressions::ExprDataSource;
 use vantage_surrealdb::surreal_expr;
 use vantage_surrealdb::surrealdb::SurrealDB;
@@ -52,6 +53,9 @@ async fn test_insert_table_value() {
         .insert_table_value(&table, &id, &record)
         .await
         .expect("insert_table_value failed");
+    let Inserted::Created(returned) = returned else {
+        panic!("expected Created, got {returned:?}");
+    };
 
     assert_eq!(
         returned.get("name").and_then(|v| v.try_get::<String>()),

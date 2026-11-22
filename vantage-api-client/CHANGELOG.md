@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.0.0 — 2026-11-22
+
+- **Breaking:** `insert_table_value` returns `Inserted<CborValue>` and the REST vista shell's
+  `insert` returns `(String, Inserted<CborValue>)`. Use `.into_record()` for the row; it is
+  `None` when the API only accepted the record.
+- A REST insert answered with a success other than 202 is `Created` with the record as sent (the
+  answer body is not read). A 202, a non-2xx status listed in `accept`, or a batching target is
+  `Accepted`, with or without an id given to the vista shell.
+- Transport failures the pool treats as transient (no response, an open breaker, `408`, `429`, `5xx`) are
+  `Unavailable`; final ones are not. Retry decisions use `vantage_api_pool::is_retryable_status`.
+- Requires vantage-api-pool 1.4.0, vantage-core 1.4.0, vantage-dataset 2.0.0, vantage-table 5.0.0,
+  vantage-vista 3.0.0.
+
 ## 2.4.2 — 2026-11-17
 
 - An `api.insert` answered 429 is retried even without `idempotency_key` or `idempotent`: the

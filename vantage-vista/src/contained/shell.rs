@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::Result;
+use vantage_dataset::Inserted;
 use vantage_dataset::traits::{ReadableValueSet, WritableValueSet};
 use vantage_types::Record;
 
@@ -115,7 +116,11 @@ impl TableShell for ContainedShell {
         Ok(())
     }
 
-    async fn insert(&self, id: Option<&str>, record: &Rec) -> Result<(String, Rec)> {
+    async fn insert(
+        &self,
+        id: Option<&str>,
+        record: &Rec,
+    ) -> Result<(String, Inserted<CborValue>)> {
         let writeback = self.writeback(Capability::Insert)?;
         let id = match id {
             Some(id) => id.to_string(),

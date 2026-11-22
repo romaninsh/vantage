@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::{Result, error};
+use vantage_dataset::Inserted;
 #[cfg(feature = "rhai")]
 use vantage_rhai::rhai;
 use vantage_types::Record;
@@ -181,11 +182,17 @@ pub trait TableShell: CloneTableShell + Send + Sync + 'static {
     // a narrowed handle whose shell doesn't.
 
     /// Insert `record` as row `id`, or under an id the backend makes when
-    /// `id` is `None` (not retry-safe). Returns the id and the stored row.
-    /// An id already in the set returns the stored row untouched; an id held
-    /// outside the set is `Conflict`; a new row is conformed to the set's
-    /// equality conditions.
-    async fn insert(&self, _id: Option<&str>, _record: &Rec) -> Result<(String, Rec)> {
+    /// `id` is `None` (not retry-safe). Returns the id and what the insert
+    /// did: an id already in the set is [`Inserted::Existed`] with the stored
+    /// row untouched; an id held outside the set is `Conflict`; a new row is
+    /// conformed to the set's equality conditions and is
+    /// [`Inserted::Created`] with the row as stored. A backend that confirms
+    /// later answers [`Inserted::Accepted`].
+    async fn insert(
+        &self,
+        _id: Option<&str>,
+        _record: &Rec,
+    ) -> Result<(String, Inserted<CborValue>)> {
         unsupported(Capability::Insert)
     }
 

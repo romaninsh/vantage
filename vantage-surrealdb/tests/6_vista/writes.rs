@@ -22,7 +22,18 @@ async fn vista_writes_round_trip_via_cbor() -> TestResult {
     .into_iter()
     .collect();
 
-    vista.insert_value("delta", &record).await?;
+    let created = vista.insert_value("delta", &record).await?;
+    assert!(matches!(created, Inserted::Created(_)), "{created:?}");
+
+    // A second insert of the same id writes nothing and reports the stored row.
+    let mut other = record.clone();
+    other.insert("name".to_string(), CborValue::Text("Other".into()));
+    match vista.insert_value("delta", &other).await? {
+        Inserted::Existed(stored) => {
+            assert_eq!(stored.get("name"), Some(&CborValue::Text("Delta".into())))
+        }
+        outcome => panic!("expected Existed, got {outcome:?}"),
+    }
 
     let fetched = vista.get_value("delta").await?.expect("inserted");
     assert_eq!(fetched.get("name"), Some(&CborValue::Text("Delta".into())));

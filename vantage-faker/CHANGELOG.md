@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.0.0 — 2026-11-22
+
+- **Breaking:** requires vantage-memory 5 and vantage-vista 3. The shaped shell's `insert`
+  returns `(String, Inserted<CborValue>)`; use `.into_record()` for the row.
+- A shaped source's scheduled outage and injected request faults fail `Unavailable`, so retry
+  logic can be exercised against them.
+- Requires vantage-core 1.4.0, vantage-dataset 2.0.0.
+
 ## 3.0.0 — 2026-11-14
 
 - **Breaking:** requires vantage-memory 4. The public API exposes vantage-memory types, so a

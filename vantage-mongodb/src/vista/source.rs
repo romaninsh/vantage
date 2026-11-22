@@ -16,6 +16,7 @@ use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::Result;
+use vantage_dataset::Inserted;
 use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet, WritableValueSet};
 use vantage_table::conditions::ConditionHandle;
 use vantage_table::table::Table;
@@ -208,19 +209,24 @@ impl TableShell for MongoTableShell {
         &self,
         id: Option<&str>,
         record: &Record<CborValue>,
-    ) -> Result<(String, Record<CborValue>)> {
+    ) -> Result<(String, Inserted<CborValue>)> {
         let mongo_record = self.flatten_for_write(record, None)?;
         let Some(id) = id else {
             let id = self.table.insert_return_id_value(&mongo_record).await?;
             let stored = self.read_back(&id).await?;
-            return Ok((id.to_string(), stored));
+            return Ok((id.to_string(), Inserted::Created(stored)));
         };
         let mongo_id = self.parse_id(id);
-        let inserted = self
+        let inserted = match self
             .table
             .insert_value(mongo_id.clone(), &mongo_record)
-            .await?;
-        Ok((mongo_id.to_string(), self.unflatten_to_cbor(inserted)?))
+            .await?
+        {
+            Inserted::Created(row) => Inserted::Created(self.unflatten_to_cbor(row)?),
+            Inserted::Existed(row) => Inserted::Existed(self.unflatten_to_cbor(row)?),
+            Inserted::Accepted => Inserted::Accepted,
+        };
+        Ok((mongo_id.to_string(), inserted))
     }
 
     async fn replace(&self, id: &str, record: &Record<CborValue>) -> Result<Record<CborValue>> {

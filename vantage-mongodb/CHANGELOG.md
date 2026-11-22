@@ -1,5 +1,16 @@
 # Changelog
 
+## 5.0.0 — 2026-11-22
+
+- **Breaking:** `insert_table_value` returns `Inserted<AnyMongoType>` and the vista shell's
+  `insert` returns `(String, Inserted<CborValue>)`. Use `.into_record()` for the row.
+- An insert reports `Created`, or `Existed` with the stored document when the id is already in
+  the set.
+- Driver errors are `Unavailable` when the server couldn't be reached: IO failures, no server
+  selected in time, a cleared connection pool. Server refusals (write errors, validators,
+  duplicate keys) are not, and neither is a failed commit, which may still have applied.
+- Requires vantage-core 1.4.0, vantage-dataset 2.0.0, vantage-table 5.0.0, vantage-vista 3.0.0.
+
 ## 4.2.0 — 2026-11-21
 
 - YAML column type `json`: a sub-document or an array as one value, unchecked inside. It takes JSON

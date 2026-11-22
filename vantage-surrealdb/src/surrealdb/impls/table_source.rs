@@ -3,6 +3,7 @@ use indexmap::IndexMap;
 
 use crate::operation::SurrealOperation;
 use vantage_core::error;
+use vantage_dataset::Inserted;
 use vantage_dataset::traits::Result;
 use vantage_expressions::traits::associated_expressions::AssociatedExpression;
 use vantage_expressions::traits::datasource::ExprDataSource;
@@ -533,7 +534,7 @@ impl TableSource for SurrealDB {
         table: &Table<Self, E>,
         id: &Self::Id,
         record: &Record<Self::Value>,
-    ) -> Result<Record<Self::Value>>
+    ) -> Result<Inserted<Self::Value>>
     where
         E: Entity<Self::Value>,
     {
@@ -541,7 +542,7 @@ impl TableSource for SurrealDB {
         // The `WritableDataSet::insert` contract is idempotent: a record
         // already in the set is returned untouched.
         if let Some(existing) = self.get_table_value(table, id).await? {
-            return Ok(existing);
+            return Ok(Inserted::Existed(existing));
         }
         let conditioned = table.conditions().next().is_some();
         if conditioned {
@@ -563,8 +564,13 @@ impl TableSource for SurrealDB {
                 // SurrealDB's CREATE (and, since v3, INSERT too) rejects
                 // duplicates, so another writer taking the id between the
                 // check and the insert surfaces here: read the record back.
-                if let Some(existing) = self.get_table_value(table, id).await? {
-                    return Ok(existing);
+                // After a lost reply the row found is this call's own write.
+                if let Some(stored) = self.get_table_value(table, id).await? {
+                    return Ok(if e.is_unavailable() {
+                        Inserted::Created(stored)
+                    } else {
+                        Inserted::Existed(stored)
+                    });
                 }
                 if conditioned && self.id_exists_anywhere(id).await? {
                     return Err(set_writes::held_outside(table.table_name(), id));
@@ -582,7 +588,7 @@ impl TableSource for SurrealDB {
         let map = extract_first_map(result)?;
         let id_field = table.id_field_name();
         let (_thing, rec) = parse_cbor_row(map, &id_field, table.table_name());
-        Ok(rec)
+        Ok(Inserted::Created(rec))
     }
 
     async fn replace_table_value<E>(

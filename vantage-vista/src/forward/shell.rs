@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::Result;
+use vantage_dataset::Inserted;
 use vantage_types::Record;
 
 use crate::{
@@ -96,7 +97,11 @@ pub trait ForwardShell: Send + Sync + 'static {
 
     // ---- Writes ------------------------------------------------------------
 
-    async fn insert(&self, id: Option<&str>, record: &Rec) -> Result<(String, Rec)> {
+    async fn insert(
+        &self,
+        id: Option<&str>,
+        record: &Rec,
+    ) -> Result<(String, Inserted<CborValue>)> {
         self.inner().insert(id, record).await
     }
     async fn replace(&self, id: &str, record: &Rec) -> Result<Rec> {

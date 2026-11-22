@@ -3,6 +3,7 @@
 //! Wraps the official `mongodb` crate. Uses `bson::Document` as the native
 //! condition type — no SQL expressions involved.
 
+pub(crate) mod driver_error;
 pub mod impls;
 mod streams;
 pub mod topology;
@@ -21,6 +22,7 @@ pub use streams::{DEFAULT_STREAM_POOL_SIZE, STREAM_APP_NAME};
 pub use topology::Topology;
 pub use view::MongoView;
 
+use driver_error::driver_error;
 use streams::StreamClient;
 use tx::{MongoBegin, MongoTx};
 
@@ -79,9 +81,8 @@ impl MongoDB {
     /// Change streams run on a second client built from the same URI on the
     /// first watch; see [`with_stream_pool_size`](Self::with_stream_pool_size).
     pub async fn connect(uri: &str, database: impl Into<String>) -> vantage_core::Result<Self> {
-        let connect_error = |e: mongodb::error::Error| {
-            vantage_core::error!("Failed to connect to MongoDB", details = e.to_string())
-        };
+        let connect_error =
+            |e: mongodb::error::Error| driver_error("Failed to connect to MongoDB", &e);
         let options = ClientOptions::parse(uri).await.map_err(connect_error)?;
         let client = Client::with_options(options.clone()).map_err(connect_error)?;
         let mut mongo = Self::from_parts(client, database.into(), Some(options));

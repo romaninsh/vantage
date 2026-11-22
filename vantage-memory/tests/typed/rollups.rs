@@ -191,6 +191,8 @@ async fn a_new_parent_returns_zero_for_its_sum_rollup() {
     let inserted = ds
         .insert_table_value(&t, &"v4".to_string(), &named("New"))
         .await
+        .unwrap()
+        .into_record()
         .unwrap();
     assert_eq!(inserted["cash"].value(), &int(0));
     let replaced = ds

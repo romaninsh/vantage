@@ -11,6 +11,7 @@ use futures_util::TryStreamExt;
 use indexmap::IndexMap;
 
 use vantage_core::{Result, error};
+use vantage_dataset::Inserted;
 use vantage_expressions::{
     AssociatedExpression, DeferredFn, ExprDataSource, Expression, ExpressiveEnum, expr_any,
 };
@@ -24,6 +25,7 @@ use crate::id::{MongoId, eq_filter, id_variants};
 use vantage_vista::Transaction;
 
 use crate::mongodb::MongoDB;
+use crate::mongodb::driver_error::driver_error;
 use crate::mongodb::impls::joins::{imported_columns, join_alias_of, table_joins};
 use crate::mongodb::tx::in_session;
 use crate::mongodb::validation::validation_failed;
@@ -233,7 +235,8 @@ const WRITE_CONFLICT: i32 = 112;
 /// A failed write to `collection`: an undeclared server-side view gets its
 /// own unsupported error, a validator refusal names the broken rules,
 /// anything else `message` with the driver's details, marked a conflict when
-/// another transaction holds the document.
+/// another transaction holds the document and unavailable when the server
+/// could not be reached.
 fn write_failed(
     e: &mongodb::error::Error,
     collection: &str,
@@ -242,7 +245,7 @@ fn write_failed(
     undeclared_view(e, collection)
         .or_else(|| validation_failed(e, collection))
         .unwrap_or_else(|| {
-            let err = error!(message, details = e.to_string());
+            let err = driver_error(message, e);
             if matches!(&*e.kind, mongodb::error::ErrorKind::Command(c) if c.code == WRITE_CONFLICT)
             {
                 err.mark_conflict()
@@ -288,10 +291,10 @@ impl MongoDB {
                 .database()
                 .aggregate(pipeline)
                 .await
-                .map_err(|e| error!("MongoDB set probe failed", details = e.to_string()))?
+                .map_err(|e| driver_error("MongoDB set probe failed", &e))?
                 .try_collect()
                 .await
-                .map_err(|e| error!("MongoDB set probe cursor failed", details = e.to_string()))?;
+                .map_err(|e| driver_error("MongoDB set probe cursor failed", &e))?;
             matching.extend(found);
         }
         Ok(matching)
@@ -655,7 +658,7 @@ impl TableSource for MongoDB {
         let filter = select.build_filter(self).await?;
 
         let Some(d) = in_session!(self, coll.find_one(confined(id, filter)))
-            .map_err(|e| error!("MongoDB find_one failed", details = e.to_string()))?
+            .map_err(|e| driver_error("MongoDB find_one failed", &e))?
         else {
             return Ok(None);
         };
@@ -688,8 +691,7 @@ impl TableSource for MongoDB {
         if let Some(sort) = select.build_sort() {
             find = find.sort(sort);
         }
-        let d = in_session!(self, find)
-            .map_err(|e| error!("MongoDB find_one failed", details = e.to_string()))?;
+        let d = in_session!(self, find).map_err(|e| driver_error("MongoDB find_one failed", &e))?;
 
         match d {
             Some(d) => {
@@ -760,7 +762,7 @@ impl TableSource for MongoDB {
         table: &Table<Self, E>,
         id: &Self::Id,
         record: &Record<Self::Value>,
-    ) -> Result<Record<Self::Value>>
+    ) -> Result<Inserted<Self::Value>>
     where
         E: Entity<Self::Value>,
     {
@@ -773,12 +775,12 @@ impl TableSource for MongoDB {
         }
 
         if let Some(existing) = self.get_table_value(table, id).await? {
-            return Ok(existing);
+            return Ok(Inserted::Existed(existing));
         }
         let held_outside =
             || error!("Id is held outside the table's set", id = id.to_string()).mark_conflict();
         if in_session!(self, coll.find_one(doc! { "_id": id }))
-            .map_err(|e| error!("MongoDB find_one failed", details = e.to_string()))?
+            .map_err(|e| driver_error("MongoDB find_one failed", &e))?
             .is_some()
         {
             return Err(held_outside());
@@ -803,11 +805,13 @@ impl TableSource for MongoDB {
             return self
                 .get_table_value(table, id)
                 .await?
+                .map(Inserted::Existed)
                 .ok_or_else(held_outside);
         }
 
         self.get_table_value(table, id)
             .await?
+            .map(Inserted::Created)
             .ok_or_else(|| error!("Inserted row disappeared", id = id.to_string()))
     }
 
@@ -845,7 +849,7 @@ impl TableSource for MongoDB {
             .map_err(|e| write_failed(&e, table.table_name(), "MongoDB replace_one failed"))?;
         } else {
             if in_session!(self, coll.find_one(doc! { "_id": id }))
-                .map_err(|e| error!("MongoDB find_one failed", details = e.to_string()))?
+                .map_err(|e| driver_error("MongoDB find_one failed", &e))?
                 .is_some()
             {
                 return Err(

@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::Result;
-use vantage_dataset::{InsertableValueSet, ReadableValueSet, ValueSet, WritableValueSet};
+use vantage_dataset::{InsertableValueSet, Inserted, ReadableValueSet, ValueSet, WritableValueSet};
 use vantage_types::Record;
 
 use super::Vista;
@@ -47,7 +47,11 @@ impl ReadableValueSet for Vista {
 
 #[async_trait]
 impl WritableValueSet for Vista {
-    async fn insert_value(&self, id: impl Into<String> + Send, record: &Rec) -> Result<Rec> {
+    async fn insert_value(
+        &self,
+        id: impl Into<String> + Send,
+        record: &Rec,
+    ) -> Result<Inserted<CborValue>> {
         self.require_write(Capability::Insert, "insert")?;
         self.insert_nested_value(&id.into(), record).await
     }

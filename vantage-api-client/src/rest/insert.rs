@@ -14,6 +14,7 @@ use indexmap::IndexMap;
 use reqwest::Method;
 use serde_json::Value;
 use uuid::Uuid;
+use vantage_api_pool::is_retryable_status;
 use vantage_api_pool::resilient::{CallPolicy, ErrorKind};
 use vantage_core::{Result, VantageError, error};
 use vantage_types::{PlainDialect, Record, record_to_json};
@@ -83,16 +84,20 @@ struct Failure {
     rate_limited: bool,
 }
 
+/// How the API took an insert. The endpoint's answer body is not read, so
+/// `Stored` means a success status other than 202 on an unbatched target.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Delivered {
+    Stored,
+    Queued,
+}
+
 /// Attempts per request, the first included.
 const MAX_ATTEMPTS: usize = 5;
 /// The wait before the first retry; it doubles for each one after.
 const BASE_BACKOFF: Duration = Duration::from_secs(1);
 /// The longest a server's `Retry-After` is obeyed.
 const RETRY_AFTER_CAP: Duration = Duration::from_secs(30);
-
-fn is_retryable(status: u16) -> bool {
-    matches!(status, 408 | 429) || (500..600).contains(&status)
-}
 
 /// The `api.insert` target a table's own copy of the data source carries,
 /// built once with the table.
@@ -194,8 +199,13 @@ impl RestInsertEndpoint {
 
     /// [`Self::send_with_ids`] with a fresh UUIDv7 per record.
     pub async fn send(&self, records: &[Record<CborValue>]) -> Result<()> {
+        self.deliver_records(records).await.map(|_| ())
+    }
+
+    /// [`Self::send`], saying whether the API confirmed storing the records.
+    pub(crate) async fn deliver_records(&self, records: &[Record<CborValue>]) -> Result<Delivered> {
         let ids: Vec<Uuid> = records.iter().map(|_| Uuid::now_v7()).collect();
-        self.send_with_ids(records, &ids).await
+        self.deliver_with_ids(records, &ids).await
     }
 
     /// POST `records` in requests of at most `batch` records, never mixing
@@ -207,6 +217,17 @@ impl RestInsertEndpoint {
     /// happen only when `idempotency_key` or `idempotent` says a repeat is
     /// safe, or the server answered 429 (it refused before acting).
     pub async fn send_with_ids(&self, records: &[Record<CborValue>], ids: &[Uuid]) -> Result<()> {
+        self.deliver_with_ids(records, ids).await.map(|_| ())
+    }
+
+    /// The body of [`Self::send_with_ids`]. `Queued` when any request was
+    /// answered 202 or with a non-2xx status listed in `accept`, or when the
+    /// target batches: none of those say the record was stored.
+    async fn deliver_with_ids(
+        &self,
+        records: &[Record<CborValue>],
+        ids: &[Uuid],
+    ) -> Result<Delivered> {
         if records.len() != ids.len() {
             return Err(error!(
                 "Insert needs one id per record",
@@ -220,11 +241,18 @@ impl RestInsertEndpoint {
             .map(|(r, id)| (record_to_json(&PlainDialect, r.clone()), *id))
             .collect();
         let redaction = self.redaction();
+        let mut delivered = if self.batch > 1 {
+            Delivered::Queued
+        } else {
+            Delivered::Stored
+        };
         for chunk in self.chunks(&records) {
             let rendered = self.render(&chunk, &redaction)?;
-            self.deliver(&rendered, &redaction).await?;
+            if self.deliver(&rendered, &redaction).await? == Delivered::Queued {
+                delivered = Delivered::Queued;
+            }
         }
-        Ok(())
+        Ok(delivered)
     }
 
     /// Requests in order of each group's first appearance; records keep
@@ -289,7 +317,7 @@ impl RestInsertEndpoint {
     /// failure until [`MAX_ATTEMPTS`] are spent. The pool makes a single
     /// attempt per call, so the attempt cap, the back-off and the
     /// `Retry-After` ceiling are decided here.
-    async fn deliver(&self, request: &RenderedRequest, redaction: &Redaction) -> Result<()> {
+    async fn deliver(&self, request: &RenderedRequest, redaction: &Redaction) -> Result<Delivered> {
         let path = self.request_path();
         let headers: Vec<(&str, &str)> = request
             .headers
@@ -299,11 +327,12 @@ impl RestInsertEndpoint {
         let policy = CallPolicy::background();
         let mut attempt = 1;
         loop {
-            let failure = self
+            let failure = match self
                 .attempt(&policy, &path, &headers, request.body.clone(), redaction)
-                .await?;
-            let Some(failure) = failure else {
-                return Ok(());
+                .await?
+            {
+                Ok(delivered) => return Ok(delivered),
+                Err(failure) => failure,
             };
             let repeatable = self.repeatable() || failure.rate_limited;
             if !failure.retryable || !repeatable || attempt >= MAX_ATTEMPTS {
@@ -318,8 +347,8 @@ impl RestInsertEndpoint {
         }
     }
 
-    /// One request. `None` is success; a failure says whether a repeat may
-    /// help and what delay the server asked for.
+    /// One request. `Ok` says how the API took it; a failure says whether a
+    /// repeat may help and what delay the server asked for.
     async fn attempt(
         &self,
         policy: &CallPolicy,
@@ -327,7 +356,7 @@ impl RestInsertEndpoint {
         headers: &[(&str, &str)],
         body: Vec<u8>,
         redaction: &Redaction,
-    ) -> Result<Option<Failure>> {
+    ) -> Result<std::result::Result<Delivered, Failure>> {
         let answer = self
             .api
             .http_request_with_policy(policy, Method::POST, path, headers, Some(body), redaction)
@@ -341,16 +370,12 @@ impl RestInsertEndpoint {
                 if let ErrorKind::Status(status) = e.kind
                     && self.accept.contains(&status)
                 {
-                    return Ok(None);
+                    return Ok(Ok(Delivered::Queued));
                 }
-                let retryable = match e.kind {
-                    ErrorKind::Status(status) => is_retryable(status),
-                    ErrorKind::Transport(_) => true,
-                    _ => false,
-                };
+                let retryable = !e.is_final();
                 let retry_after = e.retry_after;
                 let rate_limited = matches!(e.kind, ErrorKind::Status(429));
-                return Ok(Some(Failure {
+                return Ok(Err(Failure {
                     error: client_error(e, "REST insert failed", &shown, redaction),
                     retryable,
                     retry_after,
@@ -360,15 +385,19 @@ impl RestInsertEndpoint {
         };
         let status = response.status().as_u16();
         if self.accept.is_empty() || self.accept.contains(&status) {
-            return Ok(None);
+            return Ok(Ok(if status == 202 {
+                Delivered::Queued
+            } else {
+                Delivered::Stored
+            }));
         }
-        Ok(Some(Failure {
+        Ok(Err(Failure {
             error: error!(
                 "REST insert answered a status the table does not accept",
                 path = redaction.url(&self.api.shown_url(path)),
                 status = status
             ),
-            retryable: is_retryable(status),
+            retryable: is_retryable_status(status),
             retry_after: None,
             rate_limited: status == 429,
         }))

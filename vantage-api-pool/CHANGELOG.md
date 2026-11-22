@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.0 — 2026-11-22
+
+- `is_retryable_status(status)` is public: `true` for `408`, `429` and `5xx`, the statuses a retry
+  may fix. Drivers use it to mark failures `Unavailable` the same way the pool retries them.
+- `is_transient_reqwest_error(&e)` is public: every `reqwest` send or body error is transient
+  except a builder error. Drivers that call `reqwest` directly use it instead of their own copy.
+- New final `ErrorKind::Build`: a request `reqwest` could not build (bad header or URL), a failed
+  default HTTP client build, or a closed semaphore. These were retryable `Transport` errors; they
+  are no longer retried and `is_final()` is true.
+
 ## 1.3.0 — 2026-11-13
 
 - `ResilientClientBuilder::configure_http` runs a closure over the default client's

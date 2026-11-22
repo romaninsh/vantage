@@ -139,7 +139,7 @@ where
     async fn send_once(&mut self) -> Result<Outcome, ClientError> {
         let _permit = self.client.semaphore.acquire().await.map_err(|_| {
             ClientError::new(
-                ErrorKind::Transport("client semaphore closed".into()),
+                ErrorKind::Build("client semaphore closed".into()),
                 self.attempt,
             )
         })?;
@@ -155,7 +155,7 @@ where
             Ok(http) => http,
             Err(e) => {
                 return Ok(Outcome::Failed {
-                    kind: ErrorKind::Transport(format!("building the HTTP client failed: {e}")),
+                    kind: ErrorKind::Build(format!("building the HTTP client failed: {e}")),
                     body: None,
                     hint: None,
                     ms: 0,
@@ -202,7 +202,11 @@ where
             Err(e) => Outcome::Failed {
                 // The URL can carry a credential (query auth); callers add a
                 // redacted one to their own errors.
-                kind: ErrorKind::Transport(e.without_url().to_string()),
+                kind: if policy::is_transient_reqwest_error(&e) {
+                    ErrorKind::Transport(e.without_url().to_string())
+                } else {
+                    ErrorKind::Build(e.without_url().to_string())
+                },
                 body: None,
                 hint: None,
                 ms,

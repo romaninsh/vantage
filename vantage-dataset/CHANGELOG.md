@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.0.0 — 2026-11-22
+
+- **Breaking:** `WritableValueSet::insert_value` returns `Inserted<V>` instead of `Record<V>`.
+  Use `.into_record()` (or `.record()`) for the stored row; it is `None` for `Accepted`.
+  Implementors return `Inserted::Created(row)` or `Inserted::Existed(row)`.
+- `Inserted<V>` (in the prelude) says what an insert did: `Created` with the row as stored,
+  `Existed` with the stored row when the id was already in the set (nothing written), or
+  `Accepted` when the backend confirms later or never (queue, webhook, batched API).
+  `is_confirmed()` is `false` only for `Accepted`.
+- `WritableDataSet::insert` still returns the entity; on `Accepted` it is the entity as given.
+- `contract::check_unnarrowed` and `check_insert` require `Existed` for an id already stored.
+- `ImTable` reports `Created` and `Existed`.
+
 ## 1.3.1 — 2026-11-20
 
 - Drops the unused `anyhow` dependency.

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.0 — 2026-11-22
+
+- `ErrorKind::Unavailable` for a backend that couldn't be reached or asked the caller to back
+  off; transports map it to 503. Mark it with `mark_unavailable()`, test it with
+  `is_unavailable()`.
+- `ErrorKind::retryable()` tells retry from refusal: `true` only for `Unavailable`. `Generic`
+  counts as a refusal, so an unclassified error fails loudly instead of looping.
+
 ## 1.3.2 — 2026-11-16
 
 - Drops the unused `thiserror` dependency, and the `anyhow-compat` feature with its `anyhow`

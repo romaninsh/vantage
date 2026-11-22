@@ -278,6 +278,9 @@ async fn an_unnarrowed_table_writes_anywhere() {
         .insert_value("k1", &rec(json!({"name": "b"})))
         .await
         .unwrap();
+    let Inserted::Existed(again) = again else {
+        panic!("a repeated insert is Existed, got {again:?}");
+    };
     assert_eq!(again["name"], json!("a"));
     all.replace_value("k2", &rec(json!({"name": "c"})))
         .await
@@ -592,6 +595,8 @@ async fn before_insert_hook_runs_for_insert_value_too() {
     let stored = table
         .insert_value("1", &rec(json!({"name": "a"})))
         .await
+        .unwrap()
+        .into_record()
         .unwrap();
     assert_eq!(stored["created"], json!("yes"));
 }
@@ -644,6 +649,8 @@ async fn before_update_hook_runs_on_replace_and_patch_but_not_insert() {
     let inserted = table
         .insert_value("2", &rec(json!({"name": "d"})))
         .await
+        .unwrap()
+        .into_record()
         .unwrap();
     assert!(inserted.get("touched").is_none());
 }
@@ -656,6 +663,8 @@ async fn before_save_hook_runs_on_insert_and_update() {
     let inserted = table
         .insert_value("2", &rec(json!({"name": "d"})))
         .await
+        .unwrap()
+        .into_record()
         .unwrap();
     assert_eq!(inserted["saved"], json!("yes"));
     let patched = table
@@ -1083,6 +1092,21 @@ async fn a_failing_after_hook_surfaces_an_error_but_the_write_stays_committed() 
 }
 
 #[tokio::test]
+async fn after_insert_hook_skips_an_existed_insert() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let table = empty()
+        .await
+        .with_hook(Hook::AfterInsert(counting_after(calls.clone())));
+    for _ in 0..2 {
+        table
+            .insert_value("1", &rec(json!({"name": "a"})))
+            .await
+            .unwrap();
+    }
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
 async fn prepare_insert_runs_hooks_and_invariants_without_writing() {
     let table = scoped().await.with_hook(Hook::BeforeInsert(
         Phase::Populate,
@@ -1426,6 +1450,8 @@ async fn with_timestamps_keeps_a_caller_supplied_created_at() {
             &rec(json!({"name": "a", "created_at": "2000-01-01T00:00:00Z"})),
         )
         .await
+        .unwrap()
+        .into_record()
         .unwrap();
     assert_eq!(stored["created_at"], json!("2000-01-01T00:00:00Z"));
     assert!(is_rfc3339_utc_seconds(&stored["updated_at"]));
@@ -1437,6 +1463,8 @@ async fn with_timestamps_stamps_a_null_created_at() {
     let stored = table
         .insert_value("1", &rec(json!({"name": "a", "created_at": null})))
         .await
+        .unwrap()
+        .into_record()
         .unwrap();
     assert!(is_rfc3339_utc_seconds(&stored["created_at"]));
 }
@@ -1482,6 +1510,8 @@ async fn with_audit_stamps_the_named_columns() {
     let stored = table
         .insert_value("1", &rec(json!({"name": "a"})))
         .await
+        .unwrap()
+        .into_record()
         .unwrap();
     assert!(is_rfc3339_utc_seconds(&stored["inserted"]));
     assert!(is_rfc3339_utc_seconds(&stored["touched"]));
@@ -1495,6 +1525,8 @@ async fn timestamps_default_to_created_at_and_updated_at() {
     let stored = table
         .insert_value("1", &rec(json!({"name": "a"})))
         .await
+        .unwrap()
+        .into_record()
         .unwrap();
     assert!(stored.contains_key("created_at"));
     assert!(stored.contains_key("updated_at"));

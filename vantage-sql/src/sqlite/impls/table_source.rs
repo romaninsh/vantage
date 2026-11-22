@@ -6,6 +6,7 @@ use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::{Result, error};
+use vantage_dataset::Inserted;
 use vantage_expressions::traits::associated_expressions::AssociatedExpression;
 use vantage_expressions::traits::datasource::ExprDataSource;
 use vantage_expressions::traits::expressive::ExpressiveEnum;
@@ -418,12 +419,12 @@ impl TableSource for SqliteDB {
         table: &Table<Self, E>,
         id: &Self::Id,
         record: &Record<Self::Value>,
-    ) -> Result<Record<Self::Value>>
+    ) -> Result<Inserted<Self::Value>>
     where
         E: Entity<Self::Value>,
     {
         if let Some(existing) = guard_insert(self, table, id, record).await? {
-            return Ok(existing);
+            return Ok(Inserted::Existed(existing));
         }
 
         let id_field_name = table.id_field_name();
@@ -439,6 +440,7 @@ impl TableSource for SqliteDB {
 
         self.get_table_value(table, id)
             .await?
+            .map(Inserted::Created)
             .ok_or_else(|| error!("Inserted row disappeared", id = id.clone()))
     }
 

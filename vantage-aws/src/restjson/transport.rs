@@ -12,6 +12,7 @@ use vantage_core::{Result, error};
 
 use crate::account::AwsAccount;
 use crate::sign::sign_v4;
+use crate::unavailable::{classify_send, classify_status};
 
 pub(crate) async fn restjson_call(
     account: &AwsAccount,
@@ -63,27 +64,29 @@ pub(crate) async fn restjson_call(
     }
 
     let resp = req.send().await.map_err(|e| {
-        error!(
+        let err = error!(
             "AWS REST-JSON request failed",
             url = url.as_str(),
             method = method,
-            detail = e
-        )
+            detail = &e
+        );
+        classify_send(err, &e)
     })?;
 
     let status = resp.status();
-    let response_text = resp
-        .text()
-        .await
-        .map_err(|e| error!("Failed to read AWS REST-JSON response body", detail = e))?;
+    let response_text = resp.text().await.map_err(|e| {
+        let err = error!("Failed to read AWS REST-JSON response body", detail = &e);
+        classify_send(err, &e)
+    })?;
 
     if !status.is_success() {
-        return Err(error!(
+        let err = error!(
             "AWS REST-JSON request returned error status",
             url = url.as_str(),
             status = status.as_u16(),
-            body = response_text
-        ));
+            body = response_text.as_str()
+        );
+        return Err(classify_status(err, status.as_u16(), &response_text));
     }
 
     serde_json::from_str(&response_text).map_err(|e| {

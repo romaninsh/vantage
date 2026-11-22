@@ -50,7 +50,10 @@ async fn test_insert() {
         ("name", AnyMongoType::new("Gamma".to_string())),
         ("price", AnyMongoType::new(30i64)),
     ]);
-    let result = table.insert_value(MongoId::from("c"), &rec).await.unwrap();
+    let result = match table.insert_value(MongoId::from("c"), &rec).await.unwrap() {
+        Inserted::Created(row) => row,
+        other => panic!("expected Created, got {other:?}"),
+    };
     assert_eq!(result["name"].try_get::<String>(), Some("Gamma".into()));
     assert_eq!(result["price"].try_get::<i64>(), Some(30));
 

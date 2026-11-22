@@ -6,6 +6,7 @@ use futures_util::TryStreamExt;
 use vantage_core::{Result, error};
 
 use crate::mongodb::MongoDB;
+use crate::mongodb::driver_error::driver_error;
 use crate::mongodb::tx::{collect_in_session, in_session};
 use crate::select::MongoSelect;
 
@@ -32,7 +33,7 @@ impl MongoDB {
     ) -> Result<Vec<Document>> {
         let coll = self.select_collection(select)?;
         collect_in_session!(self, coll.aggregate(pipeline))
-            .map_err(|e| error!("MongoDB aggregate failed", details = e.to_string()))
+            .map_err(|e| driver_error("MongoDB aggregate failed", &e))
     }
 
     /// The documents `select` reads, filtered, sorted and paged.
@@ -45,7 +46,7 @@ impl MongoDB {
         let coll = self.select_collection(select)?;
         let options = select.build_find_options();
         collect_in_session!(self, coll.find(filter).with_options(options))
-            .map_err(|e| error!("MongoDB find failed", details = e.to_string()))
+            .map_err(|e| driver_error("MongoDB find failed", &e))
     }
 
     /// `func` (`$sum`, `$max`, `$min`) over `field` across the documents
@@ -80,7 +81,7 @@ impl MongoDB {
         let filter = select.build_filter(self).await?;
         let coll = self.select_collection(select)?;
         let count = in_session!(self, coll.count_documents(filter))
-            .map_err(|e| error!("MongoDB count_documents failed", details = e.to_string()))?;
+            .map_err(|e| driver_error("MongoDB count_documents failed", &e))?;
         Ok(count as i64)
     }
 }

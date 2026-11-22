@@ -7,6 +7,7 @@ pub use crate::traits::{
 };
 
 pub use crate::im::{ImDataSource, ImTable};
+pub use crate::inserted::Inserted;
 
 pub use crate::record::{ActiveEntity, ActiveRecord};
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.0 — 2026-11-22
+
+- **Breaking:** `insert_table_value` returns `Inserted<…>` and the vista shell's `insert` returns
+  `(String, Inserted<CborValue>)`. Both answer `Accepted`: the line is queued for the writer
+  task, which appends it later and only logs a failed write. The queued line is no longer
+  returned.
+- Requires vantage-dataset 2.0.0, vantage-table 5.0.0, vantage-vista 3.0.0.
+
 ## 0.7.7 — 2026-11-19
 
 - Tests: tables declare the columns they write, and a vista insert with an undeclared key is

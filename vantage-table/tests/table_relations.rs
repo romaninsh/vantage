@@ -191,7 +191,7 @@ impl TableSource for CborSource {
         _table: &Table<Self, E>,
         _id: &String,
         _record: &Record<CborValue>,
-    ) -> Result<Record<CborValue>>
+    ) -> Result<vantage_dataset::Inserted<CborValue>>
     where
         E: Entity<CborValue>,
         Self: Sized,
