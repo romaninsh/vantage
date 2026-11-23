@@ -1,5 +1,6 @@
-//! Expression ids and relation expressions on PostgreSQL: see
-//! `common/expression_ids.rs` and `common/relation_aggregates.rs`.
+//! Expression ids, relation expressions and `sql::concat` on PostgreSQL: see
+//! `common/expression_ids.rs`, `common/relation_aggregates.rs` and
+//! `common/rhai_concat.rs`.
 
 use vantage_expressions::Expression;
 #[allow(unused_imports)]
@@ -35,6 +36,14 @@ fn link_id() -> Expression<AnyPostgresType> {
 
 expression_ids_tests!(PostgresDB, AnyPostgresType);
 relation_aggregates_tests!(PostgresDB, AnyPostgresType);
+rhai_concat_tests!(
+    PostgresDB,
+    AnyPostgresType,
+    vantage_sql::postgres::statements::PostgresSelect,
+    vantage_sql::postgres::statements::select::join::PostgresSelectJoin,
+    vantage_sql::condition::PostgresCondition,
+    r#""a" || {} || "b""#
+);
 
 /// Inside a transaction a duplicate link is found before the INSERT, so the
 /// statement never fails and the transaction stays usable.

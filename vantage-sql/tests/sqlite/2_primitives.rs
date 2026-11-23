@@ -234,7 +234,7 @@ fn test_concat_ws_string_separator() {
     let c: Concat<AnySqliteType> = concat_!(ident("first_name"), ident("last_name")).ws(", ");
     assert_eq!(
         c.expr().preview(),
-        "\"first_name\" || ', ' || \"last_name\""
+        "SUBSTR(COALESCE(', ' || \"first_name\", '') || COALESCE(', ' || \"last_name\", ''), LENGTH(', ') + 1)"
     );
 }
 

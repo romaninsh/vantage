@@ -11,6 +11,10 @@ mod expression_ids_contract;
 #[path = "common/relation_aggregates.rs"]
 mod relation_aggregates_contract;
 
+#[macro_use]
+#[path = "common/rhai_concat.rs"]
+mod rhai_concat_contract;
+
 #[cfg(all(feature = "postgres", feature = "vista"))]
 #[path = "common/dotted.rs"]
 mod dotted;
