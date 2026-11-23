@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.1.0 — 2026-11-23
+
+- Relation expressions (`Table::with_relation_column`): roll-up ops and `exists` read the child rows as roll-ups do (`<~child[WHERE …]` or a `$parent` subquery); `first`, `join_concat`, `join_json` and limited aggregates read an ordered sub-select `(SELECT … AS v, … AS o0 … ORDER BY o0).v`; `field` follows the record link. A roll-up of a child's expression column aggregates the expression through the sub-select instead of being refused.
+- Rhai: `vista::rhai_source::eval_column_expr(code, table, env)` with the same `table.ref(…)` relation vocabulary as the SQL dialects.
+- An `expr:` that reads `table` (a relation expression) runs when a query includes the column; a plain one still runs once at build.
+
 ## 3.0.0 — 2026-11-22
 
 - **Breaking:** `insert_table_value` returns `Inserted<AnySurrealType>` and the vista shell's

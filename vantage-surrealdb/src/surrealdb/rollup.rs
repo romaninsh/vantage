@@ -12,7 +12,7 @@
 use vantage_core::{Result, error};
 use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 use vantage_table::source::SelectSource;
-use vantage_table::table::{RollupOp, Table};
+use vantage_table::table::{Aggregate, RelationQuery, RollupOp, Table};
 use vantage_types::{EmptyEntity, Entity};
 use vantage_vista::ReferenceKind;
 
@@ -25,24 +25,27 @@ impl SurrealDB {
     pub(crate) fn render_rollup<E: Entity<AnySurrealType> + 'static>(
         &self,
         parent: &Table<SurrealDB, E>,
-        name: &str,
+        name: Option<&str>,
         relation: &str,
         op: RollupOp,
         column: Option<&str>,
         condition: Option<Expr>,
     ) -> Result<Expr> {
-        let child = parent.rollup_target(name, relation, column)?;
+        let child = match name {
+            Some(name) => parent.rollup_target(name, relation, column)?,
+            None => parent.get_ref_target_erased(relation)?,
+        };
         let value = match op {
             RollupOp::Count => None,
             _ => {
                 let name = column.ok_or_else(|| error!("roll-up needs a column", op = op))?;
-                // Both forms read the stored field, not the expression.
+                // `<~…`.field reads the stored field; an expression column
+                // is read by the sub-select, which renders it.
                 if child.is_calculated_column(name) {
-                    return Err(error!(
-                        "a roll-up can't aggregate a computed column",
-                        column = name,
-                        table = child.table_name()
-                    ));
+                    let mut q = RelationQuery::new(relation);
+                    q.conditions.extend(condition);
+                    let aggregate = Aggregate::from_rollup(op, column)?;
+                    return self.relation_rows(parent, child, &q, &aggregate);
                 }
                 if !child.columns().contains_key(name) {
                     return Err(error!(
@@ -150,7 +153,7 @@ fn referenced_rows(
 /// `op` over the array `rows`. Over no rows `count` and `math::sum` give 0 and
 /// `array::min` / `array::max` NONE; `math::mean` gives NaN, so the mean is
 /// taken only over a non-empty array.
-fn aggregate(op: RollupOp, rows: Expr) -> Expr {
+pub(crate) fn aggregate(op: RollupOp, rows: Expr) -> Expr {
     let call = |name: &str| Fx::new(name, vec![rows.clone()]).expr();
     match op {
         RollupOp::Count => call("count"),

@@ -1,5 +1,8 @@
 # Changelog
 
+## 4.2.0 — 2026-11-23
+- `json` columns get a short list of small ids; a picked `json` value is parsed.
+
 ## 4.1.0 — 2026-11-22
 
 - A shaped source can make writes misbehave, so an app's handling of failed writes can be shown

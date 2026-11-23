@@ -100,6 +100,9 @@ fn typed(s: &str, ty: &str) -> CborValue {
             s.parse::<f64>().ok().map(CborValue::Float)
         }
         "bool" | "boolean" => s.parse::<bool>().ok().map(CborValue::Bool),
+        "json" => serde_json::from_str::<serde_json::Value>(s)
+            .ok()
+            .map(vantage_types::json_to_cbor),
         _ => None,
     };
     parsed.unwrap_or_else(|| CborValue::Text(s.to_string()))
