@@ -91,8 +91,9 @@ impl From<crate::mysql::statements::primitives::FulltextMatch> for MysqlConditio
 }
 
 /// `conditions` joined with `AND`, for a `WHERE` or `HAVING`. Next to another
-/// condition, one holding an `OR` is wrapped: `AND` binds tighter, so
-/// `"t"."fk" = "p"."id" AND a OR b` would read `b` rows of every parent.
+/// condition, one holding an operator that binds looser than `AND` is
+/// wrapped, so `"t"."fk" = "p"."id" AND a OR b` can't read `b` rows of every
+/// parent. Conditions without one render bare, as before.
 pub(crate) fn and_all<V>(conditions: &[Expression<V>]) -> Expression<V>
 where
     V: std::fmt::Debug + std::fmt::Display + Clone,
@@ -101,8 +102,7 @@ where
     let parts = conditions
         .iter()
         .map(|c| {
-            let text = c.preview().to_ascii_uppercase();
-            if many && (text.contains(" OR ") || text.contains("||")) {
+            if many && binds_looser_than_and(&c.preview()) {
                 Expression::new("({})", vec![ExpressiveEnum::Nested(c.clone())])
             } else {
                 c.clone()
@@ -110,6 +110,21 @@ where
         })
         .collect();
     Expression::from_vec(parts, " AND ")
+}
+
+/// Whether `sql` holds `OR` or `XOR` as a word (any spacing, any case) or
+/// `||` (MySQL's OR). It errs towards `true`: a match inside a literal or a
+/// sub-select only adds parentheses.
+fn binds_looser_than_and(sql: &str) -> bool {
+    let upper = sql.to_ascii_uppercase();
+    let word = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '$';
+    let is_word = |w: &str| {
+        upper.match_indices(w).any(|(at, _)| {
+            !upper[..at].chars().next_back().is_some_and(word)
+                && !upper[at + w.len()..].chars().next().is_some_and(word)
+        })
+    };
+    upper.contains("||") || is_word("OR") || is_word("XOR")
 }
 
 /// `column IN (values)`, in the shape `condition_column_of` reads. An empty

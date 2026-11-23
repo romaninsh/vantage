@@ -2,7 +2,7 @@
 
 ## 0.18.1 — 2026-11-23
 
-- `WHERE` and `HAVING` wrap a condition holding `OR` when other conditions join it, on SQLite, PostgreSQL and MySQL. A raw `a OR b` (a relation's `where(expr)`, a rule's `with_condition`, `where_expr`) next to a relation's correlation or a table's own conditions read `b` rows outside the set. Queries without such a condition render as before.
+- `WHERE` and `HAVING` wrap a condition holding `OR`, `XOR` (as words, any spacing) or `||` when other conditions join it, on SQLite, PostgreSQL and MySQL. A raw `a OR b` (a relation's `where(expr)`, a rule's `with_condition`, `where_expr`) next to a relation's correlation or a table's own conditions read `b` rows outside the set. Queries without such a condition render as before.
 
 ## 0.18.0 — 2026-11-23
 

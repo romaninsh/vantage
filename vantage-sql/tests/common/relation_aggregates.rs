@@ -202,11 +202,12 @@ macro_rules! relation_aggregates_tests {
             assert!(!truthy(&has["8"]));
 
             // A raw `OR` condition stays inside the correlation: task 4 is
-            // project 8's, so it mustn't count for project 7.
+            // project 8's, so it mustn't count for project 7. Spelled with a
+            // newline and no space before the parenthesis.
             let db = setup().await;
             let either = db
                 .expression_condition(vantage_expressions::Expression::new(
-                    "active = 0 OR id = 4",
+                    "active = 0\nOR(id = 4)",
                     vec![],
                 ))
                 .unwrap();
