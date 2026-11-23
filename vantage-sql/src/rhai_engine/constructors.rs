@@ -3,6 +3,7 @@
 //! All helpers are generic over the value type V, monomorphised by the
 //! macro at the call site.
 
+use crate::primitives::concat::Concat;
 use crate::primitives::fx::Fx;
 use crate::primitives::identifier::{Identifier, ident as make_ident};
 use std::fmt::{Debug, Display};
@@ -73,35 +74,116 @@ pub fn make_expr0<V: Clone>(template: &str) -> RhaiExpr<V> {
     RhaiExpr(Expression::new(template, vec![]))
 }
 
+/// An expression or identifier as it is; a string, int, float or bool as a
+/// bound value, never SQL text. `None` for any other type.
+fn to_param<V>(a: &rhai::Dynamic) -> Option<ExpressiveEnum<V>>
+where
+    V: Clone + From<i64> + From<f64> + From<bool> + From<String> + 'static,
+    Identifier: Expressive<V>,
+{
+    if let Some(e) = a.clone().try_cast::<RhaiExpr<V>>() {
+        Some(ExpressiveEnum::Nested(e.0))
+    } else if let Some(i) = a.clone().try_cast::<RhaiIdent>() {
+        Some(ExpressiveEnum::Nested(Expressive::<V>::expr(&i.0)))
+    } else if let Some(v) = a.clone().try_cast::<i64>() {
+        Some(ExpressiveEnum::Scalar(V::from(v)))
+    } else if let Some(v) = a.clone().try_cast::<f64>() {
+        Some(ExpressiveEnum::Scalar(V::from(v)))
+    } else if let Some(v) = a.clone().try_cast::<bool>() {
+        Some(ExpressiveEnum::Scalar(V::from(v)))
+    } else {
+        a.clone()
+            .try_cast::<rhai::ImmutableString>()
+            .map(|v| ExpressiveEnum::Scalar(V::from(v.to_string())))
+    }
+}
+
 pub fn make_expr<V>(template: &str, args: Array) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
 where
     V: Clone + From<i64> + From<f64> + From<bool> + From<String> + 'static,
     Identifier: Expressive<V>,
 {
     let params: Result<Vec<ExpressiveEnum<V>>, _> = args
-        .into_iter()
+        .iter()
         .map(|a| {
-            if let Some(e) = a.clone().try_cast::<RhaiExpr<V>>() {
-                Ok(ExpressiveEnum::Nested(e.0))
-            } else if let Some(i) = a.clone().try_cast::<RhaiIdent>() {
-                Ok(ExpressiveEnum::Nested(Expressive::<V>::expr(&i.0)))
-            } else if let Some(v) = a.clone().try_cast::<i64>() {
-                Ok(ExpressiveEnum::Scalar(V::from(v)))
-            } else if let Some(v) = a.clone().try_cast::<f64>() {
-                Ok(ExpressiveEnum::Scalar(V::from(v)))
-            } else if let Some(v) = a.clone().try_cast::<bool>() {
-                Ok(ExpressiveEnum::Scalar(V::from(v)))
-            } else if let Some(v) = a.clone().try_cast::<rhai::ImmutableString>() {
-                Ok(ExpressiveEnum::Scalar(V::from(v.to_string())))
-            } else {
-                Err(super::convert::rhai_err(format!(
+            to_param(a).ok_or_else(|| {
+                super::convert::rhai_err(format!(
                     "expr: unsupported param type '{}'",
                     a.type_name()
-                )))
-            }
+                ))
+            })
         })
         .collect();
     Ok(RhaiExpr(Expression::new(template, params?)))
+}
+
+/// One `sql::concat` / `sql::concat_ws` argument as an expression; `what`
+/// names it in the error.
+fn concat_arg<V>(
+    a: &rhai::Dynamic,
+    func: &str,
+    what: &str,
+) -> Result<Expression<V>, Box<rhai::EvalAltResult>>
+where
+    V: Clone + From<i64> + From<f64> + From<bool> + From<String> + 'static,
+    Identifier: Expressive<V>,
+{
+    match to_param(a) {
+        Some(ExpressiveEnum::Nested(e)) => Ok(e),
+        Some(scalar) => Ok(Expression::new("{}", vec![scalar])),
+        None => Err(super::convert::rhai_err(format!(
+            "sql::{func}: {what} is a {}; expected sql::ident, an expression, a string, number or bool",
+            super::convert::friendly_type_name(a)
+        ))),
+    }
+}
+
+fn concat_parts<V>(
+    parts: &Array,
+    func: &str,
+) -> Result<Vec<Expression<V>>, Box<rhai::EvalAltResult>>
+where
+    V: Clone + From<i64> + From<f64> + From<bool> + From<String> + 'static,
+    Identifier: Expressive<V>,
+{
+    if parts.is_empty() {
+        return Err(super::convert::rhai_err(format!(
+            "sql::{func} needs at least one part"
+        )));
+    }
+    parts
+        .iter()
+        .enumerate()
+        .map(|(i, p)| concat_arg(p, func, &format!("the part at position {}", i + 1)))
+        .collect()
+}
+
+pub fn fn_concat<V>(parts: Array) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
+where
+    V: Clone + Debug + Display + From<i64> + From<f64> + From<bool> + From<String> + 'static,
+    Identifier: Expressive<V>,
+    Concat<V>: Expressive<V>,
+{
+    Ok(RhaiExpr(
+        Concat::new(concat_parts(&parts, "concat")?).expr(),
+    ))
+}
+
+pub fn fn_concat_ws<V>(
+    sep: rhai::Dynamic,
+    parts: Array,
+) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
+where
+    V: Clone + Debug + Display + From<i64> + From<f64> + From<bool> + From<String> + 'static,
+    Identifier: Expressive<V>,
+    Concat<V>: Expressive<V>,
+{
+    let sep = concat_arg(&sep, "concat_ws", "the separator")?;
+    Ok(RhaiExpr(
+        Concat::new(concat_parts(&parts, "concat_ws")?)
+            .ws(sep)
+            .expr(),
+    ))
 }
 
 pub fn make_fx<V: Clone + Debug + Display + 'static>(
@@ -408,7 +490,12 @@ macro_rules! register_constructors {
         $ns.func("ident", $crate::rhai_engine::constructors::make_rhai_ident)
             .func("expr", $crate::rhai_engine::constructors::make_expr0::<$V>)
             .func("expr", $crate::rhai_engine::constructors::make_expr::<$V>)
-            .func("fx", $crate::rhai_engine::constructors::make_fx::<$V>);
+            .func("fx", $crate::rhai_engine::constructors::make_fx::<$V>)
+            .func("concat", $crate::rhai_engine::constructors::fn_concat::<$V>)
+            .func(
+                "concat_ws",
+                $crate::rhai_engine::constructors::fn_concat_ws::<$V>,
+            );
 
         $ns.func("sum", $crate::rhai_engine::constructors::fn_sum::<$V>)
             .func("count", $crate::rhai_engine::constructors::fn_count::<$V>)

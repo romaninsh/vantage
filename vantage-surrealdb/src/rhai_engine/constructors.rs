@@ -80,33 +80,90 @@ pub fn make_expr0(template: &str) -> RhaiExpr {
     RhaiExpr(Expression::new(template, vec![]))
 }
 
+/// An expression or identifier as it is; a string, int, float or bool as a
+/// bound value, never SurrealQL text. `None` for any other type.
+fn to_param(a: &rhai::Dynamic) -> Option<ExpressiveEnum<AnySurrealType>> {
+    if let Some(e) = a.clone().try_cast::<RhaiExpr>() {
+        Some(ExpressiveEnum::Nested(e.0))
+    } else if let Some(i) = a.clone().try_cast::<RhaiIdent>() {
+        Some(ExpressiveEnum::Nested(i.0.expr()))
+    } else if let Some(v) = a.clone().try_cast::<i64>() {
+        Some(ExpressiveEnum::Scalar(AnySurrealType::from(v)))
+    } else if let Some(v) = a.clone().try_cast::<f64>() {
+        Some(ExpressiveEnum::Scalar(AnySurrealType::from(v)))
+    } else if let Some(v) = a.clone().try_cast::<bool>() {
+        Some(ExpressiveEnum::Scalar(AnySurrealType::from(v)))
+    } else if let Some(v) = a.clone().try_cast::<rhai::ImmutableString>() {
+        Some(ExpressiveEnum::Scalar(AnySurrealType::from(v.to_string())))
+    } else {
+        a.clone()
+            .try_cast::<String>()
+            .map(|v| ExpressiveEnum::Scalar(AnySurrealType::from(v)))
+    }
+}
+
 pub fn make_expr(template: &str, args: Array) -> Result<RhaiExpr, Box<rhai::EvalAltResult>> {
     let params: Result<Vec<ExpressiveEnum<AnySurrealType>>, _> = args
-        .into_iter()
+        .iter()
         .map(|a| {
-            if let Some(e) = a.clone().try_cast::<RhaiExpr>() {
-                Ok(ExpressiveEnum::Nested(e.0))
-            } else if let Some(i) = a.clone().try_cast::<RhaiIdent>() {
-                Ok(ExpressiveEnum::Nested(i.0.expr()))
-            } else if let Some(v) = a.clone().try_cast::<i64>() {
-                Ok(ExpressiveEnum::Scalar(AnySurrealType::from(v)))
-            } else if let Some(v) = a.clone().try_cast::<f64>() {
-                Ok(ExpressiveEnum::Scalar(AnySurrealType::from(v)))
-            } else if let Some(v) = a.clone().try_cast::<bool>() {
-                Ok(ExpressiveEnum::Scalar(AnySurrealType::from(v)))
-            } else if let Some(v) = a.clone().try_cast::<rhai::ImmutableString>() {
-                Ok(ExpressiveEnum::Scalar(AnySurrealType::from(v.to_string())))
-            } else if let Some(v) = a.clone().try_cast::<String>() {
-                Ok(ExpressiveEnum::Scalar(AnySurrealType::from(v)))
-            } else {
-                Err(super::convert::rhai_err(format!(
+            to_param(a).ok_or_else(|| {
+                super::convert::rhai_err(format!(
                     "expr: unsupported param type '{}'",
                     a.type_name()
-                )))
-            }
+                ))
+            })
         })
         .collect();
     Ok(RhaiExpr(Expression::new(template, params?)))
+}
+
+// ── Text joining ───────────────────────────────────────────────────────
+
+/// One `concat` / `concat_ws` argument as an expression; `what` names it in
+/// the error.
+fn concat_arg(a: &rhai::Dynamic, func: &str, what: &str) -> Result<Expr, Box<rhai::EvalAltResult>> {
+    match to_param(a) {
+        Some(ExpressiveEnum::Nested(e)) => Ok(e),
+        Some(scalar) => Ok(Expression::new("{}", vec![scalar])),
+        None => Err(super::convert::rhai_err(format!(
+            "surreal::{func}: {what} is a {}; expected surreal::ident, an expression, a string, number or bool",
+            a.type_name()
+        ))),
+    }
+}
+
+fn concat_parts(parts: &Array, func: &str) -> Result<Vec<Expr>, Box<rhai::EvalAltResult>> {
+    if parts.is_empty() {
+        return Err(super::convert::rhai_err(format!(
+            "surreal::{func} needs at least one part"
+        )));
+    }
+    parts
+        .iter()
+        .enumerate()
+        .map(|(i, p)| concat_arg(p, func, &format!("the part at position {}", i + 1)))
+        .collect()
+}
+
+/// `concat(parts)` → `string::concat(a, b, ..)`.
+pub fn fn_concat(parts: Array) -> Result<RhaiExpr, Box<rhai::EvalAltResult>> {
+    Ok(RhaiExpr(
+        Fx::new("string::concat", concat_parts(&parts, "concat")?).expr(),
+    ))
+}
+
+/// `concat_ws(sep, parts)` → `array::join` over the parts that are not NONE
+/// or NULL.
+pub fn fn_concat_ws(
+    sep: rhai::Dynamic,
+    parts: Array,
+) -> Result<RhaiExpr, Box<rhai::EvalAltResult>> {
+    let sep = concat_arg(&sep, "concat_ws", "the separator")?;
+    let parts = Expression::from_vec(concat_parts(&parts, "concat_ws")?, ", ");
+    Ok(RhaiExpr(Expression::new(
+        "array::join([{}][WHERE $this != NONE AND $this != NULL], {})",
+        vec![ExpressiveEnum::Nested(parts), ExpressiveEnum::Nested(sep)],
+    )))
 }
 
 // ── SurrealDB function call ────────────────────────────────────────────

@@ -30,3 +30,40 @@ async fn similarity_binds_a_quoted_term_as_one_value() {
         .expect("the crafted term is a value, not SurrealQL");
     assert!(score.try_get::<f64>().is_some(), "{score:?}");
 }
+
+#[cfg(feature = "rhai")]
+async fn read_rhai(code: &str) -> Option<String> {
+    let host = vantage_rhai::Host::builder(vantage_rhai::Limits::background())
+        .vocab_fn(vantage_surrealdb::rhai_engine::register_surreal_onto)
+        .build();
+    let e = host
+        .compile(&vantage_rhai::Block::from(code))
+        .and_then(|script| {
+            script.eval_as::<vantage_surrealdb::rhai_engine::RhaiExpr>(&vantage_rhai::Env::new())
+        })
+        .unwrap();
+    let value = get_db()
+        .await
+        .execute(&SurrealReturn::new(e.0).expr())
+        .await
+        .unwrap();
+    value.try_get::<String>()
+}
+
+/// `surreal::concat` and `concat_ws` take parts as `sql::concat` does: a
+/// string is a bound value, never SurrealQL; `concat_ws` skips NONE and NULL.
+#[cfg(feature = "rhai")]
+#[tokio::test]
+async fn rhai_surreal_concat_joins_parts() {
+    let joined = read_rhai(r#"surreal::concat([surreal::expr("7"), ":", 5])"#).await;
+    assert_eq!(joined.as_deref(), Some("7:5"));
+
+    let crafted = read_rhai(r#"surreal::concat(["\"; REMOVE TABLE x; --"])"#).await;
+    assert_eq!(crafted.as_deref(), Some("\"; REMOVE TABLE x; --"));
+
+    let ws = read_rhai(
+        r#"surreal::concat_ws(", ", ["Riga", surreal::expr("NONE"), surreal::expr("NULL"), 7])"#,
+    )
+    .await;
+    assert_eq!(ws.as_deref(), Some("Riga, 7"));
+}

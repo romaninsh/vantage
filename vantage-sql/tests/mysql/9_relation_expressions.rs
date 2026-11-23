@@ -1,5 +1,6 @@
-//! Expression ids and relation expressions on MySQL: see
-//! `common/expression_ids.rs` and `common/relation_aggregates.rs`.
+//! Expression ids, relation expressions and `sql::concat` on MySQL: see
+//! `common/expression_ids.rs`, `common/relation_aggregates.rs` and
+//! `common/rhai_concat.rs`.
 
 use vantage_expressions::Expression;
 #[allow(unused_imports)]
@@ -35,3 +36,11 @@ fn link_id() -> Expression<AnyMysqlType> {
 
 expression_ids_tests!(MysqlDB, AnyMysqlType);
 relation_aggregates_tests!(MysqlDB, AnyMysqlType);
+rhai_concat_tests!(
+    MysqlDB,
+    AnyMysqlType,
+    vantage_sql::mysql::statements::MysqlSelect,
+    vantage_sql::mysql::statements::select::join::MysqlSelectJoin,
+    vantage_sql::condition::MysqlCondition,
+    "CONCAT(`a`, {}, `b`)"
+);

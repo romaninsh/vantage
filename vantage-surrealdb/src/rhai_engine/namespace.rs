@@ -17,6 +17,8 @@ pub(super) fn register_namespace(engine: &mut Engine) {
         .func("expr", c::make_expr0)
         .func("expr", c::make_expr)
         .func("fx", c::make_fx)
+        .func("concat", c::fn_concat)
+        .func("concat_ws", c::fn_concat_ws)
         .func("select", select_new)
         .func("case_when", c::fn_case_new);
 

@@ -1,5 +1,6 @@
-//! Expression ids and relation expressions on SQLite: see
-//! `common/expression_ids.rs` and `common/relation_aggregates.rs`.
+//! Expression ids, relation expressions and `sql::concat` on SQLite: see
+//! `common/expression_ids.rs`, `common/relation_aggregates.rs` and
+//! `common/rhai_concat.rs`.
 
 use vantage_expressions::Expression;
 #[allow(unused_imports)]
@@ -29,3 +30,11 @@ fn link_id() -> Expression<AnySqliteType> {
 
 expression_ids_tests!(SqliteDB, AnySqliteType);
 relation_aggregates_tests!(SqliteDB, AnySqliteType);
+rhai_concat_tests!(
+    SqliteDB,
+    AnySqliteType,
+    vantage_sql::sqlite::statements::SqliteSelect,
+    vantage_sql::sqlite::statements::select::join::SqliteSelectJoin,
+    vantage_sql::condition::SqliteCondition,
+    r#""a" || {} || "b""#
+);

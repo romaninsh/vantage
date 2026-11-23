@@ -9,6 +9,9 @@ use vantage_expressions::{Expression, Expressive};
 /// - **SQLite/PostgreSQL:** `a || b || c`
 /// - **MySQL:**             `CONCAT(a, b, c)`
 ///
+/// A NULL part makes the result NULL. With [`ws`](Concat::ws) NULL parts are
+/// skipped instead, as `CONCAT_WS` skips them.
+///
 /// # Examples
 ///
 /// ```ignore
@@ -71,15 +74,32 @@ impl Expressive<crate::sqlite::types::AnySqliteType>
     for Concat<crate::sqlite::types::AnySqliteType>
 {
     fn expr(&self) -> Expression<crate::sqlite::types::AnySqliteType> {
+        use vantage_expressions::ExpressiveEnum;
+
+        // SQLite has no CONCAT_WS. Each part brings its own leading separator,
+        // a NULL part none (`COALESCE(sep || part, '')`); SUBSTR drops the
+        // first separator. NULL parts are skipped as CONCAT_WS skips them.
         if let Some(sep) = &self.separator {
-            let mut interleaved = Vec::with_capacity(self.parts.len() * 2 - 1);
-            for (i, part) in self.parts.iter().enumerate() {
-                if i > 0 {
-                    interleaved.push(sep.clone());
-                }
-                interleaved.push(part.clone());
-            }
-            Expression::from_vec(interleaved, " || ")
+            let pieces = self
+                .parts
+                .iter()
+                .map(|part| {
+                    Expression::new(
+                        "COALESCE({} || {}, '')",
+                        vec![
+                            ExpressiveEnum::Nested(sep.clone()),
+                            ExpressiveEnum::Nested(part.clone()),
+                        ],
+                    )
+                })
+                .collect::<Vec<_>>();
+            Expression::new(
+                "SUBSTR({}, LENGTH({}) + 1)",
+                vec![
+                    ExpressiveEnum::Nested(Expression::from_vec(pieces, " || ")),
+                    ExpressiveEnum::Nested(sep.clone()),
+                ],
+            )
         } else {
             Expression::from_vec(self.parts.clone(), " || ")
         }
