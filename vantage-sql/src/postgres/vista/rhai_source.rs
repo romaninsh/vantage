@@ -104,16 +104,5 @@ pub fn eval_column_expr(
     >,
     env: vantage_rhai::Env,
 ) -> vantage_core::Result<vantage_expressions::Expression<AnyPostgresType>> {
-    let env = match table {
-        Some(table) => env.var(
-            "table",
-            rhai::Dynamic::from(crate::rhai_engine::relation::RhaiTable::new(table)),
-        ),
-        None => env,
-    };
-    __expr_host()
-        .compile(&vantage_rhai::Block::from(code))
-        .and_then(|script| script.eval_as::<Ex>(&env))
-        .map(|expr| expr.into_inner())
-        .map_err(|e| vantage_core::error!(format!("expr: {e}"), detail = e.to_string()))
+    crate::rhai_engine::relation::eval_column_expr_on(__expr_host(), code, table, env)
 }

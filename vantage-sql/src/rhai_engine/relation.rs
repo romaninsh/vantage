@@ -249,3 +249,29 @@ pub fn register_relation_vocab(engine: &mut Engine) {
     #[cfg(feature = "mysql")]
     register_relations::<crate::mysql::MysqlDB>(engine);
 }
+
+/// Evaluate a column's `expr:` script on `host` into the expression the
+/// column projects. With `table`, the script has it as `table`, so it can
+/// build a relation expression; `env` carries the caller's other variables
+/// (`session`, `app`). Each dialect's `eval_column_expr` calls this with its
+/// own host.
+pub fn eval_column_expr_on<T>(
+    host: &vantage_rhai::Host,
+    code: &str,
+    table: Option<Table<T, EmptyEntity>>,
+    env: vantage_rhai::Env,
+) -> vantage_core::Result<Expression<T::Value>>
+where
+    T: TableSource + Send + Sync + 'static,
+    T::Value: Clone + Send + Sync + 'static,
+    T::Condition: Send + Sync,
+{
+    let env = match table {
+        Some(table) => env.var("table", Dynamic::from(RhaiTable::new(table))),
+        None => env,
+    };
+    host.compile(&vantage_rhai::Block::from(code))
+        .and_then(|script| script.eval_as::<RhaiExpr<T::Value>>(&env))
+        .map(|expr| expr.0)
+        .map_err(|e| vantage_core::error!(format!("expr: {e}"), detail = e.to_string()))
+}

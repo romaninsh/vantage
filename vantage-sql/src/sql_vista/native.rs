@@ -38,3 +38,47 @@ where
     shell.table.add_condition(condition);
     Ok(())
 }
+
+/// The script hooks a dialect whose vistas take native conditions shares:
+/// `add_native_condition`, the Rhai extensions (its query vocabulary from
+/// `$onto`, `with_condition` and the relation vocabulary), and the
+/// `where_expr` closure's table and condition. Expands inside an
+/// `impl SqlShellDialect for <dialect>` block.
+macro_rules! scripted_dialect_hooks {
+    ($value:ty, $onto:path) => {
+        /// Takes the dialect's own condition or a query expression.
+        fn add_native_condition<E>(
+            shell: &mut $crate::sql_vista::Shell<Self, E>,
+            condition: vantage_vista::NativeCondition,
+        ) -> vantage_core::Result<()>
+        where
+            E: vantage_types::Entity<$value> + 'static,
+        {
+            $crate::sql_vista::add_native_condition(shell, condition)
+        }
+
+        #[cfg(feature = "rhai")]
+        fn register_rhai_extensions(engine: &mut vantage_rhai::rhai::Engine) {
+            $onto(engine);
+            $crate::sql_vista::scripted::register_handle_verbs::<Self>(engine);
+        }
+
+        #[cfg(feature = "rhai")]
+        fn script_table<E>(
+            shell: &$crate::sql_vista::Shell<Self, E>,
+        ) -> Option<vantage_rhai::rhai::Dynamic>
+        where
+            E: vantage_types::Entity<$value> + 'static,
+        {
+            $crate::sql_vista::scripted::script_table(shell)
+        }
+
+        #[cfg(feature = "rhai")]
+        fn script_condition(
+            expr: vantage_rhai::rhai::Dynamic,
+        ) -> vantage_core::Result<vantage_vista::NativeCondition> {
+            $crate::sql_vista::scripted::script_condition::<Self>(expr)
+        }
+    };
+}
+pub(crate) use scripted_dialect_hooks;

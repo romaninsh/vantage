@@ -129,6 +129,12 @@ where
 
     let table = build_spec_table(spec, db, env)?;
     let mut metadata = table.vista_metadata(metadata_options());
+    // Only the spec knows a column reads the session (the loader flags it).
+    for (name, column) in &spec.columns {
+        if column.has_flag(vantage_vista::ColumnFlag::PerSession) {
+            metadata = metadata.with_column_flag(name, vantage_vista::ColumnFlag::PerSession);
+        }
+    }
     for mut lowered in spec_references(spec, &table.id_field_name())? {
         if let Some(code) = spec
             .references

@@ -9,7 +9,7 @@ mod dialect;
 #[allow(private_bounds, private_interfaces)]
 mod narrow;
 mod native;
-pub(crate) use native::add_native_condition;
+pub(crate) use native::{add_native_condition, scripted_dialect_hooks};
 #[allow(private_bounds, private_interfaces)]
 mod refs;
 #[cfg(feature = "rhai")]

@@ -11,7 +11,7 @@
 //! - `rx_tag(id, name)`: 3 "alpha", 5 "beta";
 //! - `rx_project_tag(a, b)`: project 7 has tags 5 and 3, project 8 none;
 //! - `rx_task(id, project_id, parent_id, active)`: 1 (7, -, 1), 2 (7, 1, 1),
-//!   3 (7, 1, 0), 4 (8, -, 1);
+//!   3 (7, 1, 0), 4 (8, -, 1), 5 (7, 2, 1);
 //! - `rx_update(id, project_id, date, status)`: project 7 "off_track" on
 //!   2026-01-01, "on_track" on 2026-02-01.
 
@@ -40,7 +40,7 @@ macro_rules! relation_aggregates_tests {
                 ("rx_project", "(7, 'Seven'), (8, 'Eight')"),
                 ("rx_tag", "(3, 'alpha'), (5, 'beta')"),
                 ("rx_project_tag", "(7, 5), (7, 3)"),
-                ("rx_task", "(1, 7, NULL, 1), (2, 7, 1, 1), (3, 7, 1, 0), (4, 8, NULL, 1)"),
+                ("rx_task", "(1, 7, NULL, 1), (2, 7, 1, 1), (3, 7, 1, 0), (4, 8, NULL, 1), (5, 7, 2, 1)"),
                 ("rx_update", "(1, 7, '2026-01-01', 'off_track'), (2, 7, '2026-02-01', 'on_track')"),
             ];
             let statements = tables
@@ -214,10 +214,11 @@ macro_rules! relation_aggregates_tests {
             let open = read(&tasks, "open_subtasks").await;
             let count = read(&tasks, "subtasks").await;
             assert!(truthy(&open["1"]));
-            assert!(!truthy(&open["2"]));
+            assert!(truthy(&open["2"]));
+            assert!(!truthy(&open["3"]));
             assert_eq!(
                 [&count["1"], &count["2"], &count["4"]],
-                [&json!(2), &json!(0), &json!(0)]
+                [&json!(2), &json!(1), &json!(0)]
             );
         }
 
@@ -241,6 +242,50 @@ macro_rules! relation_aggregates_tests {
             .unwrap();
             let ids: Vec<String> = tagged.list_values().await.unwrap().into_keys().collect();
             assert_eq!(ids, ["7"]);
+        }
+
+        /// Two levels of one self-relation: each level correlates to the
+        /// row that encloses it. Task 1's grandchildren count is the sum of
+        /// its subtasks' own counts (2 has 5, 3 has none).
+        #[tokio::test]
+        async fn relation_nested_self_reference_correlates_each_level() {
+            fn counted(db: $db) -> T {
+                Table::new("rx_task", db)
+                    .with_id_column("id")
+                    .with_column_of::<i64>("parent_id")
+                    .with_many("subtasks", "parent_id", counted)
+                    .with_relation_column("children", RelationQuery::new("subtasks"), Aggregate::Count)
+                    .unwrap()
+            }
+            let tasks = counted(setup().await)
+                .with_relation_column(
+                    "grandchildren",
+                    RelationQuery::new("subtasks"),
+                    Aggregate::Sum("children".into()),
+                )
+                .unwrap();
+            let grand = read(&tasks, "grandchildren").await;
+            assert_eq!([&grand["1"], &grand["2"], &grand["5"]], [&json!(1), &json!(0), &json!(0)]);
+        }
+
+        /// A limit of 0 leaves no rows: `exists` is false, `first` null.
+        #[tokio::test]
+        async fn relation_limit_zero_gives_no_rows() {
+            let projects = project(setup().await)
+                .with_relation_column(
+                    "any",
+                    RelationQuery::new("tags").with_limit(0),
+                    Aggregate::Exists,
+                )
+                .unwrap()
+                .with_relation_column(
+                    "first",
+                    by_tag_name().with_limit(0),
+                    Aggregate::First("b".into()),
+                )
+                .unwrap();
+            assert!(!truthy(&read(&projects, "any").await["7"]));
+            assert_eq!(read(&projects, "first").await["7"], JsonValue::Null);
         }
 
         #[tokio::test]
