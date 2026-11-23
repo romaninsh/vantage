@@ -6,7 +6,9 @@
 use std::sync::Arc;
 
 use vantage_core::{Result, error};
-use vantage_expressions::{Expression, Expressive, Order, Selectable, SelectableDataSource, expr_any};
+use vantage_expressions::{
+    Expression, Expressive, Order, Selectable, SelectableDataSource, expr_any,
+};
 use vantage_types::{EmptyEntity, Entity};
 use vantage_vista::ReferenceKind;
 
@@ -139,7 +141,10 @@ impl<T: TableSource + 'static, E: Entity<T::Value> + 'static> Table<T, E> {
                 _ => "has_many",
             };
             return Err(error!(
-                format!("`{relation}` of `{}` isn't a {needs} relation", self.table_name()),
+                format!(
+                    "`{relation}` of `{}` isn't a {needs} relation",
+                    self.table_name()
+                ),
                 relation = relation,
                 table = self.table_name()
             ));
@@ -288,14 +293,16 @@ where
                 for (at, (name, direction)) in q.order.iter().enumerate() {
                     let by = self.child_column(relation, name)?;
                     source.add_select_column(&mut select, by, Some(&format!("o{at}")));
-                    directions.push(direction.clone());
+                    directions.push(*direction);
                 }
                 source.render_list_aggregate(select.expr(), aggregate, &directions)
             }
             // A roll-up op over a limited set: the limit picks the rows, so
             // they are a derived table the aggregate reads.
             _ => {
-                let op = aggregate.rollup_op().expect("the other aggregates are matched above");
+                let op = aggregate
+                    .rollup_op()
+                    .expect("the other aggregates are matched above");
                 let mut select = self.ordered_rows(q)?;
                 let value = match aggregate.column() {
                     Some(column) => self.child_column(relation, column)?,
@@ -306,7 +313,9 @@ where
                 let rows = select.expr();
                 Ok(match op {
                     RollupOp::Count => expr_any!("(SELECT COUNT(*) FROM ({}) AS r)", (rows)),
-                    RollupOp::Sum => expr_any!("(SELECT COALESCE(SUM(v), 0) FROM ({}) AS r)", (rows)),
+                    RollupOp::Sum => {
+                        expr_any!("(SELECT COALESCE(SUM(v), 0) FROM ({}) AS r)", (rows))
+                    }
                     RollupOp::Min => expr_any!("(SELECT MIN(v) FROM ({}) AS r)", (rows)),
                     RollupOp::Max => expr_any!("(SELECT MAX(v) FROM ({}) AS r)", (rows)),
                     RollupOp::Avg => expr_any!("(SELECT AVG(v) FROM ({}) AS r)", (rows)),

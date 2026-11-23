@@ -29,13 +29,9 @@ fn vista_where_expr_refused_without_native_conditions() {
     let store = store();
     let host = host(&store, Terminals::Describe);
     let plain = resolver(&store).vista("t").unwrap();
-    let err = eval_modify_script(
-        &host,
-        r#"self.where_expr(|t| t.ref("x").exists())"#,
-        plain,
-    )
-    .unwrap_err()
-    .to_string();
+    let err = eval_modify_script(&host, r#"self.where_expr(|t| t.ref("x").exists())"#, plain)
+        .unwrap_err()
+        .to_string();
     assert!(
         err.contains("`where_expr` needs a backend that takes native conditions"),
         "{err}"

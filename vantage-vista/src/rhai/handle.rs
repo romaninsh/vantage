@@ -183,7 +183,10 @@ impl Handle {
         build: impl FnOnce(&Vista) -> Result<NativeCondition>,
     ) -> Result<Handle> {
         if self.steps.iter().any(|s| matches!(s, Step::Ref(_))) {
-            return Err(error!(format!("`{verb}` can't follow `ref(...)`"), verb = verb));
+            return Err(error!(
+                format!("`{verb}` can't follow `ref(...)`"),
+                verb = verb
+            ));
         }
         let base = self.resolve_base(None)?;
         let condition = build(&base)?;

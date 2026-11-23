@@ -57,8 +57,10 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         let key = format!("{}.{name}", self.table_name());
         let Some(_building) = Building::enter(&key) else {
             return Err(vantage_core::error!(
-                format!("expression column `{name}` of `{}` reads itself through its relations",
-                    self.table_name()),
+                format!(
+                    "expression column `{name}` of `{}` reads itself through its relations",
+                    self.table_name()
+                ),
                 column = name,
                 table = self.table_name()
             ));

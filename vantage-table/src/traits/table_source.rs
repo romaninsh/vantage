@@ -17,8 +17,8 @@ use vantage_vista::Transaction;
 
 use crate::{
     column::core::ColumnType,
-    source::SelectSeed,
     sorting::SortDirection,
+    source::SelectSeed,
     table::{Aggregate, RelationQuery, RollupOp, Table},
     traits::column_like::ColumnLike,
 };
@@ -660,10 +660,10 @@ pub trait TableSource: DataSource + Clone + 'static {
         order: &[SortDirection],
     ) -> Result<Expression<Self::Value>> {
         let _ = (rows, order);
-        Err(vantage_core::error!(
-            format!("this backend can't render {aggregate:?}")
+        Err(
+            vantage_core::error!(format!("this backend can't render {aggregate:?}"))
+                .mark_unsupported(),
         )
-        .mark_unsupported())
     }
 
     /// `expr` as a condition-typed expression, the form ordering and native
