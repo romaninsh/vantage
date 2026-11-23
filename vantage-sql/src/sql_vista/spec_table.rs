@@ -255,7 +255,11 @@ where
 /// `table`, so a relation expression's target is built then, never here.
 /// [`Table::check_expressions`] runs it once at the load.
 #[cfg(feature = "rhai")]
-fn with_expr_column<T>(table: Table<T, EmptyEntity>, name: &str, code: &str) -> Result<Table<T, EmptyEntity>>
+fn with_expr_column<T>(
+    table: Table<T, EmptyEntity>,
+    name: &str,
+    code: &str,
+) -> Result<Table<T, EmptyEntity>>
 where
     T: SqlSpecDialect,
 {
@@ -266,7 +270,11 @@ where
 }
 
 #[cfg(not(feature = "rhai"))]
-fn with_expr_column<T>(_table: Table<T, EmptyEntity>, name: &str, _code: &str) -> Result<Table<T, EmptyEntity>>
+fn with_expr_column<T>(
+    _table: Table<T, EmptyEntity>,
+    name: &str,
+    _code: &str,
+) -> Result<Table<T, EmptyEntity>>
 where
     T: SqlSpecDialect,
 {

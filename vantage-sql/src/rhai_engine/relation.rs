@@ -183,12 +183,8 @@ where
     engine.register_type_with_name::<Rel<T>>("Relation");
 
     engine.register_fn("ref", |t: &mut RhaiTable<T>, name: &str| -> Rhai<Rel<T>> {
-        t.0.ref_cardinality(name).map_err(|_| {
-            rhai_err(format!(
-                "`{}` has no relation `{name}`",
-                t.0.table_name()
-            ))
-        })?;
+        t.0.ref_cardinality(name)
+            .map_err(|_| rhai_err(format!("`{}` has no relation `{name}`", t.0.table_name())))?;
         Ok(RhaiRelation {
             table: t.0.clone(),
             q: RelationQuery::new(name),
@@ -204,17 +200,26 @@ where
     engine.register_fn("order_by", |r: &mut Rel<T>, column: &str| {
         r.clone().order_by(column, "asc")
     });
-    engine.register_fn("order_by", |r: &mut Rel<T>, column: &str, direction: &str| {
-        r.clone().order_by(column, direction)
-    });
+    engine.register_fn(
+        "order_by",
+        |r: &mut Rel<T>, column: &str, direction: &str| r.clone().order_by(column, direction),
+    );
     engine.register_fn("limit", |r: &mut Rel<T>, limit: i64| r.clone().limit(limit));
 
     engine.register_fn("count", |r: &mut Rel<T>| r.aggregate(Aggregate::Count));
     engine.register_fn("exists", |r: &mut Rel<T>| r.aggregate(Aggregate::Exists));
-    engine.register_fn("sum", |r: &mut Rel<T>, c: &str| r.aggregate(Aggregate::Sum(c.into())));
-    engine.register_fn("min", |r: &mut Rel<T>, c: &str| r.aggregate(Aggregate::Min(c.into())));
-    engine.register_fn("max", |r: &mut Rel<T>, c: &str| r.aggregate(Aggregate::Max(c.into())));
-    engine.register_fn("avg", |r: &mut Rel<T>, c: &str| r.aggregate(Aggregate::Avg(c.into())));
+    engine.register_fn("sum", |r: &mut Rel<T>, c: &str| {
+        r.aggregate(Aggregate::Sum(c.into()))
+    });
+    engine.register_fn("min", |r: &mut Rel<T>, c: &str| {
+        r.aggregate(Aggregate::Min(c.into()))
+    });
+    engine.register_fn("max", |r: &mut Rel<T>, c: &str| {
+        r.aggregate(Aggregate::Max(c.into()))
+    });
+    engine.register_fn("avg", |r: &mut Rel<T>, c: &str| {
+        r.aggregate(Aggregate::Avg(c.into()))
+    });
     engine.register_fn("first", |r: &mut Rel<T>, c: &str| {
         r.aggregate(Aggregate::First(c.into()))
     });

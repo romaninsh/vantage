@@ -8,9 +8,10 @@ use vantage_types::EmptyEntity;
 
 /// The tables are shared by every test and filled once; a statement that
 /// loses a race with another test's setup is retried.
-
 async fn setup() -> PostgresDB {
-    let db = PostgresDB::connect("postgres://vantage:vantage@localhost:5433/vantage").await.unwrap();
+    let db = PostgresDB::connect("postgres://vantage:vantage@localhost:5433/vantage")
+        .await
+        .unwrap();
     for sql in [
         "CREATE TABLE IF NOT EXISTS rx_project (id INTEGER PRIMARY KEY, name TEXT)",
         "CREATE TABLE IF NOT EXISTS rx_tag (id INTEGER PRIMARY KEY, name TEXT)",
@@ -31,7 +32,11 @@ async fn setup() -> PostgresDB {
 }
 
 fn link_id() -> Expression<AnyPostgresType> {
-    postgres_expr!("{}::text || ':' || {}::text", (pg_ident("a")), (pg_ident("b")))
+    postgres_expr!(
+        "{}::text || ':' || {}::text",
+        (pg_ident("a")),
+        (pg_ident("b"))
+    )
 }
 
 relation_aggregates_tests!(PostgresDB, AnyPostgresType);

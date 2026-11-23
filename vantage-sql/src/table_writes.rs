@@ -15,9 +15,7 @@ use vantage_expressions::{Expression, Expressive, expr_any};
 
 #[cfg(any(feature = "sqlite", feature = "postgres"))]
 use crate::primitives::identifier::{Identifier, ident};
-use crate::set_writes::{
-    SetWrites, covers_record, find_by_record, id_exists_anywhere, row_in_set,
-};
+use crate::set_writes::{SetWrites, covers_record, find_by_record, id_exists_anywhere, row_in_set};
 
 /// Checks before an insert of `id`. `Some(row)` when the set already holds
 /// `id`: the insert is a no-op that reports the stored row as `Existed`. On a conditioned

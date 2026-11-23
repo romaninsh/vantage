@@ -93,12 +93,10 @@ macro_rules! relation_aggregates_tests {
                 .map(|(id, row)| {
                     let value = JsonValue::from(row[column].clone());
                     let value = match &value {
-                        JsonValue::String(text) => {
-                            serde_json::from_str::<JsonValue>(text)
-                                .ok()
-                                .filter(JsonValue::is_array)
-                                .unwrap_or(value)
-                        }
+                        JsonValue::String(text) => serde_json::from_str::<JsonValue>(text)
+                            .ok()
+                            .filter(JsonValue::is_array)
+                            .unwrap_or(value),
                         _ => value,
                     };
                     (id, value)
@@ -185,7 +183,10 @@ macro_rules! relation_aggregates_tests {
             let count = read(&tasks, "subtasks").await;
             assert!(truthy(&open["1"]));
             assert!(!truthy(&open["2"]));
-            assert_eq!([&count["1"], &count["2"], &count["4"]], [&json!(2), &json!(0), &json!(0)]);
+            assert_eq!(
+                [&count["1"], &count["2"], &count["4"]],
+                [&json!(2), &json!(0), &json!(0)]
+            );
         }
 
         /// A data script narrows a vista by a relation expression: the

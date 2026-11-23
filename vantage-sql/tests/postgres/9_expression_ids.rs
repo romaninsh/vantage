@@ -12,10 +12,12 @@ const URL: &str = "postgres://vantage:vantage@localhost:5433/vantage";
 async fn link(test: &str) -> Table<PostgresDB, EmptyEntity> {
     let db = PostgresDB::connect(URL).await.unwrap();
     let name = format!("link_{test}");
-    sqlx::query(sqlx::AssertSqlSafe(format!("DROP TABLE IF EXISTS \"{name}\"")))
-        .execute(db.pool())
-        .await
-        .unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP TABLE IF EXISTS \"{name}\""
+    )))
+    .execute(db.pool())
+    .await
+    .unwrap();
     sqlx::query(sqlx::AssertSqlSafe(format!(
         "CREATE TABLE \"{name}\" (a INTEGER NOT NULL, b INTEGER, stage INTEGER, UNIQUE (a, b))"
     )))
@@ -25,7 +27,11 @@ async fn link(test: &str) -> Table<PostgresDB, EmptyEntity> {
     Table::new(&name, db)
         .with_id_column("id")
         .with_expression("id", |_| {
-            postgres_expr!("{}::text || ':' || {}::text", (pg_ident("a")), (pg_ident("b")))
+            postgres_expr!(
+                "{}::text || ':' || {}::text",
+                (pg_ident("a")),
+                (pg_ident("b"))
+            )
         })
         .with_column_of::<i64>("a")
         .with_column_of::<i64>("b")
@@ -36,10 +42,12 @@ async fn link(test: &str) -> Table<PostgresDB, EmptyEntity> {
 async fn strict_link(test: &str) -> Table<PostgresDB, EmptyEntity> {
     let db = PostgresDB::connect(URL).await.unwrap();
     let name = format!("strict_{test}");
-    sqlx::query(sqlx::AssertSqlSafe(format!("DROP TABLE IF EXISTS \"{name}\"")))
-        .execute(db.pool())
-        .await
-        .unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP TABLE IF EXISTS \"{name}\""
+    )))
+    .execute(db.pool())
+    .await
+    .unwrap();
     sqlx::query(sqlx::AssertSqlSafe(format!(
         "CREATE TABLE \"{name}\" (a INTEGER NOT NULL, b INTEGER NOT NULL, stage INTEGER, UNIQUE (a, b))"
     )))
@@ -49,7 +57,11 @@ async fn strict_link(test: &str) -> Table<PostgresDB, EmptyEntity> {
     Table::new(&name, db)
         .with_id_column("id")
         .with_expression("id", |_| {
-            postgres_expr!("{}::text || ':' || {}::text", (pg_ident("a")), (pg_ident("b")))
+            postgres_expr!(
+                "{}::text || ':' || {}::text",
+                (pg_ident("a")),
+                (pg_ident("b"))
+            )
         })
         .with_column_of::<i64>("a")
         .with_column_of::<i64>("b")
@@ -68,9 +80,15 @@ async fn expression_id_relink_in_a_transaction_is_existed() {
     let all = link("expression_id_relink_in_a_transaction_is_existed").await;
     let a = all["a"].clone();
     let rec = |b: i64| -> vantage_types::Record<AnyPostgresType> {
-        [("b".to_string(), AnyPostgresType::from(b))].into_iter().collect()
+        [("b".to_string(), AnyPostgresType::from(b))]
+            .into_iter()
+            .collect()
     };
-    all.clone().with_condition(a.eq(7i64)).insert_derived_value(&rec(5)).await.unwrap();
+    all.clone()
+        .with_condition(a.eq(7i64))
+        .insert_derived_value(&rec(5))
+        .await
+        .unwrap();
 
     let tx = Transaction::new();
     let db = all.data_source().in_transaction(&tx).unwrap();

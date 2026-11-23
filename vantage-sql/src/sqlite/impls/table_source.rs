@@ -21,9 +21,9 @@ use vantage_vista::Transaction;
 
 use crate::declared::{sql_coerce_fn, sql_declared_types, without_option};
 use crate::primitives::identifier::ident;
+use crate::set_writes::id_target;
 use crate::sqlite::SqliteDB;
 use crate::sqlite::types::{AnySqliteType, SqliteType};
-use crate::set_writes::id_target;
 use crate::table_writes::{
     existing_by_record, guard_insert, guard_new_row, guard_patch, guard_replace, null_derived_id,
     settle_failed_derived_insert, settle_failed_insert, upsert_on_id,
@@ -200,10 +200,7 @@ impl TableSource for SqliteDB {
         vantage_table::conditions::condition_column_of(&condition.0)
     }
 
-    fn expression_condition(
-        &self,
-        expr: Expression<Self::Value>,
-    ) -> Result<Self::Condition> {
+    fn expression_condition(&self, expr: Expression<Self::Value>) -> Result<Self::Condition> {
         Ok(expr.into())
     }
 
@@ -530,7 +527,6 @@ impl TableSource for SqliteDB {
     where
         E: Entity<Self::Value>,
     {
-
         let id_val = id.clone();
         let id_condition = sqlite_expr!("{} = {}", (id_target(table)?), id_val);
         // A missing row, or one outside the conditions, matches nothing: Ok.

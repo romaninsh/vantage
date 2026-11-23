@@ -8,9 +8,10 @@ use vantage_types::EmptyEntity;
 
 /// The tables are shared by every test and filled once; a statement that
 /// loses a race with another test's setup is retried.
-
 async fn setup() -> MysqlDB {
-    let db = MysqlDB::connect("mysql://vantage:vantage@localhost:3306/vantage").await.unwrap();
+    let db = MysqlDB::connect("mysql://vantage:vantage@localhost:3306/vantage")
+        .await
+        .unwrap();
     for sql in [
         "CREATE TABLE IF NOT EXISTS rx_project (id INTEGER PRIMARY KEY, name VARCHAR(64))",
         "CREATE TABLE IF NOT EXISTS rx_tag (id INTEGER PRIMARY KEY, name VARCHAR(64))",
@@ -31,7 +32,11 @@ async fn setup() -> MysqlDB {
 }
 
 fn link_id() -> Expression<AnyMysqlType> {
-    mysql_expr!("CONCAT({}, ':', {})", (mysql_ident("a")), (mysql_ident("b")))
+    mysql_expr!(
+        "CONCAT({}, ':', {})",
+        (mysql_ident("a")),
+        (mysql_ident("b"))
+    )
 }
 
 relation_aggregates_tests!(MysqlDB, AnyMysqlType);

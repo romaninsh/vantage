@@ -70,7 +70,9 @@ fn rhai_sql_json_renders_per_dialect() {
     assert_eq!(postgres(path), "\"meta\" -> 'specs' ->> 'volts'");
     // A key is written into the SQL, so anything but a plain name is refused.
     let quoted = r#"sql::json(sql::ident("meta"), "a' OR 1=1 --")"#;
-    let err = eval_column_expr(quoted, None, Env::new()).unwrap_err().to_string();
+    let err = eval_column_expr(quoted, None, Env::new())
+        .unwrap_err()
+        .to_string();
     assert!(err.contains("path keys are letters"), "{err}");
 }
 
@@ -94,7 +96,10 @@ async fn rhai_relation_chain_builds_expression() {
     )
     .unwrap()
     .preview();
-    assert!(counted.starts_with("EXISTS (SELECT 1 FROM \"rx_project_tag\""), "{counted}");
+    assert!(
+        counted.starts_with("EXISTS (SELECT 1 FROM \"rx_project_tag\""),
+        "{counted}"
+    );
     assert!(counted.ends_with("AND b = 5)"), "{counted}");
 }
 
@@ -123,7 +128,10 @@ async fn rhai_relation_unknown_where_column_errors() {
     .unwrap_err()
     .to_string();
     assert!(err.contains("no column `name`"), "{err}");
-    assert!(err.contains("rx_project_tag"), "names the child table: {err}");
+    assert!(
+        err.contains("rx_project_tag"),
+        "names the child table: {err}"
+    );
 }
 
 /// A hook-style script narrowing a data handle by a query expression, as a

@@ -48,6 +48,8 @@ mod postgres {
     mod defer;
     #[path = "4_editable_data_set.rs"]
     mod editable_data_set;
+    #[path = "9_expression_ids.rs"]
+    mod expression_ids;
     #[path = "2_expressions.rs"]
     mod expressions;
     #[path = "2_identifier.rs"]
@@ -60,13 +62,11 @@ mod postgres {
     mod records;
     #[path = "5_references.rs"]
     mod references;
+    #[path = "5_relation_aggregates.rs"]
+    mod relation_aggregates;
     #[cfg(all(feature = "vista", feature = "rhai"))]
     #[path = "7_rule_conditions.rs"]
     mod rule_conditions;
-    #[path = "9_expression_ids.rs"]
-    mod expression_ids;
-    #[path = "5_relation_aggregates.rs"]
-    mod relation_aggregates;
     #[path = "9_safe_writes.rs"]
     mod safe_writes;
     #[path = "2_search.rs"]

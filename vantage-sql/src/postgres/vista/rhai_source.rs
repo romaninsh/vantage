@@ -85,7 +85,9 @@ fn __expr_host() -> &'static vantage_rhai::Host {
     static HOST: std::sync::LazyLock<vantage_rhai::Host> = std::sync::LazyLock::new(|| {
         vantage_rhai::Host::builder(vantage_rhai::Limits::background())
             .vocab(SqlVocab)
-            .vocab_fn(crate::rhai_engine::relation::register_relations::<crate::postgres::PostgresDB>)
+            .vocab_fn(
+                crate::rhai_engine::relation::register_relations::<crate::postgres::PostgresDB>,
+            )
             .build()
     });
     &HOST
@@ -97,7 +99,9 @@ fn __expr_host() -> &'static vantage_rhai::Host {
 /// (`session`, `app`).
 pub fn eval_column_expr(
     code: &str,
-    table: Option<vantage_table::table::Table<crate::postgres::PostgresDB, vantage_types::EmptyEntity>>,
+    table: Option<
+        vantage_table::table::Table<crate::postgres::PostgresDB, vantage_types::EmptyEntity>,
+    >,
     env: vantage_rhai::Env,
 ) -> vantage_core::Result<vantage_expressions::Expression<AnyPostgresType>> {
     let env = match table {

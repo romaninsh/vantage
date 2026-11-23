@@ -171,7 +171,9 @@ impl SqlShellDialect for PostgresDB {
     }
 
     #[cfg(feature = "rhai")]
-    fn script_condition(expr: vantage_rhai::rhai::Dynamic) -> Result<vantage_vista::NativeCondition> {
+    fn script_condition(
+        expr: vantage_rhai::rhai::Dynamic,
+    ) -> Result<vantage_vista::NativeCondition> {
         crate::sql_vista::scripted::script_condition::<Self>(expr)
     }
 

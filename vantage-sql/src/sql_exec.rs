@@ -233,7 +233,9 @@ pub(crate) fn is_unique_violation(err: &VantageError) -> bool {
 /// or the pool had no connection to give: a retry may land. Errors the
 /// database itself returned (constraints, bad values) stay as they are.
 pub(crate) fn mark_transport(mut err: VantageError, e: &sqlx::Error) -> VantageError {
-    if e.as_database_error().is_some_and(|db| db.is_unique_violation()) {
+    if e.as_database_error()
+        .is_some_and(|db| db.is_unique_violation())
+    {
         err.context
             .insert(VIOLATION.to_string(), UNIQUE_VIOLATION.to_string());
     }

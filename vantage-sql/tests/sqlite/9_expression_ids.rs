@@ -10,10 +10,12 @@ use vantage_types::EmptyEntity;
 async fn link(_test: &str) -> Table<SqliteDB, EmptyEntity> {
     let db = SqliteDB::connect("sqlite::memory:").await.unwrap();
     let name = "link".to_string();
-    sqlx::query(sqlx::AssertSqlSafe(format!("DROP TABLE IF EXISTS \"{name}\"")))
-        .execute(db.pool())
-        .await
-        .unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP TABLE IF EXISTS \"{name}\""
+    )))
+    .execute(db.pool())
+    .await
+    .unwrap();
     sqlx::query(sqlx::AssertSqlSafe(format!(
         "CREATE TABLE \"{name}\" (a INTEGER NOT NULL, b INTEGER, stage INTEGER, UNIQUE (a, b))"
     )))
@@ -34,10 +36,12 @@ async fn link(_test: &str) -> Table<SqliteDB, EmptyEntity> {
 async fn strict_link(_test: &str) -> Table<SqliteDB, EmptyEntity> {
     let db = SqliteDB::connect("sqlite::memory:").await.unwrap();
     let name = "link".to_string();
-    sqlx::query(sqlx::AssertSqlSafe(format!("DROP TABLE IF EXISTS \"{name}\"")))
-        .execute(db.pool())
-        .await
-        .unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP TABLE IF EXISTS \"{name}\""
+    )))
+    .execute(db.pool())
+    .await
+    .unwrap();
     sqlx::query(sqlx::AssertSqlSafe(format!(
         "CREATE TABLE \"{name}\" (a INTEGER NOT NULL, b INTEGER NOT NULL, stage INTEGER, UNIQUE (a, b))"
     )))

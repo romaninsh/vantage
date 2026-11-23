@@ -144,7 +144,11 @@ impl SqlSpecDialect for SqliteDB {
         code: &str,
         table: Option<Table<Self, vantage_types::EmptyEntity>>,
         env: vantage_rhai::Env,
-    ) -> Result<vantage_expressions::Expression<<Self as vantage_table::traits::table_source::TableSource>::Value>> {
+    ) -> Result<
+        vantage_expressions::Expression<
+            <Self as vantage_table::traits::table_source::TableSource>::Value,
+        >,
+    > {
         crate::sqlite::vista::rhai_source::eval_column_expr(code, table, env)
     }
 

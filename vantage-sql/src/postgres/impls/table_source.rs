@@ -199,10 +199,7 @@ impl TableSource for PostgresDB {
         vantage_table::conditions::condition_column_of(&condition.0)
     }
 
-    fn expression_condition(
-        &self,
-        expr: Expression<Self::Value>,
-    ) -> Result<Self::Condition> {
+    fn expression_condition(&self, expr: Expression<Self::Value>) -> Result<Self::Condition> {
         Ok(expr.into())
     }
 
@@ -538,7 +535,6 @@ impl TableSource for PostgresDB {
     where
         E: Entity<Self::Value>,
     {
-
         let id_condition = {
             let id_val = id_param(table, id);
             postgres_expr!("{} = {}", (id_target(table)?), id_val)
