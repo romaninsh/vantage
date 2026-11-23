@@ -83,3 +83,27 @@ pub(crate) fn eval_to_select(
 ) -> vantage_core::Result<MysqlSelect> {
     eval_to_select_args(code, base, &[])
 }
+
+/// The host `expr:` scripts run on: the SQL vocabulary plus `table.ref(…)`
+/// relation expressions over this dialect's tables.
+fn __expr_host() -> &'static vantage_rhai::Host {
+    static HOST: std::sync::LazyLock<vantage_rhai::Host> = std::sync::LazyLock::new(|| {
+        vantage_rhai::Host::builder(vantage_rhai::Limits::background())
+            .vocab(SqlVocab)
+            .vocab_fn(crate::rhai_engine::relation::register_relations::<crate::mysql::MysqlDB>)
+            .build()
+    });
+    &HOST
+}
+
+/// Evaluate a column's `expr:` script into the expression the column
+/// projects. With `table`, the script has it as `table`, so it can build a
+/// relation expression; `env` carries the caller's other variables
+/// (`session`, `app`).
+pub fn eval_column_expr(
+    code: &str,
+    table: Option<vantage_table::table::Table<crate::mysql::MysqlDB, vantage_types::EmptyEntity>>,
+    env: vantage_rhai::Env,
+) -> vantage_core::Result<vantage_expressions::Expression<AnyMysqlType>> {
+    crate::rhai_engine::relation::eval_column_expr_on(__expr_host(), code, table, env)
+}

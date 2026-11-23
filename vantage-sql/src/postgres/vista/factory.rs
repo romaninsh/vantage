@@ -113,7 +113,8 @@ impl PostgresVistaFactory {
         let own = (self.notify && !read_only).then(|| table.table_name().to_string());
         let channels =
             PostgresChannels::of_tables(self.notify, own.iter().chain(listen).map(String::as_str));
-        let mut capabilities = sql_capabilities(read_only);
+        let mut capabilities =
+            sql_capabilities(read_only).with(vantage_vista::Capability::NativeConditions);
         if !channels.is_empty() {
             capabilities = capabilities.with(Capability::Subscribe);
         }
@@ -178,6 +179,19 @@ impl SqlSpecDialect for PostgresDB {
     ) -> Result<TableColumn<AnyPostgresType>> {
         let physical = spec.driver.postgres.as_ref().and_then(|b| b.column.clone());
         TableColumn::from_spec(name, spec, physical, column_for_type)
+    }
+
+    #[cfg(feature = "rhai")]
+    fn eval_column_expr(
+        code: &str,
+        table: Option<Table<Self, vantage_types::EmptyEntity>>,
+        env: vantage_rhai::Env,
+    ) -> Result<
+        vantage_expressions::Expression<
+            <Self as vantage_table::traits::table_source::TableSource>::Value,
+        >,
+    > {
+        crate::postgres::vista::rhai_source::eval_column_expr(code, table, env)
     }
 
     #[cfg(feature = "rhai")]

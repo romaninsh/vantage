@@ -183,5 +183,19 @@ impl SqlShellDialect for MysqlDB {
     #[cfg(feature = "rhai")]
     fn register_rhai_extensions(engine: &mut vantage_rhai::rhai::Engine) {
         register_extensions(engine);
+        crate::rhai_engine::relation::register_relations::<Self>(engine);
+    }
+
+    #[cfg(feature = "rhai")]
+    fn script_table<E>(shell: &Shell<Self, E>) -> Option<vantage_rhai::rhai::Dynamic>
+    where
+        E: Entity<AnyMysqlType> + 'static,
+    {
+        crate::sql_vista::scripted::script_table(shell)
+    }
+
+    #[cfg(feature = "rhai")]
+    fn script_condition(expr: vantage_rhai::rhai::Dynamic) -> Result<NativeCondition> {
+        crate::sql_vista::scripted::script_condition::<Self>(expr)
     }
 }

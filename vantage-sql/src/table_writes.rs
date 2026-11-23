@@ -15,7 +15,7 @@ use vantage_expressions::{Expression, Expressive, expr_any};
 
 #[cfg(any(feature = "sqlite", feature = "postgres"))]
 use crate::primitives::identifier::{Identifier, ident};
-use crate::set_writes::{SetWrites, id_exists_anywhere, row_in_set};
+use crate::set_writes::{SetWrites, covers_record, find_by_record, id_exists_anywhere, row_in_set};
 
 /// Checks before an insert of `id`. `Some(row)` when the set already holds
 /// `id`: the insert is a no-op that reports the stored row as `Existed`. On a conditioned
@@ -66,6 +66,72 @@ where
     Err(err)
 }
 
+/// Before an insert into a table whose id is an expression: the row already
+/// holding `record`, reported as `Existed`. Only a record that sets every
+/// stored column is looked up, so a partial one can't match another row. On
+/// PostgreSQL this keeps a known duplicate from failing the statement, which
+/// would abort an open transaction.
+pub(crate) async fn existing_by_record<T, E>(
+    db: &T,
+    table: &Table<T, E>,
+    record: &Record<T::Value>,
+) -> Result<Option<(String, Inserted<T::Value>)>>
+where
+    T: SetWrites,
+    E: Entity<T::Value>,
+{
+    if !covers_record(table, record) {
+        return Ok(None);
+    }
+    Ok(find_by_record(db, table, record)
+        .await?
+        .map(|(id, stored)| (id, Inserted::Existed(stored))))
+}
+
+/// Settle a failed insert into a table whose id is an expression. Only a
+/// duplicate key (another writer's row) or a lost reply (this call's row)
+/// can have left the record stored; then the one row in the set matching it
+/// is reported by [`landed`] with its computed id. Any other failure, a
+/// statement that never reached the database (no pooled connection: still
+/// Unavailable, so it is retried), or no single matching row, is `err`.
+pub(crate) async fn settle_failed_derived_insert<T, E>(
+    db: &T,
+    table: &Table<T, E>,
+    record: &Record<T::Value>,
+    err: VantageError,
+) -> Result<(String, Inserted<T::Value>)>
+where
+    T: SetWrites,
+    E: Entity<T::Value>,
+{
+    if crate::sql_exec::was_not_sent(&err)
+        || !(err.is_unavailable() || crate::sql_exec::is_unique_violation(&err))
+    {
+        return Err(err);
+    }
+    match find_by_record(db, table, record).await? {
+        Some((id, stored)) => Ok((id, landed(&err, stored))),
+        None => Err(err),
+    }
+}
+
+/// An insert into a table whose id is an expression, where the expression
+/// came back NULL: a column it reads is NULL, so the row has no id.
+pub(crate) fn null_derived_id<T, E>(table: &Table<T, E>) -> VantageError
+where
+    T: TableSource,
+    E: Entity<T::Value>,
+{
+    error!(
+        format!(
+            "insert into `{}` returned a NULL id: a column its id expression reads is NULL, \
+             or the record doesn't single out the row it wrote",
+            table.table_name()
+        ),
+        table = table.table_name()
+    )
+}
+
 /// The outcome of a failed INSERT whose row is in the set afterwards. A
 /// transport failure means this call's write landed and only the reply was
 /// lost: `Created`, so hooks and audit still run. Any other failure (a unique
@@ -101,8 +167,9 @@ where
 }
 
 /// Checks before a patch of `id`: the row must be in the set (NotFound
-/// otherwise), and on a conditioned table the patched row must stay in it
-/// (Conflict otherwise).
+/// otherwise), a table whose id is an expression can't have a column it reads
+/// changed (the row would move to another id), and on a conditioned table the
+/// patched row must stay in it (Conflict otherwise).
 pub(crate) async fn guard_patch<T, E>(
     db: &T,
     table: &Table<T, E>,
@@ -111,11 +178,32 @@ pub(crate) async fn guard_patch<T, E>(
 ) -> Result<()>
 where
     T: SetWrites,
+    T::Value: Debug + std::fmt::Display,
     E: Entity<T::Value>,
 {
     let Some(mut merged) = db.get_table_value(table, id).await? else {
         return Err(patch_not_found(table, id));
     };
+    if let Some(id_expr) = table.id_expression()? {
+        // The rendered expression names each column it reads, quoted.
+        let reads = id_expr.preview();
+        for (column, value) in partial.iter() {
+            let changes = merged.get(column).map(|v| T::into_cbor(v.clone()))
+                != Some(T::into_cbor(value.clone()));
+            if changes && reads.contains(&T::quoted(column).preview()) {
+                return Err(error!(
+                    format!(
+                        "patching `{column}` would change the id of `{id}` in `{}`, which is \
+                         computed from it; delete the row and insert the new one instead",
+                        table.table_name()
+                    ),
+                    table = table.table_name(),
+                    column = column.as_str()
+                )
+                .mark_conflict());
+            }
+        }
+    }
     if table.conditions().next().is_some() {
         for (k, v) in partial.iter() {
             merged.insert(k.clone(), v.clone());

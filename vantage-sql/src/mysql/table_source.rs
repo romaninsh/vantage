@@ -9,9 +9,10 @@ use vantage_dataset::Inserted;
 use vantage_expressions::traits::associated_expressions::AssociatedExpression;
 use vantage_expressions::traits::datasource::ExprDataSource;
 use vantage_expressions::traits::expressive::ExpressiveEnum;
-use vantage_expressions::{Expression, Expressive, Selectable};
+use vantage_expressions::{Expression, Expressive, Selectable, expr_any};
 use vantage_table::column::core::{Column, ColumnType};
-use vantage_table::table::Table;
+use vantage_table::sorting::SortDirection;
+use vantage_table::table::{Aggregate, Table};
 use vantage_table::traits::column_like::ColumnLike as _;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
@@ -22,10 +23,11 @@ use crate::mysql::MysqlDB;
 use crate::mysql::statements::MysqlSelect;
 use crate::mysql::types::{AnyMysqlType, MysqlType};
 use crate::primitives::identifier::ident;
-use crate::set_writes::id_exists_anywhere;
+use crate::set_writes::{find_by_record, id_exists_anywhere, id_target};
 use crate::sql_exec::mark_transport;
 use crate::table_writes::{
-    guard_insert, guard_new_row, guard_patch, guard_replace, settle_failed_insert,
+    existing_by_record, guard_insert, guard_new_row, guard_patch, guard_replace, null_derived_id,
+    settle_failed_derived_insert, settle_failed_insert,
 };
 
 sql_declared_types!(sql_coerce_fn!(MysqlDB, MysqlType, AnyMysqlType));
@@ -69,16 +71,16 @@ fn update_in_set<E: Entity<AnyMysqlType>>(
     table: &Table<MysqlDB, E>,
     id: &str,
     values: &Record<AnyMysqlType>,
-) -> Expression<AnyMysqlType> {
+) -> Result<Expression<AnyMysqlType>> {
     let id_val = id_value(id);
-    let id_condition = mysql_expr!("{} = {}", (ident(table.id_field_name())), id_val);
+    let id_condition = mysql_expr!("{} = {}", (id_target(table)?), id_val);
     let mut update = crate::mysql::statements::MysqlUpdate::new(table.table_name())
         .with_record(values)
         .with_condition(id_condition);
     for condition in table.conditions() {
         update = update.with_condition(condition.clone());
     }
-    update.expr()
+    Ok(update.expr())
 }
 
 /// The rows of a read, keyed by id. A `json` column's JSON text reads as the
@@ -218,6 +220,41 @@ impl TableSource for MysqlDB {
         vantage_table::conditions::condition_column_of(&condition.0)
     }
 
+    fn expression_condition(&self, expr: Expression<Self::Value>) -> Result<Self::Condition> {
+        Ok(expr.into())
+    }
+
+    fn render_list_aggregate(
+        &self,
+        rows: Expression<Self::Value>,
+        aggregate: &Aggregate,
+        order: &[SortDirection],
+    ) -> Result<Expression<Self::Value>> {
+        // MySQL drops a derived table's ORDER BY unless it has a LIMIT, so
+        // the rows are re-ordered under one; `GROUP_CONCAT` orders itself.
+        let by = crate::list_aggregate::order_list(order);
+        Ok(match aggregate {
+            Aggregate::JoinConcat { separator, .. } => {
+                let separator = crate::list_aggregate::mysql_literal(separator)?;
+                expr_any!(
+                    &format!(
+                        "(SELECT COALESCE(GROUP_CONCAT(v ORDER BY {by} SEPARATOR {separator}), '') \
+                         FROM ({{}}) AS r)"
+                    ),
+                    (rows)
+                )
+            }
+            Aggregate::JoinJson(_) => expr_any!(
+                &format!(
+                    "(SELECT COALESCE(JSON_ARRAYAGG(v), JSON_ARRAY()) FROM \
+                     (SELECT * FROM ({{}}) AS q ORDER BY {by} LIMIT 18446744073709551615) AS r)"
+                ),
+                (rows)
+            ),
+            other => return Err(error!(format!("not a list aggregate: {other:?}"))),
+        })
+    }
+
     fn can_confine_writes(&self) -> bool {
         true
     }
@@ -355,7 +392,7 @@ impl TableSource for MysqlDB {
 
         let condition = {
             let id_val = id_value(id);
-            mysql_expr!("{} = {}", (ident(&id_field_name)), id_val)
+            mysql_expr!("{} = {}", (id_target(table)?), id_val)
         };
         let select = table.try_select()?.with_condition(condition);
         let result = self.execute(&row_query(table, &select)).await?;
@@ -477,7 +514,7 @@ impl TableSource for MysqlDB {
             let mut values = record.clone();
             values.shift_remove(&id_field_name);
             if !values.is_empty() {
-                self.execute(&update_in_set(table, id, &values)).await?;
+                self.execute(&update_in_set(table, id, &values)?).await?;
             }
         } else {
             self.execute(&insert_with_id(table, id, record)).await?;
@@ -498,7 +535,7 @@ impl TableSource for MysqlDB {
         E: Entity<Self::Value>,
     {
         guard_patch(self, table, id, partial).await?;
-        self.execute(&update_in_set(table, id, partial)).await?;
+        self.execute(&update_in_set(table, id, partial)?).await?;
 
         crate::table_writes::refetch_after_patch(self, table, id).await
     }
@@ -507,11 +544,9 @@ impl TableSource for MysqlDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_field_name = table.id_field_name();
-
         let id_condition = {
             let id_val = id_value(id);
-            mysql_expr!("{} = {}", (ident(&id_field_name)), id_val)
+            mysql_expr!("{} = {}", (id_target(table)?), id_val)
         };
         // A missing row, or one outside the conditions, matches nothing: Ok.
         let mut delete = crate::mysql::statements::MysqlDelete::new(table.table_name())
@@ -570,6 +605,33 @@ impl TableSource for MysqlDB {
         let mut open = tx.open().await?;
         tx.watch(insert_returning_id(&mut open, &sql, &params))
             .await
+    }
+
+    /// MySQL has no `RETURNING`: the INSERT, then the row read back by the
+    /// record's values, the same lookup a failed insert settles by.
+    async fn insert_table_derived_id_value<E>(
+        &self,
+        table: &Table<Self, E>,
+        record: &Record<Self::Value>,
+    ) -> Result<(Self::Id, Inserted<Self::Value>)>
+    where
+        E: Entity<Self::Value>,
+    {
+        guard_new_row(self, table, record).await?;
+        if let Some(existed) = existing_by_record(self, table, record).await? {
+            return Ok(existed);
+        }
+        let insert =
+            crate::mysql::statements::MysqlInsert::new(table.table_name()).with_record(record);
+        if let Err(e) = self.execute(&insert.expr()).await {
+            return settle_failed_derived_insert(self, table, record, e).await;
+        }
+        // The row is read back by its values, which must single it out: a
+        // NULL id, or a column the record leaves to the database, can't.
+        let (id, stored) = find_by_record(self, table, record)
+            .await?
+            .ok_or_else(|| null_derived_id(table))?;
+        Ok((id, Inserted::Created(stored)))
     }
 
     fn related_in_condition<SourceE: Entity<Self::Value> + 'static>(

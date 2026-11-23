@@ -119,4 +119,20 @@ pub(crate) trait SqlShellDialect:
     /// vocabulary registers nothing.
     #[cfg(feature = "rhai")]
     fn register_rhai_extensions(_engine: &mut vantage_rhai::rhai::Engine) {}
+
+    /// The shell's table as a `where_expr` closure's `table`; a dialect
+    /// without the relation vocabulary has none.
+    #[cfg(feature = "rhai")]
+    fn script_table<E>(_shell: &Shell<Self, E>) -> Option<vantage_rhai::rhai::Dynamic>
+    where
+        E: Entity<Self::Value> + 'static,
+    {
+        None
+    }
+
+    /// A `where_expr` closure's expression as a native condition.
+    #[cfg(feature = "rhai")]
+    fn script_condition(_expr: vantage_rhai::rhai::Dynamic) -> Result<NativeCondition> {
+        unsupported(Capability::NativeConditions)
+    }
 }

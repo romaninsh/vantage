@@ -219,10 +219,39 @@ fn refusal(e: &sqlx::Error) -> Option<VantageError> {
         .then(|| error!(db.message().to_string(), refused_by = "database").mark_invalid_value())
 }
 
+/// The context key a failed statement's error carries when the database
+/// refused it for a duplicate unique or primary key.
+pub(crate) const VIOLATION: &str = "violation";
+pub(crate) const UNIQUE_VIOLATION: &str = "unique";
+
+/// Context key [`mark_transport`] sets when the statement never reached the
+/// database (the pool gave no connection).
+pub(crate) const NOT_SENT: &str = "not_sent";
+
+/// Whether `err` is a duplicate unique or primary key ([`mark_transport`]).
+pub(crate) fn is_unique_violation(err: &VantageError) -> bool {
+    err.context.get(VIOLATION).map(String::as_str) == Some(UNIQUE_VIOLATION)
+}
+
+/// Whether `err`'s statement never reached the database ([`mark_transport`]):
+/// nothing it would have written can be there.
+pub(crate) fn was_not_sent(err: &VantageError) -> bool {
+    err.context.contains_key(NOT_SENT)
+}
+
 /// `err` marked Unavailable when `e` says the database couldn't be reached
 /// or the pool had no connection to give: a retry may land. Errors the
 /// database itself returned (constraints, bad values) stay as they are.
-pub(crate) fn mark_transport(err: VantageError, e: &sqlx::Error) -> VantageError {
+pub(crate) fn mark_transport(mut err: VantageError, e: &sqlx::Error) -> VantageError {
+    if e.as_database_error()
+        .is_some_and(|db| db.is_unique_violation())
+    {
+        err.context
+            .insert(VIOLATION.to_string(), UNIQUE_VIOLATION.to_string());
+    }
+    if matches!(e, sqlx::Error::PoolTimedOut | sqlx::Error::PoolClosed) {
+        err.context.insert(NOT_SENT.to_string(), "true".to_string());
+    }
     match e {
         sqlx::Error::Io(_)
         | sqlx::Error::PoolTimedOut

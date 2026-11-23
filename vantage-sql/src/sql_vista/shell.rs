@@ -67,6 +67,14 @@ pub(crate) fn cbor_record<T: SqlShellDialect>(record: Record<T::Value>) -> Recor
     record.into_iter().map(|(k, v)| (k, T::cbor(v))).collect()
 }
 
+fn cbor_inserted<T: SqlShellDialect>(inserted: Inserted<T::Value>) -> Inserted<CborValue> {
+    match inserted {
+        Inserted::Created(r) => Inserted::Created(cbor_record::<T>(r)),
+        Inserted::Existed(r) => Inserted::Existed(cbor_record::<T>(r)),
+        Inserted::Accepted => Inserted::Accepted,
+    }
+}
+
 pub(crate) fn native_record<T: SqlShellDialect>(record: &Record<CborValue>) -> Record<T::Value> {
     record
         .iter()
@@ -169,16 +177,16 @@ where
     ) -> Result<(String, Inserted<CborValue>)> {
         let native = native_record::<T>(record);
         let Some(id) = id else {
+            if self.table.id_is_expression() {
+                let (id, inserted) = self.table.insert_derived_value(&native).await?;
+                return Ok((id, cbor_inserted::<T>(inserted)));
+            }
             let id = self.table.insert_return_id_value(&native).await?;
             let stored = self.read_back(&id).await?;
             return Ok((id, Inserted::Created(stored)));
         };
-        let inserted = match self.table.insert_value(id, &native).await? {
-            Inserted::Created(r) => Inserted::Created(cbor_record::<T>(r)),
-            Inserted::Existed(r) => Inserted::Existed(cbor_record::<T>(r)),
-            Inserted::Accepted => Inserted::Accepted,
-        };
-        Ok((id.to_string(), inserted))
+        let inserted = self.table.insert_value(id, &native).await?;
+        Ok((id.to_string(), cbor_inserted::<T>(inserted)))
     }
 
     async fn replace(&self, id: &str, record: &Record<CborValue>) -> Result<Record<CborValue>> {
@@ -248,5 +256,15 @@ where
     #[cfg(feature = "rhai")]
     fn register_rhai_extensions(&self, engine: &mut vantage_rhai::rhai::Engine) {
         T::register_rhai_extensions(engine);
+    }
+
+    #[cfg(feature = "rhai")]
+    fn script_table(&self) -> Option<vantage_rhai::rhai::Dynamic> {
+        T::script_table(self)
+    }
+
+    #[cfg(feature = "rhai")]
+    fn script_condition(&self, expr: vantage_rhai::rhai::Dynamic) -> Result<NativeCondition> {
+        T::script_condition(expr)
     }
 }

@@ -85,6 +85,8 @@ impl SqlShellDialect for SqliteDB {
         table.clone()
     }
 
+    crate::sql_vista::scripted_dialect_hooks!(AnySqliteType, register_sqlite_onto);
+
     fn target_factory<E>(
         shell: &Shell<Self, E>,
     ) -> impl Fn(Table<Self, EmptyEntity>) -> Result<Vista> + Send + Sync + 'static
@@ -114,4 +116,5 @@ pub fn register_rule_conditions(engine: &mut Engine) {
             Ok(h.clone())
         },
     );
+    crate::sql_vista::scripted::register_rule_where_expr::<crate::sqlite::SqliteDB>(engine);
 }

@@ -9,7 +9,8 @@ use vantage_expressions::traits::datasource::ExprDataSource;
 use vantage_expressions::traits::expressive::ExpressiveEnum;
 use vantage_expressions::{Expression, Expressive, Selectable};
 use vantage_table::column::core::{Column, ColumnType};
-use vantage_table::table::Table;
+use vantage_table::sorting::SortDirection;
+use vantage_table::table::{Aggregate, Table};
 use vantage_table::traits::column_like::ColumnLike as _;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
@@ -20,8 +21,10 @@ use crate::postgres::PostgresDB;
 use crate::postgres::statements::PostgresSelect;
 use crate::postgres::types::{AnyPostgresType, PostgresType};
 use crate::primitives::identifier::ident;
+use crate::set_writes::{find_by_record, id_target};
 use crate::table_writes::{
-    guard_insert, guard_new_row, guard_patch, guard_replace, settle_failed_insert, upsert_on_id,
+    guard_insert, guard_new_row, guard_patch, guard_replace, null_derived_id,
+    settle_failed_derived_insert, settle_failed_insert, upsert_on_id,
 };
 use vantage_expressions::expr_any;
 
@@ -45,7 +48,7 @@ pub(super) fn id_param<E>(table: &Table<PostgresDB, E>, id: &str) -> AnyPostgres
 where
     E: Entity<AnyPostgresType>,
 {
-    if table.id_is_text() {
+    if table.id_is_text() || table.id_is_expression() {
         AnyPostgresType::from(id.to_string())
     } else {
         id_value(id)
@@ -196,6 +199,35 @@ impl TableSource for PostgresDB {
         vantage_table::conditions::condition_column_of(&condition.0)
     }
 
+    fn expression_condition(&self, expr: Expression<Self::Value>) -> Result<Self::Condition> {
+        Ok(expr.into())
+    }
+
+    fn render_list_aggregate(
+        &self,
+        rows: Expression<Self::Value>,
+        aggregate: &Aggregate,
+        order: &[SortDirection],
+    ) -> Result<Expression<Self::Value>> {
+        let by = crate::list_aggregate::order_list(order);
+        Ok(match aggregate {
+            Aggregate::JoinConcat { separator, .. } => expr_any!(
+                &format!(
+                    "(SELECT COALESCE(string_agg(v::text, {{}} ORDER BY {by}), '') FROM ({{}}) AS r)"
+                ),
+                (AnyPostgresType::from(separator.clone())),
+                (rows)
+            ),
+            Aggregate::JoinJson(_) => expr_any!(
+                &format!(
+                    "(SELECT COALESCE(json_agg(v ORDER BY {by}), '[]'::json) FROM ({{}}) AS r)"
+                ),
+                (rows)
+            ),
+            other => return Err(error!(format!("not a list aggregate: {other:?}"))),
+        })
+    }
+
     fn can_confine_writes(&self) -> bool {
         true
     }
@@ -339,7 +371,7 @@ impl TableSource for PostgresDB {
 
         let condition = {
             let id_val = id_param(table, id);
-            postgres_expr!("{} = {}", (ident(&id_field_name)), id_val)
+            postgres_expr!("{} = {}", (id_target(table)?), id_val)
         };
         let select = table.try_select()?.with_condition(condition);
         let result = self.execute(&row_query(table, &select)).await?;
@@ -484,10 +516,9 @@ impl TableSource for PostgresDB {
     {
         guard_patch(self, table, id, partial).await?;
 
-        let id_field_name = table.id_field_name();
         let id_condition = {
             let id_val = id_param(table, id);
-            postgres_expr!("{} = {}", (ident(&id_field_name)), id_val)
+            postgres_expr!("{} = {}", (id_target(table)?), id_val)
         };
         let mut update = crate::postgres::statements::PostgresUpdate::new(table.table_name())
             .with_record(partial)
@@ -504,11 +535,9 @@ impl TableSource for PostgresDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_field_name = table.id_field_name();
-
         let id_condition = {
             let id_val = id_param(table, id);
-            postgres_expr!("{} = {}", (ident(&id_field_name)), id_val)
+            postgres_expr!("{} = {}", (id_target(table)?), id_val)
         };
         // A missing row, or one outside the conditions, matches nothing: Ok.
         let mut delete = crate::postgres::statements::PostgresDelete::new(table.table_name())
@@ -558,6 +587,60 @@ impl TableSource for PostgresDB {
                 table = table.table_name()
             )
         })
+    }
+
+    /// `INSERT … RETURNING (<id expression>) AS <id>`; a failed insert
+    /// settles by the record.
+    async fn insert_table_derived_id_value<E>(
+        &self,
+        table: &Table<Self, E>,
+        record: &Record<Self::Value>,
+    ) -> Result<(Self::Id, Inserted<Self::Value>)>
+    where
+        E: Entity<Self::Value>,
+    {
+        guard_new_row(self, table, record).await?;
+        let id_field_name = table.id_field_name();
+        let insert = crate::postgres::statements::PostgresInsert::new(table.table_name())
+            .with_record(record);
+        // A duplicate key writes nothing instead of failing the statement,
+        // which would abort an open transaction; the row holding the record
+        // is then looked up.
+        let returning = expr_any!(
+            "{} ON CONFLICT DO NOTHING RETURNING {} AS {}",
+            (insert.expr()),
+            (id_target(table)?),
+            (ident(&id_field_name))
+        );
+        let result = match self.execute(&returning).await {
+            Ok(result) => result,
+            Err(e) => return settle_failed_derived_insert(self, table, record, e).await,
+        };
+        let wrote = matches!(result.value(), CborValue::Array(rows) if !rows.is_empty());
+        if !wrote {
+            return find_by_record(self, table, record)
+                .await?
+                .map(|(id, stored)| (id, Inserted::Existed(stored)))
+                .ok_or_else(|| {
+                    error!(
+                        format!(
+                            "insert into `{}` clashes with a stored row on a unique key, \
+                             one this set doesn't hold or the record doesn't single out",
+                            table.table_name()
+                        ),
+                        table = table.table_name()
+                    )
+                    .mark_conflict()
+                });
+        }
+        let Some((id, _)) = parse_rows(table, result, &id_field_name)?.swap_remove_index(0) else {
+            return Err(null_derived_id(table));
+        };
+        let stored = self
+            .get_table_value(table, &id)
+            .await?
+            .ok_or_else(|| error!("Inserted row disappeared", id = id.clone()))?;
+        Ok((id, Inserted::Created(stored)))
     }
 
     fn related_in_condition<SourceE: Entity<Self::Value> + 'static>(

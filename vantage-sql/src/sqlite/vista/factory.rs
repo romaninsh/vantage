@@ -82,7 +82,12 @@ impl SqliteVistaFactory {
     where
         E: Entity<AnySqliteType> + 'static,
     {
-        let shell = SqliteTableShell::new(table, sql_capabilities(read_only), metadata, ());
+        let shell = SqliteTableShell::new(
+            table,
+            sql_capabilities(read_only).with(vantage_vista::Capability::NativeConditions),
+            metadata,
+            (),
+        );
         Vista::new(name, shell)
     }
 
@@ -132,6 +137,19 @@ impl SqlSpecDialect for SqliteDB {
     ) -> Result<TableColumn<AnySqliteType>> {
         let physical = spec.driver.sqlite.as_ref().and_then(|b| b.column.clone());
         TableColumn::from_spec(name, spec, physical, column_for_type)
+    }
+
+    #[cfg(feature = "rhai")]
+    fn eval_column_expr(
+        code: &str,
+        table: Option<Table<Self, vantage_types::EmptyEntity>>,
+        env: vantage_rhai::Env,
+    ) -> Result<
+        vantage_expressions::Expression<
+            <Self as vantage_table::traits::table_source::TableSource>::Value,
+        >,
+    > {
+        crate::sqlite::vista::rhai_source::eval_column_expr(code, table, env)
     }
 
     #[cfg(feature = "rhai")]

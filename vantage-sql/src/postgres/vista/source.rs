@@ -141,6 +141,8 @@ impl SqlShellDialect for PostgresDB {
         table
     }
 
+    crate::sql_vista::scripted_dialect_hooks!(AnyPostgresType, register_postgres_onto);
+
     /// Targets carry the factory's `with_notify` declaration, not the
     /// parent's `Subscribe`: a query-sourced parent subscribing through
     /// `listen:` says nothing about triggers on its targets' tables. The
@@ -185,4 +187,5 @@ pub fn register_rule_conditions(engine: &mut Engine) {
             Ok(h.clone())
         },
     );
+    crate::sql_vista::scripted::register_rule_where_expr::<crate::postgres::PostgresDB>(engine);
 }

@@ -8,8 +8,12 @@ mod dialect;
 // crate's dialects implement it.
 #[allow(private_bounds, private_interfaces)]
 mod narrow;
+mod native;
+pub(crate) use native::{add_native_condition, scripted_dialect_hooks};
 #[allow(private_bounds, private_interfaces)]
 mod refs;
+#[cfg(feature = "rhai")]
+pub(crate) mod scripted;
 #[allow(private_bounds, private_interfaces)]
 mod shell;
 mod spec_table;
