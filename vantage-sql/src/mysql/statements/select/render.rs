@@ -8,7 +8,7 @@ fn render_condition_list(conditions: &[Expr], keyword: &str) -> Expr {
     if conditions.is_empty() {
         Expression::new("", vec![])
     } else {
-        let combined = Expression::from_vec(conditions.to_vec(), " AND ");
+        let combined = crate::condition::and_all(conditions);
         Expression::new(
             format!(" {} {{}}", keyword),
             vec![ExpressiveEnum::Nested(combined)],

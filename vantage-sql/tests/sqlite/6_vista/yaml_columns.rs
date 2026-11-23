@@ -361,6 +361,38 @@ columns:
     Ok(())
 }
 
+/// An `expr:` column on a `base:` spec is its expression over the base's
+/// rows, as on a plain spec, not a physical column of that name.
+#[cfg(feature = "rhai")]
+#[tokio::test]
+async fn vista_yaml_expr_column_on_a_derived_spec() -> TestResult {
+    let db = setup().await;
+    let base: SqliteVistaSpec = serde_yaml_ng::from_str(
+        "name: product\ncolumns:\n  id: { type: string, flags: [id] }\n  name: { type: string }\n",
+    )?;
+    let resolver: Arc<dyn SpecResolver<SqliteVistaSpec>> =
+        Arc::new(move |name: &str| (name == "product").then(|| base.clone()));
+    let derived = r#"
+name: shouting
+columns:
+  shout: { type: string, expr: 'sql::expr("upper(name)")' }
+sqlite:
+  base: product
+  inherit:
+    columns: [id, name]
+"#;
+    let vista = db
+        .vista_factory()
+        .with_resolver(resolver)
+        .build_from_spec(serde_yaml_ng::from_str(derived)?)?;
+    let rows = vista.list_values().await?;
+    assert_eq!(
+        rows["a"].get("shout"),
+        Some(&CborValue::Text("ALPHA".into()))
+    );
+    Ok(())
+}
+
 /// A `lazy:` column runs its Rhai script on each returned record (`row` in
 /// scope), in declaration order — the second script reads the first's value.
 #[cfg(feature = "rhai")]

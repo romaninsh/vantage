@@ -4,11 +4,13 @@
 //! (`<~line[WHERE …]` or a `$parent` subquery; see the `rollup` module), and
 //! so does `exists`. An ordered or limited aggregate reads them from an
 //! ordered sub-select, `(SELECT … AS v, … AS o0 FROM child WHERE … ORDER BY
-//! o0 LIMIT …).v`. A has_one's field follows the record link (`tag.name`).
+//! o0 LIMIT …).v`. A has_one's field follows the record link (`tag.name`)
+//! unless the target or the chain narrows it; then it reads the sub-select.
 
 use vantage_core::{Result, error};
 use vantage_expressions::{Expression, Expressive, Order, Selectable};
 use vantage_table::sorting::SortDirection;
+use vantage_table::source::SelectSource;
 use vantage_table::table::{Aggregate, RelationQuery, RollupOp, Table};
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Entity};
@@ -41,6 +43,27 @@ impl SurrealDB {
         };
         if let Aggregate::Field(column) = aggregate {
             let target = parent.get_ref_target_erased(relation)?;
+            if target.pagination().is_some() {
+                return Err(error!(
+                    "a has_one field's target can't have pagination",
+                    relation = relation
+                ));
+            }
+            // The link reads the linked record as stored. Anything that
+            // narrows the target (its own conditions, a query source, the
+            // chain's where/order/limit) or joins it on a column other than
+            // its id needs the sub-select, as on SQL.
+            let keys = parent.ref_keys(relation)?;
+            let narrowed = !q.conditions.is_empty()
+                || !q.order.is_empty()
+                || q.limit.is_some()
+                || target.conditions().next().is_some()
+                || !matches!(target.source(), SelectSource::Name(_))
+                || keys.len() != 1
+                || keys.iter().any(|key| key.to.is_some());
+            if narrowed {
+                return self.relation_rows(parent, target, q, aggregate);
+            }
             if target.is_calculated_column(column) || !target.columns().contains_key(column) {
                 return Err(error!(
                     format!(
@@ -92,6 +115,16 @@ impl SurrealDB {
         aggregate: &Aggregate,
     ) -> Result<Expr> {
         let relation = q.relation.as_str();
+        // SurrealDB refuses a LIMIT outside 0..=u32::MAX at the server.
+        if let Some(limit) = q.limit.filter(|l| !(0..=i64::from(u32::MAX)).contains(l)) {
+            return Err(error!(
+                format!(
+                    "relation `{relation}` has limit {limit}, outside 0..={}",
+                    u32::MAX
+                ),
+                relation = relation
+            ));
+        }
         // `$parent` names the outer row, so a child over the parent's own
         // table needs no alias.
         let mut child = parent.correlate_ref_target(relation, target, None)?;
@@ -110,25 +143,16 @@ impl SurrealDB {
                 )
             })
         };
-        let value = match aggregate.column() {
-            Some(name) => column(name)?,
-            None => Identifier::new("id").expr(),
+        let value = match (aggregate.column(), aggregate) {
+            (Some(name), _) => column(name)?,
+            // One truthy value per row: a query-sourced child may not
+            // project `id`, and `count()` skips NONE.
+            (None, Aggregate::Count | Aggregate::Exists) => surreal_expr!("1"),
+            (None, _) => Identifier::new("id").expr(),
         };
         let mut select = child.select_empty();
         select.clear_fields();
         select.clear_order_by();
-        if aggregate
-            .rollup_op()
-            .is_some_and(|op| op != RollupOp::Count)
-        {
-            // Rows without the value are skipped, as SQL's aggregates skip
-            // NULL; `math::sum` would refuse a NONE.
-            select.add_where_condition(surreal_expr!(
-                "({}) != NONE AND ({}) != NULL",
-                (value.clone()),
-                (value.clone())
-            ));
-        }
         let mut select = select.with_expression(value, Some("v".to_string()));
         for (at, (name, direction)) in q.order.iter().enumerate() {
             let alias = format!("o{at}");
@@ -140,17 +164,28 @@ impl SurrealDB {
             select.add_order_by(Identifier::new(alias).expr(), order);
         }
         let limit = match aggregate {
-            Aggregate::First(_) => Some(1),
+            // At most one row; a limit of 0 leaves none.
+            Aggregate::First(_) | Aggregate::Field(_) => Some(q.limit.map_or(1, |l| l.min(1))),
             _ => q.limit,
         };
         if limit.is_some() {
             select.set_limit(limit, None);
         }
-        let rows = surreal_expr!("({}).v", (select.expr()));
+        let mut rows = surreal_expr!("({}).v", (select.expr()));
+        if aggregate
+            .rollup_op()
+            .is_some_and(|op| op != RollupOp::Count)
+        {
+            // Values missing from the ordered, limited rows are skipped, as
+            // SQL's aggregates skip NULL (`math::sum` would refuse a NONE).
+            // Filtered after the LIMIT, so a NULL first row isn't replaced
+            // by the next one.
+            rows = surreal_expr!("array::filter({}, |$v| $v != NONE AND $v != NULL)", (rows));
+        }
         let call = |name: &str, args: Vec<Expr>| Fx::new(name, args).expr();
         Ok(match aggregate {
             Aggregate::Exists => surreal_expr!("(count({}) > 0)", (rows)),
-            Aggregate::First(_) => call("array::first", vec![rows]),
+            Aggregate::First(_) | Aggregate::Field(_) => call("array::first", vec![rows]),
             Aggregate::JoinJson(_) => rows,
             Aggregate::JoinConcat { separator, .. } => {
                 let separator = AnySurrealType::from(separator.clone());

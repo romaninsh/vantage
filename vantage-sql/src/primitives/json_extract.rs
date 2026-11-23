@@ -89,7 +89,24 @@ impl Expressive<crate::mysql::types::AnyMysqlType>
     for JsonExtract<crate::mysql::types::AnyMysqlType>
 {
     fn expr(&self) -> Expression<crate::mysql::types::AnyMysqlType> {
-        let json_path = format!("$.{}", self.path.join("."));
+        // MySQL takes a bare key only when it's an identifier; `en-US` or
+        // `1st` must be quoted (`$."en-US"`).
+        let key = |k: &String| {
+            let mut chars = k.chars();
+            let bare = chars
+                .next()
+                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+                && chars.all(|c| c.is_ascii_alphanumeric() || c == '_');
+            if bare {
+                k.clone()
+            } else {
+                format!("\"{}\"", k.replace('\\', "\\\\").replace('"', "\\\""))
+            }
+        };
+        let json_path = format!(
+            "$.{}",
+            self.path.iter().map(key).collect::<Vec<_>>().join(".")
+        );
         let template = if self.as_json {
             "JSON_EXTRACT({}, {})"
         } else {

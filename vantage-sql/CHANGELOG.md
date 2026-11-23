@@ -1,16 +1,28 @@
 # Changelog
 
-## 0.18.0 — 2026-11-23
+## 0.18.3 — 2026-11-23
 
-- Expression ids on SQLite, PostgreSQL and MySQL: the insert ends in `RETURNING (<id expression>) AS <id>` (MySQL reads the row back by its values), a duplicate settles to `Existed` by the record's values, and a NULL computed id is an error naming the table. By-id reads and writes compare the expression. The vista shell's insert without an id reports `Existed` for such a table.
-- Relation expressions on SQLite, PostgreSQL and MySQL: `join_concat` renders `group_concat` / `string_agg … ORDER BY` / `GROUP_CONCAT … ORDER BY … SEPARATOR`, `join_json` renders `json_group_array` / `json_agg … ORDER BY` / `JSON_ARRAYAGG` over the rows in order, both `""` and `[]` over no rows. A roll-up of a child's expression column aggregates the expression instead of being refused.
-- Rhai: `sql::json(expr, path)` (a key or a list of keys, as text) and `sql::json_raw(expr, path)` (raw JSON), over `JsonExtract`. Path keys are letters, digits, `_` and `-`; anything else is refused, since keys are written into the SQL.
-- Rhai: `eval_column_expr(code, table, env)` per dialect (`sqlite::vista::rhai_source`, `postgres::…`, `mysql::…`) evaluates an `expr:` script; with `table` in scope the script builds relation expressions: `table.ref(name)`, `.where(col, value)`, `.where(expr)`, `.order_by(col[, "desc"])`, `.limit(n)`, then `count`, `sum`, `min`, `max`, `avg`, `exists`, `first`, `join_concat`, `join_json` or `field`.
-- `expr:` columns in SQLite, PostgreSQL and MySQL specs: the script runs when a query includes the column, with the table as `table`; `Table::check_expressions` (the factory's load check) runs it once.
-- SQLite and PostgreSQL vistas take native conditions (`Capability::NativeConditions`), as MySQL's do: the dialect's condition or a query expression; `self.with_condition(<expr>)` in their scripts.
-- `where_expr(|t| …)` on data handles and rule tables, on SQLite, PostgreSQL and MySQL. `rhai_engine::relation::register_relation_vocab` registers the relation vocabulary of every enabled dialect for a data-script host.
 - Rhai: `sql::concat([parts])` and `sql::concat_ws(sep, [parts])` join text per dialect (`||` or `CONCAT`). A part is an `sql::ident`, an expression, or a string bound as a value, or a number or bool bound as its text (`5` → `"5"`, `true` → `"true"`), so Postgres joins it, never SQL text; anything else is an error naming its type and position. A NULL part makes `concat` NULL; `concat_ws` skips it.
 - SQLite `Concat::ws` skips NULL parts, as `CONCAT_WS` does on PostgreSQL and MySQL: it renders `SUBSTR(COALESCE(sep || a, '') || …, LENGTH(sep) + 1)` instead of `a || sep || b`.
+
+## 0.18.2 — 2026-11-23
+
+- MySQL quotes a JSON path key that isn't an identifier (`$."en-US"`). `sql::json` accepts `-` in keys, which MySQL read as a broken path, as it did a key starting with a digit.
+- Rhai: a relation's `.limit(n)` refuses a negative `n`; SQLite read `-1` as no limit, PostgreSQL and MySQL failed the query.
+
+## 0.18.1 — 2026-11-23
+
+- `WHERE` and `HAVING` wrap a condition holding `OR`, `XOR` (as words, any spacing) or `||` when other conditions join it, on SQLite, PostgreSQL and MySQL. A raw `a OR b` (a relation's `where(expr)`, a rule's `with_condition`, `where_expr`) next to a relation's correlation or a table's own conditions read `b` rows outside the set. Queries without such a condition render as before.
+
+## 0.18.0 — 2026-11-23
+
+- Expression ids on SQLite, PostgreSQL and MySQL: the insert ends in `RETURNING (<id expression>) AS <id>` (MySQL reads the row back by its values), a duplicate settles to `Existed` by the record's values, and a NULL computed id is an error naming the table. An insert that never reached the database (no pooled connection) is not settled; it stays `Unavailable`. By-id reads and writes compare the expression; a patch that would change the computed id is a Conflict, refused before the UPDATE. The vista shell's insert without an id reports `Existed` for such a table.
+- Relation expressions on SQLite, PostgreSQL and MySQL: `join_concat` renders `group_concat` / `string_agg … ORDER BY` / `GROUP_CONCAT … ORDER BY … SEPARATOR`, `join_json` renders `json_group_array` / `json_agg … ORDER BY` / `JSON_ARRAYAGG` over the rows in order, both `""` and `[]` over no rows. `MysqlDB::connect` raises `group_concat_max_len` on each connection, so a list isn't cut at 1024 bytes. A roll-up of a child's expression column aggregates the expression instead of being refused.
+- Rhai: `sql::json(expr, path)` (a key or a list of keys, as text) and `sql::json_raw(expr, path)` (raw JSON), over `JsonExtract`. Path keys are letters, digits, `_` and `-`; anything else is refused, since keys are written into the SQL.
+- Rhai: `eval_column_expr(code, table, env)` per dialect (`sqlite::vista::rhai_source`, `postgres::…`, `mysql::…`) evaluates an `expr:` script; with `table` in scope the script builds relation expressions: `table.ref(name)`, `.where(col, value)`, `.where(expr)`, `.order_by(col[, "desc"])`, `.limit(n)`, then `count`, `sum`, `min`, `max`, `avg`, `exists`, `first`, `join_concat`, `join_json` or `field`.
+- `expr:` columns in SQLite, PostgreSQL and MySQL specs, `base:` specs included: the script runs when a query includes the column, with the table as `table`; `Table::check_expressions` (the factory's load check) runs it once.
+- SQLite and PostgreSQL vistas take native conditions (`Capability::NativeConditions`), as MySQL's do: the dialect's condition or a query expression; `self.with_condition(<expr>)` in their scripts.
+- `where_expr(|t| …)` on data handles and rule tables, on SQLite, PostgreSQL and MySQL. `rhai_engine::relation::register_relation_vocab` registers the relation vocabulary of every enabled dialect for a data-script host.
 
 ## 0.17.1 — 2026-11-23
 

@@ -138,7 +138,7 @@ fn referenced_rows(
         rows = surreal_expr!(
             "{}[WHERE {}]",
             (rows),
-            (Expression::from_vec(conditions, " AND "))
+            (crate::statements::select::render::and_all(conditions))
         );
     }
     if let Some(name) = value {

@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.1 — 2026-11-23
+
+- A relation's `field` reads at most one row, as `first` does (none for a limit of 0). A has_one joined on a column other than the target's id with several matching rows failed the parent query on PostgreSQL and MySQL.
+
 ## 5.2.0 — 2026-11-23
 
 - A table's id column may be an expression (`Table::id_is_expression`, `Table::id_expression`): get, patch and delete compare it, and `insert_derived_value` / `insert_return_id_value` report the id the database computes, `Existed` for a repeated record. An insert or replace that names an id on such a table is refused as unsupported.

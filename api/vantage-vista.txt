@@ -1559,6 +1559,7 @@ impl vantage_vista::VistaMetadata
 pub fn vantage_vista::VistaMetadata::new() -> Self
 pub fn vantage_vista::VistaMetadata::search_columns(&self) -> alloc::vec::Vec<&str>
 pub fn vantage_vista::VistaMetadata::with_column(self, vantage_vista::Column) -> Self
+pub fn vantage_vista::VistaMetadata::with_column_flag(self, &str, impl core::convert::Into<vantage_vista::ColumnFlag>) -> Self
 pub fn vantage_vista::VistaMetadata::with_columns_at<'a>(self, impl core::iter::traits::collect::IntoIterator<Item = (usize, &'a vantage_vista::Column)>) -> Self
 pub fn vantage_vista::VistaMetadata::with_denials(self, vantage_vista::Denials) -> Self
 pub fn vantage_vista::VistaMetadata::with_id_column(self, impl core::convert::Into<alloc::string::String>) -> Self
