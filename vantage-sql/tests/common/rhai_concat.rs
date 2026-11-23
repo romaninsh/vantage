@@ -126,6 +126,24 @@ macro_rules! rhai_concat_tests {
                 )
                 .await;
                 assert_eq!(v, text("RigaLV"));
+
+                // A compound part is one operand: SQLite's `||` binds tighter
+                // than `+`, so `':' || "a" + "b"` read `(':' || "a") + "b"`.
+                let sum = r#"sql::expr("{} + {}", [sql::ident("a"), sql::ident("b")])"#;
+                let v = read(
+                    "ws_compound_part",
+                    "(7, 5, 'Riga', NULL)",
+                    &format!(r#"sql::concat_ws(":", [sql::ident("city"), {sum}])"#),
+                )
+                .await;
+                assert_eq!(v, text("Riga:12"));
+                let v = read(
+                    "compound_part",
+                    "(7, 5, 'Riga', NULL)",
+                    &format!(r#"sql::concat([sql::ident("city"), ":", {sum}])"#),
+                )
+                .await;
+                assert_eq!(v, text("Riga:12"));
             }
 
             #[tokio::test]

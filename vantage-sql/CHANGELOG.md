@@ -3,7 +3,7 @@
 ## 0.18.3 — 2026-11-23
 
 - Rhai: `sql::concat([parts])` and `sql::concat_ws(sep, [parts])` join text per dialect (`||` or `CONCAT`). A part is an `sql::ident`, an expression, or a string bound as a value, or a number or bool bound as its text (`5` → `"5"`, `true` → `"true"`), so Postgres joins it, never SQL text; anything else is an error naming its type and position. A NULL part makes `concat` NULL; `concat_ws` skips it.
-- SQLite `Concat::ws` skips NULL parts, as `CONCAT_WS` does on PostgreSQL and MySQL: it renders `SUBSTR(COALESCE(sep || a, '') || …, LENGTH(sep) + 1)` instead of `a || sep || b`.
+- SQLite `Concat::ws` skips NULL parts, as `CONCAT_WS` does on PostgreSQL and MySQL: it renders `SUBSTR(COALESCE(sep || a, '') || …, LENGTH(sep) + 1)` instead of `a || sep || b`. On SQLite and PostgreSQL a compound part (`sql::expr("{} + {}", …)`) is grouped as one `||` operand, since SQLite's `||` binds tighter than `+`.
 
 ## 0.18.2 — 2026-11-23
 

@@ -31,8 +31,9 @@ async fn similarity_binds_a_quoted_term_as_one_value() {
     assert!(score.try_get::<f64>().is_some(), "{score:?}");
 }
 
+/// The value `code`'s expression reads, as the database returns it.
 #[cfg(feature = "rhai")]
-async fn read_rhai(code: &str) -> Option<String> {
+async fn read_rhai(code: &str) -> vantage_surrealdb::AnySurrealType {
     let host = vantage_rhai::Host::builder(vantage_rhai::Limits::background())
         .vocab_fn(vantage_surrealdb::rhai_engine::register_surreal_onto)
         .build();
@@ -42,12 +43,17 @@ async fn read_rhai(code: &str) -> Option<String> {
             script.eval_as::<vantage_surrealdb::rhai_engine::RhaiExpr>(&vantage_rhai::Env::new())
         })
         .unwrap();
-    let value = get_db()
+    get_db()
         .await
         .execute(&SurrealReturn::new(e.0).expr())
         .await
-        .unwrap();
-    value.try_get::<String>()
+        .unwrap()
+}
+
+/// [`read_rhai`] as text, `None` for any other value.
+#[cfg(feature = "rhai")]
+async fn read_text(code: &str) -> Option<String> {
+    read_rhai(code).await.try_get::<String>()
 }
 
 /// `surreal::concat` and `concat_ws` take parts as `sql::concat` does: a
@@ -55,26 +61,27 @@ async fn read_rhai(code: &str) -> Option<String> {
 #[cfg(feature = "rhai")]
 #[tokio::test]
 async fn rhai_surreal_concat_joins_parts() {
-    let joined = read_rhai(r#"surreal::concat([surreal::expr("7"), ":", 5])"#).await;
+    let joined = read_text(r#"surreal::concat([surreal::expr("7"), ":", 5])"#).await;
     assert_eq!(joined.as_deref(), Some("7:5"));
 
-    let typed = read_rhai(r#"surreal::concat([surreal::expr("7"), 5, ":", 1.5, ":", true])"#).await;
+    let typed = read_text(r#"surreal::concat([surreal::expr("7"), 5, ":", 1.5, ":", true])"#).await;
     assert_eq!(typed.as_deref(), Some("75:1.5:true"));
 
+    // NONE itself (CBOR tag 6), not NULL, `false` or any other non-text.
     for missing in ["NONE", "NULL"] {
         let code =
             format!(r#"surreal::concat([surreal::expr("7"), ":", surreal::expr("{missing}")])"#);
-        assert_eq!(
-            read_rhai(&code).await,
-            None,
-            "a {missing} part makes concat NONE, as NULL does on SQL"
+        let value = read_rhai(&code).await;
+        assert!(
+            matches!(value.value(), ciborium::Value::Tag(6, _)),
+            "a {missing} part makes concat NONE, as NULL does on SQL: {value:?}"
         );
     }
 
-    let crafted = read_rhai(r#"surreal::concat(["\"; REMOVE TABLE x; --"])"#).await;
+    let crafted = read_text(r#"surreal::concat(["\"; REMOVE TABLE x; --"])"#).await;
     assert_eq!(crafted.as_deref(), Some("\"; REMOVE TABLE x; --"));
 
-    let ws = read_rhai(
+    let ws = read_text(
         r#"surreal::concat_ws(", ", ["Riga", surreal::expr("NONE"), surreal::expr("NULL"), 7])"#,
     )
     .await;

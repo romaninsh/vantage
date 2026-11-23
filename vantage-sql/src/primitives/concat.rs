@@ -44,6 +44,22 @@ impl<T: Debug + Display + Clone> Concat<T> {
     }
 }
 
+/// `part` as an operand of `||`. SQLite's `||` binds tighter than `+` and
+/// Postgres's tighter than `=`, so a compound part (`1 + 2`) is grouped:
+/// `':' || 1 + 2` would read `(':' || 1) + 2`. Identifiers, bound values and
+/// function calls have no space in their template and stay bare.
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
+fn operand<T: Debug + Display + Clone>(part: &Expression<T>) -> Expression<T> {
+    if part.template.contains(char::is_whitespace) {
+        Expression::new(
+            "({})",
+            vec![vantage_expressions::ExpressiveEnum::Nested(part.clone())],
+        )
+    } else {
+        part.clone()
+    }
+}
+
 /// Macro to create a `Concat` from mixed `Expressive` arguments.
 ///
 /// Each argument has `.expr()` called on it automatically, so you can
@@ -87,8 +103,8 @@ impl Expressive<crate::sqlite::types::AnySqliteType>
                     Expression::new(
                         "COALESCE({} || {}, '')",
                         vec![
-                            ExpressiveEnum::Nested(sep.clone()),
-                            ExpressiveEnum::Nested(part.clone()),
+                            ExpressiveEnum::Nested(operand(sep)),
+                            ExpressiveEnum::Nested(operand(part)),
                         ],
                     )
                 })
@@ -101,7 +117,7 @@ impl Expressive<crate::sqlite::types::AnySqliteType>
                 ],
             )
         } else {
-            Expression::from_vec(self.parts.clone(), " || ")
+            Expression::from_vec(self.parts.iter().map(operand).collect::<Vec<_>>(), " || ")
         }
     }
 }
@@ -136,7 +152,7 @@ impl Expressive<crate::postgres::types::AnyPostgresType>
             let args = Expression::from_vec(all, ", ");
             Expression::new("CONCAT_WS({})", vec![ExpressiveEnum::Nested(args)])
         } else {
-            Expression::from_vec(self.parts.clone(), " || ")
+            Expression::from_vec(self.parts.iter().map(operand).collect::<Vec<_>>(), " || ")
         }
     }
 }
