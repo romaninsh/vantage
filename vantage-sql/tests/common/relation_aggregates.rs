@@ -200,6 +200,26 @@ macro_rules! relation_aggregates_tests {
             let has = read(&projects, "has_tag_5").await;
             assert!(truthy(&has["7"]));
             assert!(!truthy(&has["8"]));
+
+            // A raw `OR` condition stays inside the correlation: task 4 is
+            // project 8's, so it mustn't count for project 7. Spelled with a
+            // newline and no space before the parenthesis.
+            let db = setup().await;
+            let either = db
+                .expression_condition(vantage_expressions::Expression::new(
+                    "active = 0\nOR(id = 4)",
+                    vec![],
+                ))
+                .unwrap();
+            let projects = project(db)
+                .with_relation_column(
+                    "odd_tasks",
+                    RelationQuery::new("tasks").with_condition(either),
+                    Aggregate::Count,
+                )
+                .unwrap();
+            let counts = read(&projects, "odd_tasks").await;
+            assert_eq!((&counts["7"], &counts["8"]), (&json!(1), &json!(1)));
         }
 
         #[tokio::test]
