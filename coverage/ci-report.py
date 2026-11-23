@@ -112,12 +112,15 @@ def version_cell(crate, versions, published, no_changelog=(), changelogs=None):
 
 
 def linked(version, entry):
-    """The version, linking to its CHANGELOG with the entry as the hover text."""
+    """The version, linking to its CHANGELOG with the entry as the hover text.
+    The link sits in a table cell, so a `|` in the entry (`where_expr(|t| …)`)
+    is escaped; otherwise it ends the cell mid-link."""
     if not entry or entry.get("text") is None:
         return version
     env = os.environ.get
     url = f"{env('GITHUB_SERVER_URL', 'https://github.com')}/{env('GITHUB_REPOSITORY', '')}/blob/{env('GITHUB_SHA', 'HEAD')}/{entry['path']}"
-    return f'[{version}]({url} "{entry["text"].replace(chr(34), chr(39))}")'
+    title = entry["text"].replace('"', "'").replace("|", "\\|")
+    return f'[{version}]({url} "{title}")'
 
 
 def bump(old, new):
