@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.18.1 — 2026-11-23
+
+- `WHERE` and `HAVING` wrap a condition holding `OR`, `XOR` (as words, any spacing) or `||` when other conditions join it, on SQLite, PostgreSQL and MySQL. A raw `a OR b` (a relation's `where(expr)`, a rule's `with_condition`, `where_expr`) next to a relation's correlation or a table's own conditions read `b` rows outside the set. Queries without such a condition render as before.
+
 ## 0.18.0 — 2026-11-23
 
 - Expression ids on SQLite, PostgreSQL and MySQL: the insert ends in `RETURNING (<id expression>) AS <id>` (MySQL reads the row back by its values), a duplicate settles to `Existed` by the record's values, and a NULL computed id is an error naming the table. An insert that never reached the database (no pooled connection) is not settled; it stays `Unavailable`. By-id reads and writes compare the expression; a patch that would change the computed id is a Conflict, refused before the UPDATE. The vista shell's insert without an id reports `Existed` for such a table.
