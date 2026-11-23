@@ -27,7 +27,6 @@ impl<A: ColumnType> Column<A> {
             ColumnFlag::Indexed,
             ColumnFlag::Label,
             ColumnFlag::RequestParam,
-            ColumnFlag::PerSession,
         ];
         for flag in carried {
             if spec.has_flag(flag.to_vista()) {

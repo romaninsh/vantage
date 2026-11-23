@@ -6,7 +6,6 @@
 - `TableSource::insert_table_derived_id_value`; the default refuses.
 - `RelationQuery` and `Aggregate`, with `Table::with_relation_column` and `Table::relation_expression`: count, sum, min, max, avg, exists, first, join_concat, join_json and field over a narrowed, ordered relation, as a correlated subquery built when a query includes the column. Roll-ups render through it (`TableSource::rollup_expression` now calls `TableSource::relation_expression`) and may aggregate a child's expression column. A list aggregate without an order is refused.
 - `TableSource::render_list_aggregate` and `TableSource::expression_condition`; the defaults refuse. `rollup_expression` requires `Self: 'static`.
-- `ColumnFlag::PerSession`, carried from a spec column to the Vista metadata.
 - `TableRuleTarget` gives its table to `RuleTarget::native_table`.
 
 ## 5.1.0 — 2026-11-22

@@ -269,16 +269,21 @@ where
                 let mut select = self.select_empty();
                 select.clear_order_by();
                 select.add_expression(self.data_source().expr("1", vec![]));
+                if let Some(limit) = q.limit {
+                    select.set_limit(Some(limit), None);
+                }
                 Ok(expr_any!("EXISTS ({})", (select.expr())))
             }
             Aggregate::Field(column) => {
-                let value = self.child_column(relation, column)?;
-                Ok(expr_any!("({})", (self.select_expression(value))))
+                let mut select = self.ordered_rows(q)?;
+                select.add_expression(self.child_column(relation, column)?);
+                Ok(expr_any!("({})", (select.expr())))
             }
             Aggregate::First(column) => {
                 let mut select = self.ordered_rows(q)?;
                 select.add_expression(self.child_column(relation, column)?);
-                select.set_limit(Some(1), None);
+                // At most one row; a limit of 0 leaves none.
+                select.set_limit(Some(q.limit.map_or(1, |limit| limit.min(1))), None);
                 Ok(expr_any!("({})", (select.expr())))
             }
             Aggregate::JoinConcat { column, .. } | Aggregate::JoinJson(column) => {

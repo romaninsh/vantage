@@ -23,9 +23,6 @@ pub enum ColumnFlag {
     /// it. [`Table::row_fields`](crate::table::Table::row_fields) leaves it
     /// out.
     RequestParam,
-    /// The column's value depends on who reads it (its expression reads a
-    /// `session` field), so caches key it by session.
-    PerSession,
 }
 
 impl ColumnFlag {
@@ -45,7 +42,6 @@ impl ColumnFlag {
             ColumnFlag::Indexed => Vista::Other("indexed".into()),
             ColumnFlag::Label => Vista::Other("label".into()),
             ColumnFlag::RequestParam => Vista::RequestParam,
-            ColumnFlag::PerSession => Vista::PerSession,
         }
     }
 }

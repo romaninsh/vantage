@@ -5,9 +5,10 @@
 - `RuleTarget::native_table` / `RuleHandle::native_table`: the table a rule narrows, for a backend's own rule verbs.
 
 ## Unreleased
-- `ColumnFlag::PerSession` (`per_session`): the column's value depends on who reads it.
+- `ColumnFlag::PerSession` (`per_session`): the column's value depends on who reads it. `VistaMetadata::with_column_flag` adds a flag to a column after the build.
 
 ## Unreleased
+- A statement that drops a `where_expr`-narrowed handle is refused like one that drops `where`.
 - A data verb's `where(column, value)` (handles and rule scripts) given a query expression says so: "`where` takes a value; this is a query expression (from `expr:` or `where(...)`), not a value". `rhai::value_arg` is public.
 
 ## 3.0.0 — 2026-11-22
