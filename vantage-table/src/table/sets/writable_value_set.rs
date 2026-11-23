@@ -30,6 +30,9 @@ where
         id: impl Into<Self::Id> + Send,
         record: &Record<Self::Value>,
     ) -> Result<Inserted<Self::Value>> {
+        if self.id_is_expression() {
+            return Err(computed_id(self.table_name(), "insert"));
+        }
         let record = self.prepare_insert(record).await?;
         let id = id.into();
         let (source, id_ref, record_ref) = (self.data_source(), &id, &record);
@@ -62,6 +65,9 @@ where
     ) -> Result<Record<Self::Value>> {
         self.require_allowed(Capability::Update)?;
         self.require_confined_writes("replace")?;
+        if self.id_is_expression() {
+            return Err(computed_id(self.table_name(), "replace"));
+        }
         let id = id.into();
         let needs_former = self.kept_columns().next().is_some()
             || self.denials().rule_for(Capability::Insert).is_some()
@@ -170,10 +176,52 @@ where
     }
 }
 
+/// A write that names an id on a table whose id the database computes from
+/// the row: the id would be ignored, so the write is refused.
+fn computed_id(table: &str, write: &str) -> vantage_core::VantageError {
+    vantage_core::error!(
+        format!(
+            "`{table}` computes its id from the row, so {write} can't name one; \
+             insert without an id, or patch the row"
+        ),
+        table = table
+    )
+    .mark_unsupported()
+}
+
 impl<T: TableSource, E: Entity<T::Value>> Table<T, E>
 where
     T::Value: InvariantValue,
 {
+    /// Insert `record` into a table whose id is an expression and return the
+    /// id the database computed with the outcome. A row in the set matching
+    /// the record is `Existed`, so the insert is retry-safe: it retries an
+    /// unavailable source as [`WritableValueSet::insert_value`] does, and
+    /// runs the after-insert hooks only for a row this call created.
+    pub async fn insert_derived_value(
+        &self,
+        record: &Record<T::Value>,
+    ) -> Result<(T::Id, Inserted<T::Value>)> {
+        let record = self.prepare_insert(record).await?;
+        let (source, record_ref) = (self.data_source(), &record);
+        let (id, result) = self
+            .retry_unavailable(move |after_unavailable| async move {
+                match source.insert_table_derived_id_value(self, record_ref).await {
+                    Ok((id, Inserted::Existed(stored))) if after_unavailable => {
+                        Ok((id, Inserted::Created(stored)))
+                    }
+                    out => out,
+                }
+            })
+            .await?;
+        match &result {
+            Inserted::Created(stored) => self.finish_insert(&id, stored).await?,
+            Inserted::Accepted => self.finish_insert(&id, &record).await?,
+            Inserted::Existed(_) => {}
+        }
+        Ok((id, result))
+    }
+
     /// Write `record` under `id` as an insert when the set doesn't hold the
     /// row and as a replace when it does, so the insert hooks (the id
     /// generator, a created-at stamp) run only on a new row and the update

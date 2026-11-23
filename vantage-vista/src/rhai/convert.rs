@@ -54,6 +54,8 @@ pub fn dynamic_to_cbor(d: Dynamic) -> Result<CborValue, Box<EvalAltResult>> {
             .map(|(k, v)| Ok((CborValue::Text(k.to_string()), dynamic_to_cbor(v)?)))
             .collect::<Result<Vec<_>, Box<EvalAltResult>>>()?;
         Ok(CborValue::Map(pairs))
+    } else if is_query_expression(&d) {
+        Err(QUERY_EXPRESSION.into())
     } else {
         Err(format!(
             "no CBOR representation for rhai value of type '{}'",
@@ -61,6 +63,31 @@ pub fn dynamic_to_cbor(d: Dynamic) -> Result<CborValue, Box<EvalAltResult>> {
         )
         .into())
     }
+}
+
+/// What a data verb says when it gets a query expression where it needs a
+/// value: a line copied from an `expr:` (or a `where_expr`) into a hook
+/// builds an expression there, not a value.
+const QUERY_EXPRESSION: &str =
+    "this is a query expression (from `expr:` or `where(...)`), not a value";
+
+/// Whether `d` is a driver's query expression, identifier or relation: the
+/// SQL and SurrealDB vocabularies name them `RhaiExpr`, `RhaiIdent`,
+/// `RhaiRelation` and `RhaiTable`.
+fn is_query_expression(d: &Dynamic) -> bool {
+    let name = d.type_name();
+    ["RhaiExpr", "RhaiIdent", "RhaiRelation", "RhaiTable"]
+        .iter()
+        .any(|kind| name.contains(kind))
+}
+
+/// [`dynamic_to_cbor`] for argument `value` of data verb `method`: a query
+/// expression is refused naming the verb.
+pub fn value_arg(method: &str, d: Dynamic) -> Result<CborValue, Box<EvalAltResult>> {
+    if is_query_expression(&d) {
+        return Err(format!("`{method}` takes a value; {QUERY_EXPRESSION}").into());
+    }
+    dynamic_to_cbor(d)
 }
 
 /// CBOR → Rhai `Dynamic`. Tagged values render their presentation form

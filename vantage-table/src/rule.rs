@@ -209,4 +209,9 @@ where
     fn remove_column(&mut self, column: &str) -> Result<()> {
         self.table().remove_column(column)
     }
+
+    /// A `Table<T, EmptyEntity>` as narrowed so far.
+    fn native_table(&self) -> Option<Box<dyn std::any::Any + Send>> {
+        Some(Box::new(self.table().clone()))
+    }
 }

@@ -18,7 +18,7 @@ use vantage_core::{Context, Result, error};
 use vantage_rhai::rhai::{AST, Dynamic, Engine, EvalAltResult, FnPtr};
 use vantage_rhai::{Env, Host};
 
-use super::convert::{cbor_to_dynamic, dynamic_to_cbor};
+use super::convert::{cbor_to_dynamic, value_arg};
 use super::eval::compile;
 use super::read::RhaiResult;
 use crate::FilterOp;
@@ -92,6 +92,11 @@ pub trait RuleTarget: Send {
     fn hook(&mut self, on: HookOn, run: RuleHookFn) -> Result<()>;
     /// Take `column` out of the table.
     fn remove_column(&mut self, column: &str) -> Result<()>;
+    /// The table as the backend holds it, for a backend's own verbs
+    /// (`where_expr`) to read; `None` when the target has none to give.
+    fn native_table(&self) -> Option<Box<dyn Any + Send>> {
+        None
+    }
 }
 
 /// The engine and script a hook closure is called on after the script ends.
@@ -131,6 +136,12 @@ impl RuleHandle {
         Ok(())
     }
 
+    /// The table the rule narrows, as the backend holds it; see
+    /// [`RuleTarget::native_table`].
+    pub fn native_table(&self) -> Option<Box<dyn Any + Send>> {
+        self.target().native_table()
+    }
+
     fn target(&self) -> std::sync::MutexGuard<'_, Box<dyn RuleTarget>> {
         self.target.lock().unwrap()
     }
@@ -140,7 +151,7 @@ impl RuleHandle {
     }
 
     fn where_value(&self, column: &str, op: FilterOp, value: Dynamic) -> RhaiResult<RuleHandle> {
-        let value = dynamic_to_cbor(value)?;
+        let value = value_arg("where", value)?;
         let described = self
             .target()
             .where_value(column, op, value)

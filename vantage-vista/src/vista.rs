@@ -151,6 +151,23 @@ impl Vista {
         &self.capabilities
     }
 
+    /// The backend's own table for a `where_expr` closure; see
+    /// [`TableShell::script_table`].
+    #[cfg(feature = "rhai")]
+    pub fn script_table(&self) -> Option<vantage_rhai::rhai::Dynamic> {
+        self.shell().script_table()
+    }
+
+    /// A `where_expr` closure's expression as a native condition; see
+    /// [`TableShell::script_condition`].
+    #[cfg(feature = "rhai")]
+    pub fn script_condition(
+        &self,
+        expr: vantage_rhai::rhai::Dynamic,
+    ) -> Result<crate::NativeCondition> {
+        self.shell().script_condition(expr)
+    }
+
     /// What rules forbid here: the shell metadata's denials and those added
     /// through [`deny`](Self::deny).
     pub fn denials(&self) -> Denials {

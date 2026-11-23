@@ -99,8 +99,10 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     }
 
     /// Whether the backend makes this table's ids (see [`Self::with_auto_id`]).
+    /// An id that is an expression over the row ([`Self::id_is_expression`])
+    /// is one the database computes, so it counts.
     pub fn has_auto_id(&self) -> bool {
-        self.id_auto
+        self.id_auto || self.id_is_expression()
     }
 
     /// Add a typed column AND mark it as a display title.

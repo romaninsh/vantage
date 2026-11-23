@@ -170,6 +170,8 @@ pub fn vantage_vista::mocks::MockShell::preview_window(&self, usize, core::optio
 pub fn vantage_vista::mocks::MockShell::rebind(&self, &vantage_vista::Transaction) -> vantage_core::util::error::Result<alloc::boxed::Box<dyn vantage_vista::TableShell>>
 pub fn vantage_vista::mocks::MockShell::register_rhai_extensions(&self, &mut rhai::engine::Engine)
 pub fn vantage_vista::mocks::MockShell::replace<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn vantage_vista::mocks::MockShell::script_condition(&self, rhai::types::dynamic::Dynamic) -> vantage_core::util::error::Result<vantage_vista::NativeCondition>
+pub fn vantage_vista::mocks::MockShell::script_table(&self) -> core::option::Option<rhai::types::dynamic::Dynamic>
 pub fn vantage_vista::mocks::MockShell::set_lock(&mut self) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::mocks::MockShell::set_order(&mut self, core::option::Option<(&str, vantage_vista::SortDirection)>) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::mocks::MockShell::set_search(&mut self, core::option::Option<&str>) -> vantage_core::util::error::Result<()>
@@ -353,6 +355,8 @@ pub fn vantage_vista::Vista::preview_window(&self, usize, core::option::Option<u
 pub fn vantage_vista::Vista::query(&self) -> &vantage_vista::VistaQuery
 pub fn vantage_vista::Vista::reference(&self, &str) -> core::option::Option<&vantage_vista::Reference>
 pub fn vantage_vista::Vista::references(&self) -> &indexmap::map::IndexMap<alloc::string::String, vantage_vista::Reference>
+pub fn vantage_vista::Vista::script_condition(&self, rhai::types::dynamic::Dynamic) -> vantage_core::util::error::Result<vantage_vista::NativeCondition>
+pub fn vantage_vista::Vista::script_table(&self) -> core::option::Option<rhai::types::dynamic::Dynamic>
 pub fn vantage_vista::Vista::title_columns(&self) -> alloc::vec::Vec<&str>
 pub fn vantage_vista::Vista::with_id_generator(self, vantage_vista::IdGenerator) -> Self
 pub fn vantage_vista::Vista::with_name(self, impl core::convert::Into<alloc::string::String>) -> Self
@@ -689,6 +693,7 @@ impl !core::panic::unwind_safe::UnwindSafe for vantage_vista::rhai::ResolverCell
 pub struct vantage_vista::rhai::RuleHandle
 impl vantage_vista::rhai::RuleHandle
 pub fn vantage_vista::rhai::RuleHandle::native_condition(&self, alloc::boxed::Box<(dyn core::any::Any + core::marker::Send)>, alloc::string::String) -> vantage_core::util::error::Result<()>
+pub fn vantage_vista::rhai::RuleHandle::native_table(&self) -> core::option::Option<alloc::boxed::Box<(dyn core::any::Any + core::marker::Send)>>
 pub fn vantage_vista::rhai::RuleHandle::new(alloc::boxed::Box<dyn vantage_vista::rhai::RuleTarget>) -> Self
 pub fn vantage_vista::rhai::RuleHandle::verbs(&self) -> alloc::vec::Vec<vantage_vista::rhai::RuleVerb>
 impl core::clone::Clone for vantage_vista::rhai::RuleHandle
@@ -710,6 +715,7 @@ pub const vantage_vista::rhai::MIN_LIMIT: usize
 pub trait vantage_vista::rhai::RuleTarget: core::marker::Send
 pub fn vantage_vista::rhai::RuleTarget::hook(&mut self, vantage_vista::rhai::HookOn, vantage_vista::rhai::RuleHookFn) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::rhai::RuleTarget::native_condition(&mut self, alloc::boxed::Box<(dyn core::any::Any + core::marker::Send)>, alloc::string::String) -> vantage_core::util::error::Result<alloc::string::String>
+pub fn vantage_vista::rhai::RuleTarget::native_table(&self) -> core::option::Option<alloc::boxed::Box<(dyn core::any::Any + core::marker::Send)>>
 pub fn vantage_vista::rhai::RuleTarget::remove_column(&mut self, &str) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::rhai::RuleTarget::where_value(&mut self, &str, vantage_vista::FilterOp, ciborium::value::Value) -> vantage_core::util::error::Result<alloc::string::String>
 pub fn vantage_vista::rhai::block_on<F: core::future::future::Future>(F) -> vantage_core::util::error::Result<<F as core::future::future::Future>::Output>
@@ -727,6 +733,7 @@ pub fn vantage_vista::rhai::reject_dropped_narrowing(&rhai::ast::ast::AST, &'sta
 pub async fn vantage_vista::rhai::run_script(alloc::string::String, alloc::rcs::arc::Arc<dyn vantage_vista::VistaResolver>, usize, vantage_vista::rhai::Writes) -> core::result::Result<serde_json::value::Value, alloc::string::String>
 pub fn vantage_vista::rhai::script_tables<F: vantage_vista::VistaFactory>(F, core::option::Option<alloc::rcs::arc::Arc<dyn vantage_vista::SpecResolver<vantage_vista::VistaSpec<<F as vantage_vista::VistaFactory>::TableExtras, <F as vantage_vista::VistaFactory>::ColumnExtras, <F as vantage_vista::VistaFactory>::ReferenceExtras>>>>, core::option::Option<fn(&str) -> vantage_vista::VistaSpec<<F as vantage_vista::VistaFactory>::TableExtras, <F as vantage_vista::VistaFactory>::ColumnExtras, <F as vantage_vista::VistaFactory>::ReferenceExtras>>) -> alloc::rcs::arc::Arc<dyn vantage_vista::VistaResolver>
 pub fn vantage_vista::rhai::unprotected_warning(&str) -> alloc::string::String
+pub fn vantage_vista::rhai::value_arg(&str, rhai::types::dynamic::Dynamic) -> core::result::Result<ciborium::value::Value, alloc::boxed::Box<rhai::types::error::EvalAltResult>>
 pub type vantage_vista::rhai::OnCommit = alloc::rcs::arc::Arc<(dyn core::ops::function::Fn(&vantage_vista::Committed) + core::marker::Send + core::marker::Sync)>
 pub type vantage_vista::rhai::OnCommittedBeforeFailure = alloc::rcs::arc::Arc<(dyn core::ops::function::Fn(&[alloc::string::String]) + core::marker::Send + core::marker::Sync)>
 pub type vantage_vista::rhai::OnUnprotected = alloc::rcs::arc::Arc<(dyn core::ops::function::Fn(&[alloc::string::String]) + core::marker::Send + core::marker::Sync)>
@@ -811,6 +818,7 @@ pub vantage_vista::ColumnFlag::Id
 pub vantage_vista::ColumnFlag::Mandatory
 pub vantage_vista::ColumnFlag::Orderable
 pub vantage_vista::ColumnFlag::Other(alloc::string::String)
+pub vantage_vista::ColumnFlag::PerSession
 pub vantage_vista::ColumnFlag::RequestParam
 pub vantage_vista::ColumnFlag::Searchable
 pub vantage_vista::ColumnFlag::Title
@@ -1467,6 +1475,8 @@ pub fn vantage_vista::Vista::preview_window(&self, usize, core::option::Option<u
 pub fn vantage_vista::Vista::query(&self) -> &vantage_vista::VistaQuery
 pub fn vantage_vista::Vista::reference(&self, &str) -> core::option::Option<&vantage_vista::Reference>
 pub fn vantage_vista::Vista::references(&self) -> &indexmap::map::IndexMap<alloc::string::String, vantage_vista::Reference>
+pub fn vantage_vista::Vista::script_condition(&self, rhai::types::dynamic::Dynamic) -> vantage_core::util::error::Result<vantage_vista::NativeCondition>
+pub fn vantage_vista::Vista::script_table(&self) -> core::option::Option<rhai::types::dynamic::Dynamic>
 pub fn vantage_vista::Vista::title_columns(&self) -> alloc::vec::Vec<&str>
 pub fn vantage_vista::Vista::with_id_generator(self, vantage_vista::IdGenerator) -> Self
 pub fn vantage_vista::Vista::with_name(self, impl core::convert::Into<alloc::string::String>) -> Self
@@ -1673,6 +1683,8 @@ pub fn vantage_vista::TableShell::preview_window(&self, usize, core::option::Opt
 pub fn vantage_vista::TableShell::rebind(&self, &vantage_vista::Transaction) -> vantage_core::util::error::Result<alloc::boxed::Box<dyn vantage_vista::TableShell>>
 pub fn vantage_vista::TableShell::register_rhai_extensions(&self, &mut rhai::engine::Engine)
 pub fn vantage_vista::TableShell::replace<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn vantage_vista::TableShell::script_condition(&self, rhai::types::dynamic::Dynamic) -> vantage_core::util::error::Result<vantage_vista::NativeCondition>
+pub fn vantage_vista::TableShell::script_table(&self) -> core::option::Option<rhai::types::dynamic::Dynamic>
 pub fn vantage_vista::TableShell::set_lock(&mut self) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::TableShell::set_order(&mut self, core::option::Option<(&str, vantage_vista::SortDirection)>) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::TableShell::set_search(&mut self, core::option::Option<&str>) -> vantage_core::util::error::Result<()>
@@ -1702,6 +1714,8 @@ pub fn vantage_vista::mocks::MockShell::preview_window(&self, usize, core::optio
 pub fn vantage_vista::mocks::MockShell::rebind(&self, &vantage_vista::Transaction) -> vantage_core::util::error::Result<alloc::boxed::Box<dyn vantage_vista::TableShell>>
 pub fn vantage_vista::mocks::MockShell::register_rhai_extensions(&self, &mut rhai::engine::Engine)
 pub fn vantage_vista::mocks::MockShell::replace<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn vantage_vista::mocks::MockShell::script_condition(&self, rhai::types::dynamic::Dynamic) -> vantage_core::util::error::Result<vantage_vista::NativeCondition>
+pub fn vantage_vista::mocks::MockShell::script_table(&self) -> core::option::Option<rhai::types::dynamic::Dynamic>
 pub fn vantage_vista::mocks::MockShell::set_lock(&mut self) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::mocks::MockShell::set_order(&mut self, core::option::Option<(&str, vantage_vista::SortDirection)>) -> vantage_core::util::error::Result<()>
 pub fn vantage_vista::mocks::MockShell::set_search(&mut self, core::option::Option<&str>) -> vantage_core::util::error::Result<()>
@@ -1731,6 +1745,8 @@ pub fn T::preview_window(&self, usize, core::option::Option<usize>) -> vantage_v
 pub fn T::rebind(&self, &vantage_vista::Transaction) -> vantage_core::util::error::Result<alloc::boxed::Box<dyn vantage_vista::TableShell>>
 pub fn T::register_rhai_extensions(&self, &mut rhai::engine::Engine)
 pub fn T::replace<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 str, &'life2 vantage_types::record::Record<ciborium::value::Value>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vantage_core::util::error::Result<vantage_types::record::Record<ciborium::value::Value>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
+pub fn T::script_condition(&self, rhai::types::dynamic::Dynamic) -> vantage_core::util::error::Result<vantage_vista::NativeCondition>
+pub fn T::script_table(&self) -> core::option::Option<rhai::types::dynamic::Dynamic>
 pub fn T::set_lock(&mut self) -> vantage_core::util::error::Result<()>
 pub fn T::set_order(&mut self, core::option::Option<(&str, vantage_vista::SortDirection)>) -> vantage_core::util::error::Result<()>
 pub fn T::set_search(&mut self, core::option::Option<&str>) -> vantage_core::util::error::Result<()>

@@ -37,6 +37,14 @@ impl<T: ForwardShell + Clone> TableShell for T {
     fn register_rhai_extensions(&self, engine: &mut vantage_rhai::rhai::Engine) {
         ForwardShell::register_rhai_extensions(self, engine)
     }
+    #[cfg(feature = "rhai")]
+    fn script_table(&self) -> Option<vantage_rhai::rhai::Dynamic> {
+        ForwardShell::script_table(self)
+    }
+    #[cfg(feature = "rhai")]
+    fn script_condition(&self, expr: vantage_rhai::rhai::Dynamic) -> Result<NativeCondition> {
+        ForwardShell::script_condition(self, expr)
+    }
 
     async fn list(&self) -> Result<IndexMap<String, Rec>> {
         ForwardShell::list(self).await

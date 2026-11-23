@@ -6,13 +6,13 @@ use serde::{Deserialize, Serialize};
 
 /// A flag on a [`Column`](crate::Column).
 ///
-/// The nine named flags are the ones the data layer acts on. Any other name
+/// The ten named flags are the ones the data layer acts on. Any other name
 /// is kept as [`Other`](Self::Other) for the layer that interprets it (a UI's
 /// presentation flag such as `label`); vista never reads those, and the layer
 /// that owns the YAML schema rejects names it doesn't know.
 ///
 /// In YAML and serde a flag is its snake_case name. `ColumnFlag::from("label")`
-/// and deserializing map the nine known names onto their variants. Flags
+/// and deserializing map the ten known names onto their variants. Flags
 /// compare and hash by name, so an `Other` built by hand from a known name
 /// (`Other("id")`) is the same flag as the variant (`Id`).
 #[derive(Debug, Clone)]
@@ -42,6 +42,9 @@ pub enum ColumnFlag {
     /// The backend makes the column's values (auto-increment, generated record
     /// ids). On the id column, an insert without an id asks the backend for one.
     Auto,
+    /// The column's value depends on who reads it: its expression reads a
+    /// `session` field. A cache or a live update keys it by session.
+    PerSession,
     /// A flag interpreted by a layer above vista.
     Other(String),
 }
@@ -59,6 +62,7 @@ impl ColumnFlag {
             ColumnFlag::RequestParam => "request_param",
             ColumnFlag::Calculated => "calculated",
             ColumnFlag::Auto => "auto",
+            ColumnFlag::PerSession => "per_session",
             ColumnFlag::Other(name) => name,
         }
     }
@@ -90,6 +94,7 @@ impl From<&str> for ColumnFlag {
             "request_param" => ColumnFlag::RequestParam,
             "calculated" => ColumnFlag::Calculated,
             "auto" => ColumnFlag::Auto,
+            "per_session" => ColumnFlag::PerSession,
             other => ColumnFlag::Other(other.to_string()),
         }
     }

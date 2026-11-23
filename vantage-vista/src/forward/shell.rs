@@ -48,6 +48,14 @@ pub trait ForwardShell: Send + Sync + 'static {
     fn register_rhai_extensions(&self, engine: &mut vantage_rhai::rhai::Engine) {
         self.inner().register_rhai_extensions(engine)
     }
+    #[cfg(feature = "rhai")]
+    fn script_table(&self) -> Option<vantage_rhai::rhai::Dynamic> {
+        self.inner().script_table()
+    }
+    #[cfg(feature = "rhai")]
+    fn script_condition(&self, expr: vantage_rhai::rhai::Dynamic) -> Result<NativeCondition> {
+        self.inner().script_condition(expr)
+    }
 
     // ---- Reads -------------------------------------------------------------
 

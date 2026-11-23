@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.1.0 — 2026-11-23
+- `where_expr(|t| …)` on data handles: the closure gets the backend's table (`TableShell::script_table`) and returns a query expression (`t.ref("tags").where("tag_id", 5).exists()`), which narrows the handle as a native condition (`TableShell::script_condition`). A backend without native conditions refuses: "`where_expr` needs a backend that takes native conditions", naming the table. A handle from `table(name)` is resolved for it.
+- `RuleTarget::native_table` / `RuleHandle::native_table`: the table a rule narrows, for a backend's own rule verbs.
+
+## Unreleased
+- `ColumnFlag::PerSession` (`per_session`): the column's value depends on who reads it.
+
+## Unreleased
+- A data verb's `where(column, value)` (handles and rule scripts) given a query expression says so: "`where` takes a value; this is a query expression (from `expr:` or `where(...)`), not a value". `rhai::value_arg` is public.
+
 ## 3.0.0 — 2026-11-22
 
 - **Breaking:** `TableShell::insert` returns `(String, Inserted<CborValue>)` instead of

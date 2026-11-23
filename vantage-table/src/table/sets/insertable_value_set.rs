@@ -13,6 +13,9 @@ where
     T::Value: InvariantValue,
 {
     async fn insert_return_id_value(&self, record: &Record<Self::Value>) -> Result<Self::Id> {
+        if self.id_is_expression() {
+            return Ok(self.insert_derived_value(record).await?.0);
+        }
         let record = self.prepare_insert(record).await?;
         let id = self
             .data_source()

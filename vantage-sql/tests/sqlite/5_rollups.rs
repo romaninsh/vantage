@@ -278,9 +278,8 @@ async fn query_time_error(table: &Table<SqliteDB, ClientOrder>) -> String {
 
 /// What needs no other table is refused when the column is added: an unknown
 /// relation, an op without its column. What the child decides is refused
-/// when the column is read: an unknown child column, and a computed one,
-/// which would aggregate the stored field of the same name, not the
-/// expression.
+/// when the column is read: an unknown child column. A computed child column
+/// is aggregated by its expression.
 #[tokio::test]
 async fn bad_rollups_error_at_build_or_when_read() {
     let db = get_db().await;
@@ -304,10 +303,8 @@ async fn bad_rollups_error_at_build_or_when_read() {
         .with_many("doubled", "order_id", doubled_lines)
         .with_rollup("t", "doubled", RollupOp::Sum, Some("price"), None)
         .unwrap();
-    assert_eq!(
-        query_time_error(&computed).await,
-        "a roll-up can't aggregate a computed column"
-    );
+    let rows = computed.list_values().await.unwrap();
+    assert_eq!(JsonValue::from(rows["order1"]["t"].clone()), json!(908));
 }
 
 /// A has_one relation has no child set to roll up: refused at build.
