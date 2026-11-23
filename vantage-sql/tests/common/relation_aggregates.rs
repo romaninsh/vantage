@@ -1,10 +1,11 @@
 //! Relation expressions each SQL backend renders: an aggregate over the rows
 //! a relation gives for each row, narrowed and ordered.
 //!
-//! A backend's `relation_aggregates` module defines `async fn setup() -> DB`
-//! with the `rx_*` tables below filled in, and `fn link_id()`, the
-//! `a || ':' || b` id expression of `rx_project_tag`. It then invokes
-//! `relation_aggregates_tests!(DB, ValueType)`.
+//! The invoking module defines what a dialect differs in: `async fn
+//! connect()`, `fn link_id()` (the `a || ':' || b` id of `rx_project_tag`),
+//! `TEXT`, its text column type, and `fn insert_ignore(table, values)`. The
+//! `rx_*` tables below are shared by every test and filled once; a statement
+//! that loses a race with another test's setup is retried.
 //!
 //! - `rx_project(id, name)`: 7 and 8;
 //! - `rx_tag(id, name)`: 3 "alpha", 5 "beta";
@@ -16,6 +17,8 @@
 
 macro_rules! relation_aggregates_tests {
     ($db:ty, $value:ty) => {
+      mod relation_aggregates {
+        use super::*;
         use serde_json::{Value as JsonValue, json};
         use vantage_dataset::prelude::*;
         use vantage_table::sorting::SortDirection;
@@ -23,6 +26,35 @@ macro_rules! relation_aggregates_tests {
         use vantage_table::traits::table_source::TableSource;
 
         type T = Table<$db, EmptyEntity>;
+
+        async fn setup() -> $db {
+            let db = connect().await;
+            let tables = [
+                "rx_project (id INTEGER PRIMARY KEY, name TEXT)",
+                "rx_tag (id INTEGER PRIMARY KEY, name TEXT)",
+                "rx_project_tag (a INTEGER NOT NULL, b INTEGER NOT NULL, PRIMARY KEY (a, b))",
+                "rx_task (id INTEGER PRIMARY KEY, project_id INTEGER, parent_id INTEGER, active INTEGER)",
+                "rx_update (id INTEGER PRIMARY KEY, project_id INTEGER, date TEXT, status TEXT)",
+            ];
+            let rows = [
+                ("rx_project", "(7, 'Seven'), (8, 'Eight')"),
+                ("rx_tag", "(3, 'alpha'), (5, 'beta')"),
+                ("rx_project_tag", "(7, 5), (7, 3)"),
+                ("rx_task", "(1, 7, NULL, 1), (2, 7, 1, 1), (3, 7, 1, 0), (4, 8, NULL, 1)"),
+                ("rx_update", "(1, 7, '2026-01-01', 'off_track'), (2, 7, '2026-02-01', 'on_track')"),
+            ];
+            let statements = tables
+                .iter()
+                .map(|t| format!("CREATE TABLE IF NOT EXISTS {}", t.replace("TEXT", TEXT)))
+                .chain(rows.iter().map(|(t, v)| insert_ignore(t, v)));
+            for sql in statements {
+                let run = || sqlx::query(sqlx::AssertSqlSafe(sql.clone())).execute(db.pool());
+                if run().await.is_err() {
+                    run().await.unwrap();
+                }
+            }
+            db
+        }
 
         fn project(db: $db) -> T {
             Table::new("rx_project", db)
@@ -224,5 +256,6 @@ macro_rules! relation_aggregates_tests {
             assert!(err.contains("needs order_by"), "{err}");
             assert!(err.contains("tags"), "names the relation: {err}");
         }
+      }
     };
 }

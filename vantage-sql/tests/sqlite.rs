@@ -48,8 +48,6 @@ mod sqlite {
     mod editable_data_set;
     #[path = "4_editable_value_set.rs"]
     mod editable_value_set;
-    #[path = "9_expression_ids.rs"]
-    mod expression_ids;
     #[path = "2_expressions.rs"]
     mod expressions;
     #[path = "2_identifier.rs"]
@@ -72,8 +70,8 @@ mod sqlite {
     mod records;
     #[path = "5_references.rs"]
     mod references;
-    #[path = "5_relation_aggregates.rs"]
-    mod relation_aggregates;
+    #[path = "9_relation_expressions.rs"]
+    mod relation_expressions;
     #[cfg(all(feature = "vista", feature = "rhai"))]
     #[path = "6_relation_vocab.rs"]
     mod relation_vocab;

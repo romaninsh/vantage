@@ -2,135 +2,168 @@
 //! inserts get the id from the database, a duplicate settles to `Existed`
 //! by the record, and by-id reads and writes compare the expression.
 //!
-//! A backend's `expression_ids` module defines `async fn link(test: &str)`:
-//! an empty `link` table with integer `a`, `b` and `stage` columns,
-//! `UNIQUE (a, b)` and `b` nullable, whose `id` is the expression `a:b`, kept
-//! apart from other tests by `test` where the database is shared, and
-//! `strict_link(test)`, the same with `b NOT NULL`. It then invokes
-//! `expression_ids_tests!(DB, ValueType)`.
+//! The invoking module defines what a dialect differs in: `async fn
+//! connect()`, `fn quote(name)` for an identifier in DDL, and `fn link_id()`,
+//! the `a || ':' || b` id expression. Each test gets its own `link_<test>`
+//! table with integer `a`, `b` and `stage` columns and `UNIQUE (a, b)`.
 
 macro_rules! expression_ids_tests {
     ($db:ty, $value:ty) => {
-        use vantage_dataset::Inserted;
-        use vantage_dataset::prelude::*;
+        mod expression_ids {
+            use super::*;
+            use vantage_dataset::Inserted;
+            use vantage_dataset::prelude::*;
 
-        type Link = Table<$db, EmptyEntity>;
+            type Link = Table<$db, EmptyEntity>;
 
-        fn rec(pairs: &[(&str, i64)]) -> vantage_types::Record<$value> {
-            pairs
-                .iter()
-                .map(|(k, v)| (k.to_string(), <$value>::from(*v)))
-                .collect()
-        }
+            /// A fresh `<prefix>_<test>` link table, `b` declared as `b`.
+            async fn link_named(prefix: &str, test: &str, b: &str) -> Link {
+                let db = connect().await;
+                let name = format!("{prefix}_{test}");
+                for sql in [
+                    format!("DROP TABLE IF EXISTS {}", quote(&name)),
+                    format!(
+                        "CREATE TABLE {} (a INTEGER NOT NULL, {b}, stage INTEGER, UNIQUE (a, b))",
+                        quote(&name)
+                    ),
+                ] {
+                    sqlx::query(sqlx::AssertSqlSafe(sql))
+                        .execute(db.pool())
+                        .await
+                        .unwrap();
+                }
+                Table::new(&name, db)
+                    .with_id_column("id")
+                    .with_expression("id", |_| link_id())
+                    .with_column_of::<i64>("a")
+                    .with_column_of::<i64>("b")
+                    .with_column_of::<i64>("stage")
+            }
 
-        fn id_of(row: &vantage_types::Record<$value>) -> $value {
-            row.get("id").cloned().expect("row carries its id")
-        }
+            pub(super) async fn link(test: &str) -> Link {
+                link_named("link", test, "b INTEGER").await
+            }
 
-        /// The link set of parent `a`: `a = <a>` is its invariant.
-        fn of(all: &Link, a: i64) -> Link {
-            let column = all["a"].clone();
-            all.clone().with_condition(column.eq(a))
-        }
+            async fn strict_link(test: &str) -> Link {
+                link_named("strict", test, "b INTEGER NOT NULL").await
+            }
 
-        #[tokio::test]
-        async fn expression_id_insert_returns_db_computed_id() {
-            let all = link("expression_id_insert_returns_db_computed_id").await;
-            let id = of(&all, 7)
-                .insert_return_id_value(&rec(&[("b", 5)]))
-                .await
-                .unwrap();
-            assert_eq!(id, "7:5");
-            let row = all.get_value("7:5").await.unwrap().expect("row 7:5");
-            assert_eq!(id_of(&row), <$value>::from("7:5".to_string()));
-        }
+            fn rec(pairs: &[(&str, i64)]) -> vantage_types::Record<$value> {
+                pairs
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), <$value>::from(*v)))
+                    .collect()
+            }
 
-        #[tokio::test]
-        async fn expression_id_duplicate_insert_is_existed() {
-            let all = link("expression_id_duplicate_insert_is_existed").await;
-            let set = of(&all, 7);
-            let (id, first) = set.insert_derived_value(&rec(&[("b", 5)])).await.unwrap();
-            assert_eq!(id, "7:5");
-            let Inserted::Created(created) = first else {
-                panic!("a new pair is Created, got: {first:?}");
-            };
-            assert_eq!(id_of(&created), <$value>::from("7:5".to_string()));
+            fn id_of(row: &vantage_types::Record<$value>) -> $value {
+                row.get("id").cloned().expect("row carries its id")
+            }
 
-            let (id, second) = set.insert_derived_value(&rec(&[("b", 5)])).await.unwrap();
-            assert_eq!(id, "7:5");
-            let Inserted::Existed(existed) = second else {
-                panic!("a stored pair is Existed, got: {second:?}");
-            };
-            assert_eq!(id_of(&existed), <$value>::from("7:5".to_string()));
-            assert_eq!(all.get_count().await.unwrap(), 1);
-        }
+            /// The link set of parent `a`: `a = <a>` is its invariant.
+            fn of(all: &Link, a: i64) -> Link {
+                let column = all["a"].clone();
+                all.clone().with_condition(column.eq(a))
+            }
 
-        #[tokio::test]
-        async fn expression_id_get_patch_delete_by_id() {
-            let all = link("expression_id_get_patch_delete_by_id").await;
-            let set = of(&all, 7);
-            set.insert_return_id_value(&rec(&[("b", 5)])).await.unwrap();
-            assert!(set.get_value("7:5").await.unwrap().is_some());
+            #[tokio::test]
+            async fn expression_id_insert_returns_db_computed_id() {
+                let all = link("expression_id_insert_returns_db_computed_id").await;
+                let id = of(&all, 7)
+                    .insert_return_id_value(&rec(&[("b", 5)]))
+                    .await
+                    .unwrap();
+                assert_eq!(id, "7:5");
+                let row = all.get_value("7:5").await.unwrap().expect("row 7:5");
+                assert_eq!(id_of(&row), <$value>::from("7:5".to_string()));
+            }
 
-            let patched = set.patch_value("7:5", &rec(&[("stage", 4)])).await.unwrap();
-            assert_eq!(patched.get("stage"), Some(&<$value>::from(4i64)));
+            #[tokio::test]
+            async fn expression_id_duplicate_insert_is_existed() {
+                let all = link("expression_id_duplicate_insert_is_existed").await;
+                let set = of(&all, 7);
+                let (id, first) = set.insert_derived_value(&rec(&[("b", 5)])).await.unwrap();
+                assert_eq!(id, "7:5");
+                let Inserted::Created(created) = first else {
+                    panic!("a new pair is Created, got: {first:?}");
+                };
+                assert_eq!(id_of(&created), <$value>::from("7:5".to_string()));
 
-            of(&all, 8).delete("7:5").await.unwrap();
-            assert_eq!(all.get_count().await.unwrap(), 1, "outside the set");
-            set.delete("7:5").await.unwrap();
-            assert_eq!(all.get_count().await.unwrap(), 0);
-        }
+                let (id, second) = set.insert_derived_value(&rec(&[("b", 5)])).await.unwrap();
+                assert_eq!(id, "7:5");
+                let Inserted::Existed(existed) = second else {
+                    panic!("a stored pair is Existed, got: {second:?}");
+                };
+                assert_eq!(id_of(&existed), <$value>::from("7:5".to_string()));
+                assert_eq!(all.get_count().await.unwrap(), 1);
+            }
 
-        #[tokio::test]
-        async fn expression_id_null_part_is_an_error() {
-            let all = link("expression_id_null_part_is_an_error").await;
-            let err = of(&all, 7)
-                .insert_return_id_value(&rec(&[]))
-                .await
-                .unwrap_err()
-                .to_string();
-            assert!(err.contains("returned a NULL id"), "{err}");
-            assert!(err.contains("link"), "names the table: {err}");
-        }
+            #[tokio::test]
+            async fn expression_id_get_patch_delete_by_id() {
+                let all = link("expression_id_get_patch_delete_by_id").await;
+                let set = of(&all, 7);
+                set.insert_return_id_value(&rec(&[("b", 5)])).await.unwrap();
+                assert!(set.get_value("7:5").await.unwrap().is_some());
 
-        /// A failed insert is the failure, never another row's `Existed`:
-        /// a record leaving out a NOT NULL column fails, though the set holds
-        /// a row matching what the record does set.
-        #[tokio::test]
-        async fn expression_id_failed_insert_is_not_existed() {
-            let all = strict_link("expression_id_failed_insert_is_not_existed").await;
-            let set = of(&all, 7);
-            set.insert_derived_value(&rec(&[("b", 5)])).await.unwrap();
-            let out = set.insert_derived_value(&rec(&[])).await;
-            assert!(out.is_err(), "a NOT NULL failure, got: {out:?}");
-            assert_eq!(all.get_count().await.unwrap(), 1);
-        }
+                let patched = set.patch_value("7:5", &rec(&[("stage", 4)])).await.unwrap();
+                assert_eq!(patched.get("stage"), Some(&<$value>::from(4i64)));
 
-        /// A record with a NULL column is matched by `IS NULL`: linking it
-        /// again reports the stored row.
-        #[tokio::test]
-        async fn expression_id_null_column_relink_is_existed() {
-            let all = link("expression_id_null_column_relink_is_existed").await;
-            let set = of(&all, 7);
-            let mut link = rec(&[("b", 5)]);
-            link.insert("stage".into(), <$value>::from(ciborium::Value::Null));
-            let (_, first) = set.insert_derived_value(&link).await.unwrap();
-            assert!(matches!(first, Inserted::Created(_)), "{first:?}");
-            let (id, second) = set.insert_derived_value(&link).await.unwrap();
-            assert_eq!(id, "7:5");
-            assert!(matches!(second, Inserted::Existed(_)), "{second:?}");
-            assert_eq!(all.get_count().await.unwrap(), 1);
-        }
+                of(&all, 8).delete("7:5").await.unwrap();
+                assert_eq!(all.get_count().await.unwrap(), 1, "outside the set");
+                set.delete("7:5").await.unwrap();
+                assert_eq!(all.get_count().await.unwrap(), 0);
+            }
 
-        #[tokio::test]
-        async fn expression_id_insert_with_an_id_is_refused() {
-            let all = link("expression_id_insert_with_an_id_is_refused").await;
-            let err = of(&all, 7)
-                .insert_value("7:5", &rec(&[("b", 5)]))
-                .await
-                .unwrap_err();
-            assert!(err.is_unsupported(), "{err}");
-            assert_eq!(all.get_count().await.unwrap(), 0);
+            #[tokio::test]
+            async fn expression_id_null_part_is_an_error() {
+                let all = link("expression_id_null_part_is_an_error").await;
+                let err = of(&all, 7)
+                    .insert_return_id_value(&rec(&[]))
+                    .await
+                    .unwrap_err()
+                    .to_string();
+                assert!(err.contains("returned a NULL id"), "{err}");
+                assert!(err.contains("link"), "names the table: {err}");
+            }
+
+            /// A failed insert is the failure, never another row's `Existed`:
+            /// a record leaving out a NOT NULL column fails, though the set holds
+            /// a row matching what the record does set.
+            #[tokio::test]
+            async fn expression_id_failed_insert_is_not_existed() {
+                let all = strict_link("expression_id_failed_insert_is_not_existed").await;
+                let set = of(&all, 7);
+                set.insert_derived_value(&rec(&[("b", 5)])).await.unwrap();
+                let out = set.insert_derived_value(&rec(&[])).await;
+                assert!(out.is_err(), "a NOT NULL failure, got: {out:?}");
+                assert_eq!(all.get_count().await.unwrap(), 1);
+            }
+
+            /// A record with a NULL column is matched by `IS NULL`: linking it
+            /// again reports the stored row.
+            #[tokio::test]
+            async fn expression_id_null_column_relink_is_existed() {
+                let all = link("expression_id_null_column_relink_is_existed").await;
+                let set = of(&all, 7);
+                let mut link = rec(&[("b", 5)]);
+                link.insert("stage".into(), <$value>::from(ciborium::Value::Null));
+                let (_, first) = set.insert_derived_value(&link).await.unwrap();
+                assert!(matches!(first, Inserted::Created(_)), "{first:?}");
+                let (id, second) = set.insert_derived_value(&link).await.unwrap();
+                assert_eq!(id, "7:5");
+                assert!(matches!(second, Inserted::Existed(_)), "{second:?}");
+                assert_eq!(all.get_count().await.unwrap(), 1);
+            }
+
+            #[tokio::test]
+            async fn expression_id_insert_with_an_id_is_refused() {
+                let all = link("expression_id_insert_with_an_id_is_refused").await;
+                let err = of(&all, 7)
+                    .insert_value("7:5", &rec(&[("b", 5)]))
+                    .await
+                    .unwrap_err();
+                assert!(err.is_unsupported(), "{err}");
+                assert_eq!(all.get_count().await.unwrap(), 0);
+            }
         }
     };
 }
