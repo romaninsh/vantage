@@ -90,6 +90,28 @@ impl From<crate::mysql::statements::primitives::FulltextMatch> for MysqlConditio
     }
 }
 
+/// `conditions` joined with `AND`, for a `WHERE` or `HAVING`. Next to another
+/// condition, one holding an `OR` is wrapped: `AND` binds tighter, so
+/// `"t"."fk" = "p"."id" AND a OR b` would read `b` rows of every parent.
+pub(crate) fn and_all<V>(conditions: &[Expression<V>]) -> Expression<V>
+where
+    V: std::fmt::Debug + std::fmt::Display + Clone,
+{
+    let many = conditions.len() > 1;
+    let parts = conditions
+        .iter()
+        .map(|c| {
+            let text = c.preview().to_ascii_uppercase();
+            if many && (text.contains(" OR ") || text.contains("||")) {
+                Expression::new("({})", vec![ExpressiveEnum::Nested(c.clone())])
+            } else {
+                c.clone()
+            }
+        })
+        .collect();
+    Expression::from_vec(parts, " AND ")
+}
+
 /// `column IN (values)`, in the shape `condition_column_of` reads. An empty
 /// list renders `IN (NULL)`: `IN ()` isn't SQL on every dialect, and
 /// `x IN (NULL)` matches no row.
