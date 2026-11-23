@@ -59,7 +59,14 @@ impl SurrealDB {
         }
         if q.limit.is_none() {
             if let Some(op) = aggregate.rollup_op() {
-                return self.render_rollup(parent, name, relation, op, aggregate.column(), condition);
+                return self.render_rollup(
+                    parent,
+                    name,
+                    relation,
+                    op,
+                    aggregate.column(),
+                    condition,
+                );
             }
             if *aggregate == Aggregate::Exists {
                 let count =
@@ -110,7 +117,10 @@ impl SurrealDB {
         let mut select = child.select_empty();
         select.clear_fields();
         select.clear_order_by();
-        if aggregate.rollup_op().is_some_and(|op| op != RollupOp::Count) {
+        if aggregate
+            .rollup_op()
+            .is_some_and(|op| op != RollupOp::Count)
+        {
             // Rows without the value are skipped, as SQL's aggregates skip
             // NULL; `math::sum` would refuse a NONE.
             select.add_where_condition(surreal_expr!(

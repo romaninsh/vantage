@@ -77,7 +77,9 @@ pub(crate) fn eval_to_expr(code: &str) -> vantage_core::Result<crate::Expr> {
 /// (`session`, `app`).
 pub fn eval_column_expr(
     code: &str,
-    table: Option<vantage_table::table::Table<crate::surrealdb::SurrealDB, vantage_types::EmptyEntity>>,
+    table: Option<
+        vantage_table::table::Table<crate::surrealdb::SurrealDB, vantage_types::EmptyEntity>,
+    >,
     env: Env,
 ) -> vantage_core::Result<crate::Expr> {
     use vantage_expressions::Expressive as _;
@@ -91,12 +93,7 @@ pub fn eval_column_expr(
     let value = __expr_host()
         .compile(&Block::from(code))
         .and_then(|script| script.eval(&env))
-        .map_err(|e| {
-            vantage_core::error!(
-                format!("expr: {e}"),
-                detail = e.to_string()
-            )
-        })?;
+        .map_err(|e| vantage_core::error!(format!("expr: {e}"), detail = e.to_string()))?;
     if value.is::<Ex>() {
         return Ok(value.cast::<Ex>().into_inner());
     }

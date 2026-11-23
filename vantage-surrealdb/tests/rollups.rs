@@ -301,7 +301,11 @@ fn with_relation(
     Table::new("invoice", db)
         .with_id_column("id")
         .with_many("lines", "invoice", line_table)
-        .with_relation_column("r", q.with_condition(surreal_expr!("net != NONE")), aggregate)
+        .with_relation_column(
+            "r",
+            q.with_condition(surreal_expr!("net != NONE")),
+            aggregate,
+        )
         .unwrap()
 }
 

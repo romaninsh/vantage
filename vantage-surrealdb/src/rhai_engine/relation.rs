@@ -67,14 +67,17 @@ pub fn register_relations(engine: &mut Engine) {
     engine.register_type_with_name::<RhaiTable>("Table");
     engine.register_type_with_name::<RhaiRelation>("Relation");
 
-    engine.register_fn("ref", |t: &mut RhaiTable, name: &str| -> Rhai<RhaiRelation> {
-        t.0.ref_cardinality(name)
-            .map_err(|_| err(format!("`{}` has no relation `{name}`", t.0.table_name())))?;
-        Ok(RhaiRelation {
-            table: t.0.clone(),
-            q: RelationQuery::new(name),
-        })
-    });
+    engine.register_fn(
+        "ref",
+        |t: &mut RhaiTable, name: &str| -> Rhai<RhaiRelation> {
+            t.0.ref_cardinality(name)
+                .map_err(|_| err(format!("`{}` has no relation `{name}`", t.0.table_name())))?;
+            Ok(RhaiRelation {
+                table: t.0.clone(),
+                q: RelationQuery::new(name),
+            })
+        },
+    );
     engine.register_fn(
         "where",
         |r: &mut RhaiRelation, column: &str, value: Dynamic| -> Rhai<RhaiRelation> {
@@ -118,8 +121,12 @@ pub fn register_relations(engine: &mut Engine) {
         next
     });
 
-    engine.register_fn("count", |r: &mut RhaiRelation| r.aggregate(Aggregate::Count));
-    engine.register_fn("exists", |r: &mut RhaiRelation| r.aggregate(Aggregate::Exists));
+    engine.register_fn("count", |r: &mut RhaiRelation| {
+        r.aggregate(Aggregate::Count)
+    });
+    engine.register_fn("exists", |r: &mut RhaiRelation| {
+        r.aggregate(Aggregate::Exists)
+    });
     engine.register_fn("sum", |r: &mut RhaiRelation, c: &str| {
         r.aggregate(Aggregate::Sum(c.into()))
     });
