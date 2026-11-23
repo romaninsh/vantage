@@ -5,7 +5,8 @@
 - Relation expressions (`Table::with_relation_column`): roll-up ops and `exists` read the child rows as roll-ups do (`<~child[WHERE …]` or a `$parent` subquery); `first`, `join_concat`, `join_json` and limited aggregates read an ordered sub-select `(SELECT … AS v, … AS o0 … ORDER BY o0).v`; `field` follows the record link. A roll-up of a child's expression column aggregates the expression through the sub-select instead of being refused.
 - Rhai: `vista::rhai_source::eval_column_expr(code, table, env)` with the same `table.ref(…)` relation vocabulary as the SQL dialects.
 - An `expr:` that reads `table` (a relation expression) runs when a query includes the column; a plain one still runs once at build.
-- Rhai: `surreal::concat([parts])` (`string::concat`) and `surreal::concat_ws(sep, [parts])` (`array::join` over the parts that are not NONE or NULL), with `sql::concat`'s argument rules: strings, numbers and bools are bound values.
+- Rhai: `surreal::concat([parts])` (`string::concat`) and `surreal::concat_ws(sep, [parts])` (`array::join` over the parts that are not NONE or NULL), with `sql::concat`'s argument rules: a string is a bound value, a number or bool is bound as its text (`1.5` → `"1.5"`, not SurrealDB's `1.5f`; `true` → `"true"`).
+- `surreal::concat` reads NONE when a part is NONE or NULL, as a NULL part makes `sql::concat` NULL, instead of joining the text `NONE` / `NULL` into the value.
 
 ## 3.0.0 — 2026-11-22
 

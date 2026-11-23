@@ -58,6 +58,19 @@ async fn rhai_surreal_concat_joins_parts() {
     let joined = read_rhai(r#"surreal::concat([surreal::expr("7"), ":", 5])"#).await;
     assert_eq!(joined.as_deref(), Some("7:5"));
 
+    let typed = read_rhai(r#"surreal::concat([surreal::expr("7"), 5, ":", 1.5, ":", true])"#).await;
+    assert_eq!(typed.as_deref(), Some("75:1.5:true"));
+
+    for missing in ["NONE", "NULL"] {
+        let code =
+            format!(r#"surreal::concat([surreal::expr("7"), ":", surreal::expr("{missing}")])"#);
+        assert_eq!(
+            read_rhai(&code).await,
+            None,
+            "a {missing} part makes concat NONE, as NULL does on SQL"
+        );
+    }
+
     let crafted = read_rhai(r#"surreal::concat(["\"; REMOVE TABLE x; --"])"#).await;
     assert_eq!(crafted.as_deref(), Some("\"; REMOVE TABLE x; --"));
 

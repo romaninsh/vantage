@@ -9,7 +9,7 @@
 - `expr:` columns in SQLite, PostgreSQL and MySQL specs: the script runs when a query includes the column, with the table as `table`; `Table::check_expressions` (the factory's load check) runs it once.
 - SQLite and PostgreSQL vistas take native conditions (`Capability::NativeConditions`), as MySQL's do: the dialect's condition or a query expression; `self.with_condition(<expr>)` in their scripts.
 - `where_expr(|t| …)` on data handles and rule tables, on SQLite, PostgreSQL and MySQL. `rhai_engine::relation::register_relation_vocab` registers the relation vocabulary of every enabled dialect for a data-script host.
-- Rhai: `sql::concat([parts])` and `sql::concat_ws(sep, [parts])` join text per dialect (`||` or `CONCAT`). A part is an `sql::ident`, an expression, or a string, number or bool bound as a value, never SQL text; anything else is an error naming its type and position. A NULL part makes `concat` NULL; `concat_ws` skips it.
+- Rhai: `sql::concat([parts])` and `sql::concat_ws(sep, [parts])` join text per dialect (`||` or `CONCAT`). A part is an `sql::ident`, an expression, or a string bound as a value, or a number or bool bound as its text (`5` → `"5"`, `true` → `"true"`), so Postgres joins it, never SQL text; anything else is an error naming its type and position. A NULL part makes `concat` NULL; `concat_ws` skips it.
 - SQLite `Concat::ws` skips NULL parts, as `CONCAT_WS` does on PostgreSQL and MySQL: it renders `SUBSTR(COALESCE(sep || a, '') || …, LENGTH(sep) + 1)` instead of `a || sep || b`.
 
 ## 0.17.1 — 2026-11-23

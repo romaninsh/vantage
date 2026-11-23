@@ -118,7 +118,8 @@ where
 }
 
 /// One `sql::concat` / `sql::concat_ws` argument as an expression; `what`
-/// names it in the error.
+/// names it in the error. A number or bool is bound as its text: Postgres
+/// has no `integer || bigint`, and MySQL would read `true` as `1`.
 fn concat_arg<V>(
     a: &rhai::Dynamic,
     func: &str,
@@ -128,6 +129,14 @@ where
     V: Clone + From<i64> + From<f64> + From<bool> + From<String> + 'static,
     Identifier: Expressive<V>,
 {
+    let as_text = if let Some(v) = a.clone().try_cast::<i64>() {
+        Some(v.to_string())
+    } else if let Some(v) = a.clone().try_cast::<f64>() {
+        Some(v.to_string())
+    } else {
+        a.clone().try_cast::<bool>().map(|v| v.to_string())
+    };
+    let a = &as_text.map_or_else(|| a.clone(), rhai::Dynamic::from);
     match to_param(a) {
         Some(ExpressiveEnum::Nested(e)) => Ok(e),
         Some(scalar) => Ok(Expression::new("{}", vec![scalar])),

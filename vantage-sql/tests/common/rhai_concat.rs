@@ -88,6 +88,17 @@ macro_rules! rhai_concat_tests {
             }
 
             #[tokio::test]
+            async fn rhai_concat_number_and_bool_parts_read_as_text() {
+                let v = read(
+                    "number_and_bool_parts",
+                    "(7, NULL, NULL, NULL)",
+                    r#"sql::concat([sql::ident("a"), 5, ":", 1.5, ":", true])"#,
+                )
+                .await;
+                assert_eq!(v, text("75:1.5:true"));
+            }
+
+            #[tokio::test]
             async fn rhai_concat_null_part_is_null() {
                 let v = read(
                     "null_part_is_null",
@@ -107,6 +118,14 @@ macro_rules! rhai_concat_tests {
                 )
                 .await;
                 assert_eq!(v, text("Riga"));
+
+                let v = read(
+                    "ws_empty_separator",
+                    "(NULL, NULL, 'Riga', 'LV')",
+                    r#"sql::concat_ws("", [sql::ident("city"), sql::ident("zip")])"#,
+                )
+                .await;
+                assert_eq!(v, text("RigaLV"));
             }
 
             #[tokio::test]
@@ -124,6 +143,9 @@ macro_rules! rhai_concat_tests {
             fn rhai_concat_rejects_unknown_part() {
                 let err = eval(r#"sql::concat([sql::ident("a"), #{ b: 1 }])"#).unwrap_err();
                 assert!(err.contains("map") && err.contains("position 2"), "{err}");
+
+                let err = eval(r#"sql::concat([])"#).unwrap_err();
+                assert!(err.contains("sql::concat needs at least one part"), "{err}");
             }
         }
     };

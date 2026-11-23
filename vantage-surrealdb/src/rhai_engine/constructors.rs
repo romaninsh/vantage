@@ -120,8 +120,17 @@ pub fn make_expr(template: &str, args: Array) -> Result<RhaiExpr, Box<rhai::Eval
 // ── Text joining ───────────────────────────────────────────────────────
 
 /// One `concat` / `concat_ws` argument as an expression; `what` names it in
-/// the error.
+/// the error. A number or bool is bound as its text: SurrealDB would write
+/// a float as `1.5f`.
 fn concat_arg(a: &rhai::Dynamic, func: &str, what: &str) -> Result<Expr, Box<rhai::EvalAltResult>> {
+    let as_text = if let Some(v) = a.clone().try_cast::<i64>() {
+        Some(v.to_string())
+    } else if let Some(v) = a.clone().try_cast::<f64>() {
+        Some(v.to_string())
+    } else {
+        a.clone().try_cast::<bool>().map(|v| v.to_string())
+    };
+    let a = &as_text.map_or_else(|| a.clone(), rhai::Dynamic::from);
     match to_param(a) {
         Some(ExpressiveEnum::Nested(e)) => Ok(e),
         Some(scalar) => Ok(Expression::new("{}", vec![scalar])),
@@ -145,11 +154,22 @@ fn concat_parts(parts: &Array, func: &str) -> Result<Vec<Expr>, Box<rhai::EvalAl
         .collect()
 }
 
-/// `concat(parts)` → `string::concat(a, b, ..)`.
+/// `concat(parts)` → `string::concat(a, b, ..)`, NONE when a part is NONE or
+/// NULL, as a NULL part makes SQL's concat NULL. SurrealDB would otherwise
+/// write the part as the text `NONE`. The parts go into a closure call, so
+/// each is evaluated once.
 pub fn fn_concat(parts: Array) -> Result<RhaiExpr, Box<rhai::EvalAltResult>> {
-    Ok(RhaiExpr(
-        Fx::new("string::concat", concat_parts(&parts, "concat")?).expr(),
-    ))
+    let parts = concat_parts(&parts, "concat")?;
+    let picks = (0..parts.len())
+        .map(|i| format!("$p[{i}]"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    Ok(RhaiExpr(Expression::new(
+        format!(
+            "(|$p| IF $p.any(|$v| $v = NONE OR $v = NULL) THEN NONE ELSE string::concat({picks}) END)([{{}}])"
+        ),
+        vec![ExpressiveEnum::Nested(Expression::from_vec(parts, ", "))],
+    )))
 }
 
 /// `concat_ws(sep, parts)` → `array::join` over the parts that are not NONE
