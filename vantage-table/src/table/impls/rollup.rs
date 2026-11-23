@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use vantage_core::{Result, error};
-use vantage_expressions::{Expression, Expressive, SelectableDataSource, expr_any};
+use vantage_expressions::{Expression, Expressive, Selectable, SelectableDataSource, expr_any};
 use vantage_types::{EmptyEntity, Entity};
 use vantage_vista::ReferenceKind;
 
@@ -128,25 +128,17 @@ where
         Ok(self)
     }
 
-    /// `op` over `column` of this table's rows as a parenthesised subquery:
-    /// [`Self::get_count_query`] and its siblings, with the sum wrapped in
-    /// `COALESCE(…, 0)` so no rows read 0.
+    /// `op` over `column` of this table's rows as a parenthesised subquery,
+    /// with the sum wrapped in `COALESCE(…, 0)` so no rows read 0. An
+    /// expression column is aggregated by its expression.
     pub fn aggregate_query(
         &self,
         op: RollupOp,
         column: Option<&str>,
     ) -> Result<Expression<T::Value>> {
-        let column = || {
+        let value = || {
             let name = column.ok_or_else(|| error!("roll-up needs a column", op = op))?;
-            // The aggregate reads the stored field, not the expression.
-            if self.is_calculated_column(name) {
-                return Err(error!(
-                    "a roll-up can't aggregate a computed column",
-                    column = name,
-                    table = self.table_name()
-                ));
-            }
-            self.columns().get(name).ok_or_else(|| {
+            self.try_get_column_expr(name)?.ok_or_else(|| {
                 error!(
                     "roll-up column not found",
                     column = name,
@@ -154,12 +146,17 @@ where
                 )
             })
         };
+        let rows = || {
+            let mut select = self.select_empty();
+            select.clear_order_by();
+            select
+        };
         Ok(match op {
             RollupOp::Count => self.get_count_query(),
-            RollupOp::Sum => expr_any!("COALESCE({}, 0)", (self.get_sum_query(column()?))),
-            RollupOp::Min => self.get_min_query(column()?),
-            RollupOp::Max => self.get_max_query(column()?),
-            RollupOp::Avg => self.get_avg_query(column()?),
+            RollupOp::Sum => expr_any!("COALESCE(({}), 0)", (rows().as_sum(value()?))),
+            RollupOp::Min => expr_any!("({})", (rows().as_min(value()?))),
+            RollupOp::Max => expr_any!("({})", (rows().as_max(value()?))),
+            RollupOp::Avg => expr_any!("({})", (rows().as_avg(value()?))),
         })
     }
 }

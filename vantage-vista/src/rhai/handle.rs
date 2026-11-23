@@ -173,6 +173,31 @@ impl Handle {
         })
     }
 
+    /// A handle narrowed by the condition `build` makes from the base Vista:
+    /// `where_expr`, whose closure needs the backend's table. A named base
+    /// is resolved now, through the handle's resolver; a handle past a
+    /// `ref` is an error naming the verb.
+    pub(crate) fn with_built_condition(
+        &self,
+        verb: &str,
+        build: impl FnOnce(&Vista) -> Result<NativeCondition>,
+    ) -> Result<Handle> {
+        if self.steps.iter().any(|s| matches!(s, Step::Ref(_))) {
+            return Err(error!(
+                format!("`{verb}` can't follow `ref(...)`"),
+                verb = verb
+            ));
+        }
+        let base = self.resolve_base(None)?;
+        let condition = build(&base)?;
+        let narrowed = base.with_native_condition(condition)?;
+        Ok(Handle {
+            base: Base::Vista(Arc::new(narrowed)),
+            native_verb: Some(verb.to_string()),
+            ..self.clone()
+        })
+    }
+
     /// A Vista in hand is adopted by the resolver, so inside `atomic` it comes
     /// back wrapped in the block's transaction.
     fn resolve_base(&self, resolver: Option<&dyn VistaResolver>) -> Result<Vista> {

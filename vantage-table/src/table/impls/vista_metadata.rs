@@ -63,7 +63,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
                 if options.id_flag {
                     vc = vc.with_flag(ColumnFlag::Id);
                 }
-                if self.id_auto {
+                if self.has_auto_id() {
                     vc = vc.with_flag(ColumnFlag::Auto);
                 }
             }

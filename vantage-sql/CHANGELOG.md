@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.17.1 — 2026-11-23
+
+- A roll-up of a child's expression column aggregates the expression (vantage-table 5.2) instead of being refused.
+
 ## 0.17.0 — 2026-11-22
 
 - **Breaking:** `insert_table_value` returns `Inserted<…>` on SQLite, PostgreSQL and MySQL, and

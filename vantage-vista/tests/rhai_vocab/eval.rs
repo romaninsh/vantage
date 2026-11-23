@@ -22,6 +22,23 @@ fn modify_script_narrows_self() {
     assert_eq!(ids(&vista), ["r3", "r1"]);
 }
 
+/// A backend without native conditions (memory here, CSV and REST alike)
+/// can't narrow by a relation expression: refused, naming the table.
+#[test]
+fn vista_where_expr_refused_without_native_conditions() {
+    let store = store();
+    let host = host(&store, Terminals::Describe);
+    let plain = resolver(&store).vista("t").unwrap();
+    let err = eval_modify_script(&host, r#"self.where_expr(|t| t.ref("x").exists())"#, plain)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("`where_expr` needs a backend that takes native conditions"),
+        "{err}"
+    );
+    assert!(err.contains("`t`"), "names the table: {err}");
+}
+
 /// The Vista `t` over `store`, taking native conditions: each is a
 /// [`Condition`] the inner shell applies.
 fn base(store: &vantage_memory::MemoryStore) -> Vista {

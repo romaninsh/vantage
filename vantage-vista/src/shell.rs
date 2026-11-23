@@ -280,6 +280,22 @@ pub trait TableShell: CloneTableShell + Send + Sync + 'static {
     /// registers nothing; scripts still get the table handle verbs.
     #[cfg(feature = "rhai")]
     fn register_rhai_extensions(&self, _engine: &mut rhai::Engine) {}
+
+    /// The backend's own table, as the `table` a `where_expr(|t| …)`
+    /// closure gets: the driver's relation vocabulary is registered on it
+    /// (`t.ref("tags").where("tag_id", 5).exists()`). `None` when the
+    /// backend has none.
+    #[cfg(feature = "rhai")]
+    fn script_table(&self) -> Option<rhai::Dynamic> {
+        None
+    }
+
+    /// The expression a `where_expr` closure returned, as a native
+    /// condition for [`add_native_condition`](Self::add_native_condition).
+    #[cfg(feature = "rhai")]
+    fn script_condition(&self, _expr: rhai::Dynamic) -> Result<NativeCondition> {
+        unsupported(Capability::NativeConditions)
+    }
 }
 
 /// Boxed cloning for [`TableShell`], so `Box<dyn TableShell>` is `Clone`.

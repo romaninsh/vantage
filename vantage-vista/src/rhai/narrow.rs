@@ -4,9 +4,9 @@
 use std::sync::Arc;
 
 use vantage_rhai::ModuleDir;
-use vantage_rhai::rhai::{Dynamic, Engine, NativeCallContext};
+use vantage_rhai::rhai::{Dynamic, Engine, FnPtr, NativeCallContext};
 
-use super::convert::dynamic_to_cbor;
+use super::convert::value_arg;
 use super::handle::{Handle, Step};
 use super::read::RhaiResult;
 use crate::{FilterOp, VistaResolver, sort::SortDirection};
@@ -86,13 +86,42 @@ pub(crate) fn register_narrowing(engine: &mut Engine, resolver: Option<Arc<dyn V
     engine.register_fn("ref", |h: &mut Handle, rel: &str| {
         h.push(Step::Ref(rel.into()))
     });
+
+    // `where_expr(|t| t.ref("tags").where("tag_id", 5).exists())`: the
+    // closure gets the backend's table and returns a boolean query
+    // expression, which narrows the handle as a native condition.
+    engine.register_fn(
+        "where_expr",
+        |ctx: NativeCallContext, h: &mut Handle, f: FnPtr| -> RhaiResult<Handle> {
+            h.with_built_condition("where_expr", |vista| {
+                let needs = || {
+                    vantage_core::error!(
+                        format!(
+                            "`where_expr` needs a backend that takes native conditions; `{}` doesn't",
+                            vista.name()
+                        ),
+                        table = vista.name()
+                    )
+                };
+                if !vista.capabilities().has(crate::Capability::NativeConditions) {
+                    return Err(needs());
+                }
+                let table = vista.script_table().ok_or_else(needs)?;
+                let expr: Dynamic = f
+                    .call_within_context(&ctx, (table,))
+                    .map_err(|e| vantage_core::error!(format!("where_expr: {e}")))?;
+                vista.script_condition(expr)
+            })
+            .map_err(|e| e.to_string().into())
+        },
+    );
 }
 
 fn narrow_where(h: &Handle, col: &str, op: FilterOp, value: Dynamic) -> RhaiResult<Handle> {
     Ok(h.push(Step::Where {
         col: col.into(),
         op,
-        value: dynamic_to_cbor(value)?,
+        value: value_arg("where", value)?,
     }))
 }
 

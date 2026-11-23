@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.1 — 2026-11-23
+
+- `insert_return_id_value` documents that a table whose id is an expression is retry-safe.
+
 ## 2.0.0 — 2026-11-22
 
 - **Breaking:** `WritableValueSet::insert_value` returns `Inserted<V>` instead of `Record<V>`.

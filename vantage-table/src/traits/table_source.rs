@@ -17,8 +17,9 @@ use vantage_vista::Transaction;
 
 use crate::{
     column::core::ColumnType,
+    sorting::SortDirection,
     source::SelectSeed,
-    table::{RollupOp, Table},
+    table::{Aggregate, RelationQuery, RollupOp, Table},
     traits::column_like::ColumnLike,
 };
 
@@ -448,6 +449,29 @@ pub trait TableSource: DataSource + Clone + 'static {
         E: Entity<Self::Value>,
         Self: Sized;
 
+    /// Insert a record into a table whose id is an expression
+    /// ([`Table::id_is_expression`]) and return the id the database computed
+    /// with the outcome. **Confined and retry-safe:** the row's identity is
+    /// its record, so a row in the set matching every column of `record` is
+    /// `Existed`; a computed id that is NULL is an error naming the table.
+    /// The default refuses.
+    async fn insert_table_derived_id_value<E>(
+        &self,
+        table: &Table<Self, E>,
+        record: &Record<Self::Value>,
+    ) -> Result<(Self::Id, Inserted<Self::Value>)>
+    where
+        E: Entity<Self::Value>,
+        Self: Sized,
+    {
+        let _ = record;
+        Err(vantage_core::error!(
+            "this backend can't insert into a table whose id is an expression",
+            table = table.table_name()
+        )
+        .mark_unsupported())
+    }
+
     /// Stream all records from a table as (Id, Record) pairs.
     ///
     /// Default implementation wraps `list_table_values` into a stream.
@@ -573,7 +597,7 @@ pub trait TableSource: DataSource + Clone + 'static {
     ) -> Result<Expression<Self::Value>>
     where
         E: Entity<Self::Value> + 'static,
-        Self: SelectableDataSource<Self::Value, Self::Condition> + Sized,
+        Self: SelectableDataSource<Self::Value, Self::Condition> + Sized + 'static,
         Self::Source: SelectSeed<
                 <Self as SelectableDataSource<Self::Value, Self::Condition>>::Select,
                 Self::Value,
@@ -584,16 +608,73 @@ pub trait TableSource: DataSource + Clone + 'static {
         Self::Value: From<String>,
         Self::Column<Self::AnyType>: Expressive<Self::Value>,
     {
-        let target = parent.rollup_target(name, relation, column)?;
-        // Unaliased, `child.fk = parent.id` over the parent's own table reads
-        // the inner row on both sides and counts the wrong rows.
-        let alias = (target.table_name() == parent.table_name())
-            .then(|| format!("{}_rollup", parent.table_name()));
-        let mut child = parent.correlate_ref_target(relation, target, alias.as_deref())?;
-        if let Some(condition) = condition {
-            child.add_condition(condition);
-        }
-        child.aggregate_query(op, column)
+        let mut q = RelationQuery::new(relation);
+        q.conditions.extend(condition);
+        self.relation_expression(parent, Some(name), &q, &Aggregate::from_rollup(op, column)?)
+    }
+
+    /// The expression of a relation column: `aggregate` over the rows `q`
+    /// gives for each `parent` row. `name` is the column being built, `None`
+    /// for an expression built on its own (a filter). The callback
+    /// [`Table::with_relation_column`] stores calls it each time a query that
+    /// includes the column is built, so the relation's target is built here.
+    ///
+    /// The default is a correlated subquery over [`Table::relation_child`],
+    /// rendered by [`Table::render_aggregate`]. A backend overrides it to
+    /// render something better, or to refuse with an error.
+    fn relation_expression<E>(
+        &self,
+        parent: &Table<Self, E>,
+        name: Option<&str>,
+        q: &RelationQuery<Self::Condition>,
+        aggregate: &Aggregate,
+    ) -> Result<Expression<Self::Value>>
+    where
+        E: Entity<Self::Value> + 'static,
+        Self: SelectableDataSource<Self::Value, Self::Condition> + Sized + 'static,
+        Self::Source: SelectSeed<
+                <Self as SelectableDataSource<Self::Value, Self::Condition>>::Select,
+                Self::Value,
+                Self::Condition,
+            >,
+        <Self as SelectableDataSource<Self::Value, Self::Condition>>::Select:
+            Expressive<Self::Value>,
+        Self::Value: From<String>,
+        Self::Column<Self::AnyType>: Expressive<Self::Value>,
+    {
+        parent
+            .relation_child(name, q, aggregate)?
+            .render_aggregate(q, aggregate)
+    }
+
+    /// A list aggregate over `rows`, a select projecting the value as `v`
+    /// and each ordering expression as `o0`, `o1`…, already in order:
+    /// [`Aggregate::JoinConcat`] as text (`""` over no rows) and
+    /// [`Aggregate::JoinJson`] as a JSON array (`[]` over no rows).
+    /// `order` gives the direction of each `o<n>`, for a backend that orders
+    /// inside the aggregate. The default refuses.
+    fn render_list_aggregate(
+        &self,
+        rows: Expression<Self::Value>,
+        aggregate: &Aggregate,
+        order: &[SortDirection],
+    ) -> Result<Expression<Self::Value>> {
+        let _ = (rows, order);
+        Err(
+            vantage_core::error!(format!("this backend can't render {aggregate:?}"))
+                .mark_unsupported(),
+        )
+    }
+
+    /// `expr` as a condition-typed expression, the form ordering and native
+    /// filters take. The default refuses; a backend whose conditions are
+    /// expressions returns it.
+    fn expression_condition(&self, expr: Expression<Self::Value>) -> Result<Self::Condition> {
+        let _ = expr;
+        Err(
+            vantage_core::error!("this backend can't use an expression as a condition")
+                .mark_unsupported(),
+        )
     }
 
     /// Whether this backend can lower a dotted active column

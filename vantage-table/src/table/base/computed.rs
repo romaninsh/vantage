@@ -12,6 +12,37 @@ use vantage_vista::forbidden_column;
 use super::{EXPRESSION_COLUMN, EXPRESSION_TABLE, ExpressionFn, Table};
 use crate::traits::table_source::TableSource;
 
+thread_local! {
+    /// The expression columns (`table.column`) whose callbacks run on this
+    /// thread now, outermost first.
+    static BUILDING: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Marks an expression column as building until dropped.
+struct Building;
+
+impl Building {
+    /// `None` when `key` is already building: a cycle.
+    fn enter(key: &str) -> Option<Self> {
+        BUILDING.with(|b| {
+            let mut b = b.borrow_mut();
+            if b.iter().any(|k| k == key) {
+                return None;
+            }
+            b.push(key.to_string());
+            Some(Building)
+        })
+    }
+}
+
+impl Drop for Building {
+    fn drop(&mut self) {
+        BUILDING.with(|b| {
+            b.borrow_mut().pop();
+        });
+    }
+}
+
 impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// The expression of expression column `name`, from its callback; `None`
     /// when `name` isn't one. A failing callback's error gains the column
@@ -20,6 +51,19 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     pub fn try_expression_column(&self, name: &str) -> Result<Option<Expression<T::Value>>> {
         let Some(expr_fn) = self.expressions.get(name) else {
             return Ok(None);
+        };
+        // Relation expressions read other tables' expression columns, so two
+        // can read each other; building one inside itself is that cycle.
+        let key = format!("{}.{name}", self.table_name());
+        let Some(_building) = Building::enter(&key) else {
+            return Err(vantage_core::error!(
+                format!(
+                    "expression column `{name}` of `{}` reads itself through its relations",
+                    self.table_name()
+                ),
+                column = name,
+                table = self.table_name()
+            ));
         };
         match expr_fn(self.as_entity_erased()) {
             Ok(expr) => Ok(Some(expr)),
@@ -33,6 +77,18 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
                 Err(e)
             }
         }
+    }
+
+    /// Whether the id column is an expression column: the database computes
+    /// the id from the row (`a || ':' || b` on a link table), so inserts
+    /// carry no id and by-id writes compare the expression.
+    pub fn id_is_expression(&self) -> bool {
+        self.expressions.contains_key(&self.id_field_name())
+    }
+
+    /// The id column's expression, `None` when the id is stored.
+    pub fn id_expression(&self) -> Result<Option<Expression<T::Value>>> {
+        self.try_expression_column(&self.id_field_name())
     }
 
     /// Run the callback of every expression column a read would include,

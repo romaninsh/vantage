@@ -121,6 +121,14 @@ impl TableShell for TxShell {
     fn register_rhai_extensions(&self, engine: &mut rhai::Engine) {
         self.inner.register_rhai_extensions(engine)
     }
+    #[cfg(feature = "rhai")]
+    fn script_table(&self) -> Option<rhai::Dynamic> {
+        self.inner.script_table()
+    }
+    #[cfg(feature = "rhai")]
+    fn script_condition(&self, expr: rhai::Dynamic) -> Result<NativeCondition> {
+        self.inner.script_condition(expr)
+    }
 
     async fn list(&self) -> Result<IndexMap<String, Rec>> {
         self.ready()?.list().await

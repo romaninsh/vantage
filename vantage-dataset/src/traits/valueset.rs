@@ -244,7 +244,9 @@ pub trait InsertableValueSet: ValueSet {
     ///
     /// Not retry-safe: prefer `insert_value` with a client-made id (UUIDv7);
     /// use this only where the backend must make the id (declared
-    /// server-made ids).
+    /// server-made ids). A table whose id is an expression over its columns
+    /// (a link table's `a:b`) is the exception: its identity is the record,
+    /// so a repeated insert reports the stored row as `Existed`.
     async fn insert_return_id_value(&self, record: &Record<Self::Value>) -> Result<Self::Id>;
 }
 

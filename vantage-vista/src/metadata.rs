@@ -56,6 +56,15 @@ impl VistaMetadata {
         })
     }
 
+    /// Column `name` with `flag` added; unchanged when there is no such
+    /// column. A factory adds what only the spec knows (`per_session`).
+    pub fn with_column_flag(mut self, name: &str, flag: impl Into<ColumnFlag>) -> Self {
+        if let Some(column) = self.columns.get_mut(name) {
+            *column = column.clone().with_flag(flag);
+        }
+        self
+    }
+
     pub fn with_reference(mut self, reference: Reference) -> Self {
         self.references.insert(reference.name.clone(), reference);
         self
