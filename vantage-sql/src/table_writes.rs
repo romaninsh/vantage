@@ -91,8 +91,9 @@ where
 /// Settle a failed insert into a table whose id is an expression. Only a
 /// duplicate key (another writer's row) or a lost reply (this call's row)
 /// can have left the record stored; then the one row in the set matching it
-/// is reported by [`landed`] with its computed id. Any other failure, or no
-/// single matching row, is `err`.
+/// is reported by [`landed`] with its computed id. Any other failure, a
+/// statement that never reached the database (no pooled connection: still
+/// Unavailable, so it is retried), or no single matching row, is `err`.
 pub(crate) async fn settle_failed_derived_insert<T, E>(
     db: &T,
     table: &Table<T, E>,
@@ -103,7 +104,9 @@ where
     T: SetWrites,
     E: Entity<T::Value>,
 {
-    if !(err.is_unavailable() || crate::sql_exec::is_unique_violation(&err)) {
+    if crate::sql_exec::was_not_sent(&err)
+        || !(err.is_unavailable() || crate::sql_exec::is_unique_violation(&err))
+    {
         return Err(err);
     }
     match find_by_record(db, table, record).await? {
@@ -164,8 +167,9 @@ where
 }
 
 /// Checks before a patch of `id`: the row must be in the set (NotFound
-/// otherwise), and on a conditioned table the patched row must stay in it
-/// (Conflict otherwise).
+/// otherwise), a table whose id is an expression can't have a column it reads
+/// changed (the row would move to another id), and on a conditioned table the
+/// patched row must stay in it (Conflict otherwise).
 pub(crate) async fn guard_patch<T, E>(
     db: &T,
     table: &Table<T, E>,
@@ -174,11 +178,32 @@ pub(crate) async fn guard_patch<T, E>(
 ) -> Result<()>
 where
     T: SetWrites,
+    T::Value: Debug + std::fmt::Display,
     E: Entity<T::Value>,
 {
     let Some(mut merged) = db.get_table_value(table, id).await? else {
         return Err(patch_not_found(table, id));
     };
+    if let Some(id_expr) = table.id_expression()? {
+        // The rendered expression names each column it reads, quoted.
+        let reads = id_expr.preview();
+        for (column, value) in partial.iter() {
+            let changes = merged.get(column).map(|v| T::into_cbor(v.clone()))
+                != Some(T::into_cbor(value.clone()));
+            if changes && reads.contains(&T::quoted(column).preview()) {
+                return Err(error!(
+                    format!(
+                        "patching `{column}` would change the id of `{id}` in `{}`, which is \
+                         computed from it; delete the row and insert the new one instead",
+                        table.table_name()
+                    ),
+                    table = table.table_name(),
+                    column = column.as_str()
+                )
+                .mark_conflict());
+            }
+        }
+    }
     if table.conditions().next().is_some() {
         for (k, v) in partial.iter() {
             merged.insert(k.clone(), v.clone());

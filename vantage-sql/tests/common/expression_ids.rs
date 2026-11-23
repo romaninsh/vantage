@@ -114,6 +114,17 @@ macro_rules! expression_ids_tests {
 
                 let patched = set.patch_value("7:5", &rec(&[("stage", 4)])).await.unwrap();
                 assert_eq!(patched.get("stage"), Some(&<$value>::from(4i64)));
+                // A column the id reads would move the row to `7:6`: refused
+                // before the UPDATE, so nothing is written; an unchanged value
+                // is fine.
+                let err = set
+                    .patch_value("7:5", &rec(&[("b", 6), ("stage", 9)]))
+                    .await
+                    .unwrap_err();
+                assert!(err.to_string().contains("would change the id"), "{err}");
+                let row = set.get_value("7:5").await.unwrap().expect("row 7:5 stays");
+                assert_eq!(row.get("stage"), Some(&<$value>::from(4i64)));
+                set.patch_value("7:5", &rec(&[("b", 5)])).await.unwrap();
 
                 of(&all, 8).delete("7:5").await.unwrap();
                 assert_eq!(all.get_count().await.unwrap(), 1, "outside the set");

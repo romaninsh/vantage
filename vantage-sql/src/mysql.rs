@@ -37,7 +37,10 @@ pub struct MysqlDB {
 }
 
 impl MysqlDB {
-    /// Create from an existing sqlx connection pool.
+    /// Create from an existing sqlx connection pool. `join_concat` renders
+    /// `GROUP_CONCAT`, which MySQL cuts at `group_concat_max_len` (1024 bytes
+    /// by default) without an error; [`Self::connect`] raises it on every
+    /// connection, a pool built elsewhere should too.
     pub fn new(pool: MySqlPool) -> Self {
         Self {
             pool,
@@ -49,10 +52,22 @@ impl MysqlDB {
     /// Fails at once when the server refuses or is unreachable. The
     /// pool's own `connect` would retry a failed handshake with backoff
     /// until its 30-second acquire deadline, so one probe connection
-    /// goes first and the pool is built lazily behind it.
+    /// goes first and the pool is built lazily behind it. Each connection
+    /// raises `group_concat_max_len`, so a `join_concat` isn't cut at 1024
+    /// bytes (the packet limit still applies).
     pub async fn connect(url: &str) -> Result<Self, sqlx::Error> {
         MySqlConnection::connect(url).await?.close().await?;
-        Ok(Self::new(MySqlPoolOptions::new().connect_lazy(url)?))
+        let pool = MySqlPoolOptions::new()
+            .after_connect(|conn, _| {
+                Box::pin(async move {
+                    sqlx::query("SET SESSION group_concat_max_len = 4294967295")
+                        .execute(conn)
+                        .await?;
+                    Ok(())
+                })
+            })
+            .connect_lazy(url)?;
+        Ok(Self::new(pool))
     }
 
     pub fn pool(&self) -> &MySqlPool {
