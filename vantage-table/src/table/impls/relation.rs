@@ -274,15 +274,12 @@ where
                 }
                 Ok(expr_any!("EXISTS ({})", (select.expr())))
             }
-            Aggregate::Field(column) => {
+            // At most one row; a limit of 0 leaves none. A has_one joined on a
+            // non-id column can match several rows, and Postgres and MySQL
+            // refuse a scalar sub-select that returns more than one.
+            Aggregate::Field(column) | Aggregate::First(column) => {
                 let mut select = self.ordered_rows(q)?;
                 select.add_expression(self.child_column(relation, column)?);
-                Ok(expr_any!("({})", (select.expr())))
-            }
-            Aggregate::First(column) => {
-                let mut select = self.ordered_rows(q)?;
-                select.add_expression(self.child_column(relation, column)?);
-                // At most one row; a limit of 0 leaves none.
                 select.set_limit(Some(q.limit.map_or(1, |limit| limit.min(1))), None);
                 Ok(expr_any!("({})", (select.expr())))
             }

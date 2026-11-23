@@ -115,11 +115,17 @@ pub fn register_relations(engine: &mut Engine) {
         "order_by",
         |r: &mut RhaiRelation, column: &str, direction: &str| r.order_by(column, direction),
     );
-    engine.register_fn("limit", |r: &mut RhaiRelation, limit: i64| {
-        let mut next = r.clone();
-        next.q.limit = Some(limit);
-        next
-    });
+    engine.register_fn(
+        "limit",
+        |r: &mut RhaiRelation, limit: i64| -> Rhai<RhaiRelation> {
+            if limit < 0 {
+                return Err(err(format!("limit must be 0 or more, got {limit}")));
+            }
+            let mut next = r.clone();
+            next.q.limit = Some(limit);
+            Ok(next)
+        },
+    );
 
     engine.register_fn("count", |r: &mut RhaiRelation| {
         r.aggregate(Aggregate::Count)

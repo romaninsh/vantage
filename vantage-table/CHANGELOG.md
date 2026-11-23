@@ -4,7 +4,7 @@
 
 - A table's id column may be an expression (`Table::id_is_expression`, `Table::id_expression`): get, patch and delete compare it, and `insert_derived_value` / `insert_return_id_value` report the id the database computes, `Existed` for a repeated record. An insert or replace that names an id on such a table is refused as unsupported.
 - `TableSource::insert_table_derived_id_value`; the default refuses.
-- `RelationQuery` and `Aggregate`, with `Table::with_relation_column` and `Table::relation_expression`: count, sum, min, max, avg, exists, first, join_concat, join_json and field over a narrowed, ordered relation, as a correlated subquery built when a query includes the column. Roll-ups render through it (`TableSource::rollup_expression` now calls `TableSource::relation_expression`) and may aggregate a child's expression column. A list aggregate without an order is refused.
+- `RelationQuery` and `Aggregate`, with `Table::with_relation_column` and `Table::relation_expression`: count, sum, min, max, avg, exists, first, join_concat, join_json and field over a narrowed, ordered relation, as a correlated subquery built when a query includes the column. Roll-ups render through it (`TableSource::rollup_expression` now calls `TableSource::relation_expression`) and may aggregate a child's expression column. A list aggregate without an order is refused. `first` and `field` read at most one row.
 - `TableSource::render_list_aggregate` and `TableSource::expression_condition`; the defaults refuse. `rollup_expression` requires `Self: 'static`.
 - `TableRuleTarget` gives its table to `RuleTarget::native_table`.
 

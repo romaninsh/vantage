@@ -68,6 +68,18 @@ fn rhai_sql_json_renders_per_dialect() {
     assert_eq!(postgres(raw), "\"name\" -> 'en_US'");
     let path = r#"sql::json(sql::ident("meta"), ["specs", "volts"])"#;
     assert_eq!(postgres(path), "\"meta\" -> 'specs' ->> 'volts'");
+    let mysql = |code| {
+        vantage_sql::mysql::vista::rhai_source::eval_column_expr(code, None, Env::new())
+            .unwrap()
+            .preview()
+    };
+    assert_eq!(mysql(text), "JSON_UNQUOTE(JSON_EXTRACT(`name`, '$.en_US'))");
+    // MySQL reads `en-US` or `1st` bare as a broken path; they're quoted.
+    let dashed = r#"sql::json(sql::ident("name"), ["en-US", "1st"])"#;
+    assert_eq!(
+        mysql(dashed),
+        "JSON_UNQUOTE(JSON_EXTRACT(`name`, '$.\"en-US\".\"1st\"'))"
+    );
     // A key is written into the SQL, so anything but a plain name is refused.
     let quoted = r#"sql::json(sql::ident("meta"), "a' OR 1=1 --")"#;
     let err = eval_column_expr(quoted, None, Env::new())

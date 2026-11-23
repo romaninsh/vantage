@@ -4,11 +4,13 @@
 //! (`<~line[WHERE …]` or a `$parent` subquery; see the `rollup` module), and
 //! so does `exists`. An ordered or limited aggregate reads them from an
 //! ordered sub-select, `(SELECT … AS v, … AS o0 FROM child WHERE … ORDER BY
-//! o0 LIMIT …).v`. A has_one's field follows the record link (`tag.name`).
+//! o0 LIMIT …).v`. A has_one's field follows the record link (`tag.name`)
+//! unless the target or the chain narrows it; then it reads the sub-select.
 
 use vantage_core::{Result, error};
 use vantage_expressions::{Expression, Expressive, Order, Selectable};
 use vantage_table::sorting::SortDirection;
+use vantage_table::source::SelectSource;
 use vantage_table::table::{Aggregate, RelationQuery, RollupOp, Table};
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Entity};
@@ -41,6 +43,17 @@ impl SurrealDB {
         };
         if let Aggregate::Field(column) = aggregate {
             let target = parent.get_ref_target_erased(relation)?;
+            // The link reads the linked record as stored. Anything that
+            // narrows the target (its own conditions, a query source, the
+            // chain's where/order/limit) needs the sub-select, as on SQL.
+            let narrowed = !q.conditions.is_empty()
+                || !q.order.is_empty()
+                || q.limit.is_some()
+                || target.conditions().next().is_some()
+                || !matches!(target.source(), SelectSource::Name(_));
+            if narrowed {
+                return self.relation_rows(parent, target, q, aggregate);
+            }
             if target.is_calculated_column(column) || !target.columns().contains_key(column) {
                 return Err(error!(
                     format!(
@@ -140,7 +153,8 @@ impl SurrealDB {
             select.add_order_by(Identifier::new(alias).expr(), order);
         }
         let limit = match aggregate {
-            Aggregate::First(_) => Some(1),
+            // At most one row; a limit of 0 leaves none.
+            Aggregate::First(_) | Aggregate::Field(_) => Some(q.limit.map_or(1, |l| l.min(1))),
             _ => q.limit,
         };
         if limit.is_some() {
@@ -150,7 +164,7 @@ impl SurrealDB {
         let call = |name: &str, args: Vec<Expr>| Fx::new(name, args).expr();
         Ok(match aggregate {
             Aggregate::Exists => surreal_expr!("(count({}) > 0)", (rows)),
-            Aggregate::First(_) => call("array::first", vec![rows]),
+            Aggregate::First(_) | Aggregate::Field(_) => call("array::first", vec![rows]),
             Aggregate::JoinJson(_) => rows,
             Aggregate::JoinConcat { separator, .. } => {
                 let separator = AnySurrealType::from(separator.clone());

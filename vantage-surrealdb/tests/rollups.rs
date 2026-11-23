@@ -369,6 +369,41 @@ async fn surreal_relation_first() {
     );
 }
 
+/// A has_one's field keeps the target's own conditions and the chain's
+/// `where`, as on SQL: a hidden invoice gives null, not its value through
+/// the link.
+#[tokio::test]
+async fn surreal_relation_field_keeps_target_conditions() {
+    let db = seeded(true).await;
+    for statement in [
+        "UPDATE invoice:one SET number = 1, open = true",
+        "UPDATE invoice:two SET number = 2, open = false",
+    ] {
+        db.execute(&surreal_expr!(statement)).await.unwrap();
+    }
+    fn open_invoices(db: SurrealDB) -> Table<SurrealDB, EmptyEntity> {
+        Table::new("invoice", db)
+            .with_id_column("id")
+            .with_column_of::<i64>("number")
+            .with_condition(surreal_expr!("open = {}", true))
+    }
+    let lines = |q: RelationQuery<vantage_surrealdb::Expr>| {
+        line_table(db.clone())
+            .with_one("invoice", "invoice", open_invoices)
+            .with_relation_column("number", q, Aggregate::Field("number".into()))
+            .unwrap()
+    };
+    assert_eq!(
+        read(&lines(RelationQuery::new("invoice")), "number").await,
+        json!({"line:a": 1, "line:b": 1, "line:c": null, "line:d": 1, "line:x": 1})
+    );
+    let not_one = RelationQuery::new("invoice").with_condition(surreal_expr!("number != {}", 1));
+    assert_eq!(
+        read(&lines(not_one), "number").await,
+        json!({"line:a": null, "line:b": null, "line:c": null, "line:d": null, "line:x": null})
+    );
+}
+
 /// A has_many target with a window has no clear set to aggregate: refused
 /// when the column is read.
 #[tokio::test]
