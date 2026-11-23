@@ -156,9 +156,13 @@ pub(crate) fn and_all(conditions: Vec<Expr>) -> Expr {
 }
 
 /// Whether `surql` holds `OR` as a word (any spacing, any case), `||`, or a
-/// null-coalescing `??` / `?:`. It errs towards `true`: a match inside a
-/// literal or a sub-select only adds parentheses.
+/// null-coalescing `??` / `?:`, outside one pair of parentheses around the
+/// whole condition. It errs towards `true`: a match inside a literal or a
+/// sub-select only adds parentheses.
 fn binds_looser_than_and(surql: &str) -> bool {
+    if enclosed(surql) {
+        return false;
+    }
     let upper = surql.to_ascii_uppercase();
     let word = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '$';
     let or_word = upper.match_indices("OR").any(|(at, _)| {
@@ -166,4 +170,28 @@ fn binds_looser_than_and(surql: &str) -> bool {
             && !upper[at + 2..].chars().next().is_some_and(word)
     });
     or_word || ["||", "??", "?:"].iter().any(|op| upper.contains(op))
+}
+
+/// Whether `text` is one parenthesised group: its first `(` closes at its
+/// last character. A `(` or `)` inside a literal can only make this `false`,
+/// which wraps once more.
+fn enclosed(text: &str) -> bool {
+    let text = text.trim();
+    if !text.starts_with('(') {
+        return false;
+    }
+    let mut depth = 0usize;
+    for (at, c) in text.char_indices() {
+        match c {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return at + 1 == text.len();
+                }
+            }
+            _ => {}
+        }
+    }
+    false
 }
