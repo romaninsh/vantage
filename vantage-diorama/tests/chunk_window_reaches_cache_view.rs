@@ -11,7 +11,7 @@ use ciborium::Value as CborValue;
 use tempfile::TempDir;
 use vantage_core::Result;
 use vantage_dataset::prelude::ReadableValueSet;
-use vantage_diorama::TableScenery;
+use vantage_diorama::{TableScenery, ViewState};
 use vantage_types::Record;
 use vantage_vista::SortDirection;
 
@@ -25,8 +25,9 @@ fn rec(v: &str) -> Record<CborValue> {
 }
 
 /// The bound is for a hang, not a speed assertion: the coverage job runs the
-/// whole instrumented workspace at once on a small runner.
-const HANG: Duration = Duration::from_secs(30);
+/// whole instrumented workspace at once on a small runner. It stays under the
+/// 5 s test limit, so a hang names the step it stopped at.
+const HANG: Duration = Duration::from_secs(4);
 
 /// Poll `holds` until it is true, or panic naming `what`.
 async fn until(what: &str, holds: impl Fn() -> bool) {
@@ -63,10 +64,24 @@ async fn a_window_load_reaches_a_cache_served_view() -> Result<()> {
         .open()
         .await?;
     until("the sorted view shows a", || shows(&sorted, &["v1"])).await;
+    // Opening the sorted view re-pulls the paged one; that re-pull must be
+    // over before the source changes, or it may already see the new row.
+    until("the paged view settles", || {
+        paged.view_stats().state == ViewState::Ready
+    })
+    .await;
 
-    // A row appears at the source with no change event, and the paged view's
-    // next window brings it into the shared cache.
+    // A row appears at the source with no change event. The paged view has
+    // proved its end (one row); a view attaching to its rows re-pulls the
+    // block it holds, which states the new total but brings no new row.
     backend.lock().unwrap().push(("b".into(), rec("v2")));
+    let attached = dio.table_scenery().open().await?;
+    attached.set_viewport(0..1, 0..1);
+    until("the paged view counts b", || paged.row_count() == 2).await;
+    assert!(dio.cached().get_value("b").await?.is_none());
+    assert!(shows(&sorted, &["v1"]));
+
+    // The paged view's next window brings the row into the shared cache.
     paged.set_viewport(0..2, 0..2);
     until("the paged view shows b", || shows(&paged, &["v1", "v2"])).await;
     // The window's rows reach the cache when the load flushes, which can
