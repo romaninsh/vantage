@@ -10,6 +10,7 @@ use ciborium::Value as CborValue;
 use vantage_types::Record;
 use vantage_vista::{VistaMetadata, VistaQuery};
 
+use crate::lens::CacheStatus;
 use crate::scenery::enriched_record::EnrichedRecord;
 
 use super::super::plan::{Serving, admitted_by_view};
@@ -42,9 +43,12 @@ impl SharedRows {
             return Ok(true);
         };
         let began = self.serving();
-        let fetched = self.reader(&dio_inner).get_value(id).await?;
+        let fetched = self.reader(&dio_inner).get_value_with_status(id).await?;
+        let unconfirmed = matches!(fetched, Some((_, CacheStatus::Unconfirmed)));
         let query = dio_inner.master.comparable(&self.view_query());
-        let admitted = fetched.filter(|rec| admitted_by_view(&dio_inner, &query, rec));
+        let admitted = fetched
+            .map(|(rec, _)| rec)
+            .filter(|rec| admitted_by_view(&dio_inner, &query, rec));
         if !self.still_serving(&began) {
             return Ok(true);
         }
@@ -69,7 +73,11 @@ impl SharedRows {
                 rows.remove_shift(old);
             }
             if let (Some(at), Some(rec)) = (placed, admitted) {
-                rows.insert_shift(at, Arc::new(EnrichedRecord::fresh(rec)));
+                let row = match unconfirmed {
+                    true => EnrichedRecord::unconfirmed(rec),
+                    false => EnrichedRecord::fresh(rec),
+                };
+                rows.insert_shift(at, Arc::new(row));
             }
             reindex(&mut id_to_idx, old, placed);
             if let Some(at) = placed {

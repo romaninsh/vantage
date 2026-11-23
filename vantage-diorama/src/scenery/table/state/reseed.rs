@@ -1,12 +1,13 @@
 //! Rebuilding the visible row map from the cache.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use ciborium::Value as CborValue;
 use vantage_types::Record;
 
+use crate::lens::CacheStatus;
 use crate::scenery::enriched_record::EnrichedRecord;
 
 use super::super::plan::{Serving, admitted_by_view};
@@ -42,12 +43,19 @@ impl SharedRows {
             }
             _ => {}
         }
-        let all = self.reader(&dio_inner).list_values().await?;
+        let all = self.reader(&dio_inner).list_values_with_status().await?;
 
         let query = dio_inner.master.comparable(&self.view_query());
+        let mut unconfirmed = HashSet::new();
         let mut filtered: Vec<(String, Record<CborValue>)> = all
             .into_iter()
-            .filter(|(_, rec)| admitted_by_view(&dio_inner, &query, rec))
+            .filter(|(_, (rec, _))| admitted_by_view(&dio_inner, &query, rec))
+            .map(|(id, (rec, status))| {
+                if status == CacheStatus::Unconfirmed {
+                    unconfirmed.insert(id.clone());
+                }
+                (id, rec)
+            })
             .collect();
 
         // A paged view whose master does the ordering can't place cached rows
@@ -111,7 +119,11 @@ impl SharedRows {
         let mut rows = BTreeMap::new();
         let mut id_to_idx = HashMap::new();
         for (idx, (id, rec)) in filtered.into_iter().enumerate() {
-            rows.insert(idx, Arc::new(EnrichedRecord::fresh(rec)));
+            let row = match unconfirmed.contains(&id) {
+                true => EnrichedRecord::unconfirmed(rec),
+                false => EnrichedRecord::fresh(rec),
+            };
+            rows.insert(idx, Arc::new(row));
             id_to_idx.insert(id, idx);
         }
         if !self.still_serving(&began) {

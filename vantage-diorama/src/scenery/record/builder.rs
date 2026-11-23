@@ -12,6 +12,7 @@ use super::handle::spawn_record_scenery;
 use super::{RecordScenery, RecordSceneryState, RecordStatus, shown};
 use crate::Sugar;
 use crate::dio::{Dio, DioInner, admitted_by_dio};
+use crate::lens::CacheStatus;
 use crate::ops::ChangeEvent;
 use crate::scenery::sugar::SugaredCache;
 
@@ -78,7 +79,7 @@ impl RecordSceneryBuilder {
         let scenery = spawn_record_scenery(&dio, self.id, reader, may_fetch);
         let state = scenery.inner.clone();
         if let Some(row) = self.seed {
-            let (record, status) = shown(row, false);
+            let (record, status) = shown(row, CacheStatus::Complete);
             state.open_on(record, status);
             // The seeded row shows at once; the cache's copy then brings its
             // sugar columns, or its `Incomplete` status and detail pass.
@@ -88,9 +89,9 @@ impl RecordSceneryBuilder {
                     .runtime
                     .spawn(async move { seeded.refine_seed().await });
             }
-        } else if let Some((row, incomplete)) = state.read(&dio).await? {
+        } else if let Some((row, cached)) = state.read(&dio).await? {
             state.fetching.store(false, Ordering::SeqCst);
-            let (record, status) = shown(row, incomplete);
+            let (record, status) = shown(row, cached);
             state.open_on(record, status);
         } else if may_fetch && dio.cache.get_value(&state.id).await?.is_none() {
             dio.lens.runtime.spawn(fetch_on_miss(dio.clone(), state));
@@ -112,8 +113,8 @@ impl RecordSceneryState {
         };
         let seen = self.generation();
         match self.read(&dio_inner).await {
-            Ok(Some((row, incomplete))) => {
-                let (record, status) = shown(row, incomplete);
+            Ok(Some((row, cached))) => {
+                let (record, status) = shown(row, cached);
                 self.publish_since(seen, false, |shown, current| {
                     (*shown, *current) = (record, status)
                 });

@@ -52,6 +52,8 @@ pub struct ViewStats {
     pub state: ViewState,
     /// Rows with an optimistic write still in flight.
     pub pending_writes: usize,
+    /// Accepted inserts no read has confirmed yet: queued upstream.
+    pub unconfirmed: usize,
     /// Rows whose detail load or write failed.
     pub failed: usize,
 }

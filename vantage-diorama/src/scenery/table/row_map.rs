@@ -105,6 +105,7 @@ fn tally(summary: &mut RowStatusSummary, status: &RowStatus, delta: isize) {
         RowStatus::Fresh => &mut summary.fresh,
         RowStatus::Incomplete => &mut summary.incomplete,
         RowStatus::PendingWrite => &mut summary.pending_write,
+        RowStatus::Unconfirmed => &mut summary.unconfirmed,
         RowStatus::LoadFailed { .. } | RowStatus::WriteFailed { .. } => &mut summary.failed,
     };
     *bucket = bucket.wrapping_add_signed(delta);

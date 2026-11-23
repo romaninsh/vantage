@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.2.0 — 2026-11-22
+
+- A view shows an insert the backend only accepted as `RowStatus::Unconfirmed` instead of
+  `Fresh`, so a grid or form can mark it queued. The next read that finds the row makes it
+  `Fresh`. `RowStatusSummary::unconfirmed` and `ViewStats::unconfirmed` count such rows.
+- A record view reports such a row as `RecordStatus::Unconfirmed`, so a form can say "Queued".
+
 ## 2.1.0 — 2026-11-22
 
 - A flash's `FlashOutcome` carries `confirmation: Confirmation` (`Applied`, `Created`, `Existed`,

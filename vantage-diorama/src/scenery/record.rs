@@ -35,6 +35,9 @@ pub enum RecordStatus {
     /// The row is shown, but its augmented values haven't been fetched yet.
     Incomplete,
     Fresh,
+    /// The row is an insert the backend accepted that no read has confirmed
+    /// yet: queued, it may still land or vanish.
+    Unconfirmed,
     NotFound,
     Error(String),
 }
@@ -85,13 +88,23 @@ impl RecordSceneryState {
     pub(crate) async fn read(
         &self,
         dio: &Arc<DioInner>,
-    ) -> Result<Option<(Record<CborValue>, bool)>> {
+    ) -> Result<Option<(Record<CborValue>, CacheStatus)>> {
         let reader = self.reader(dio);
         let Some(row) = dio.read_admitted(reader.as_ref(), &self.id).await? else {
             return Ok(None);
         };
-        let incomplete = self.awaits_detail(dio).await?;
-        Ok(Some((row, incomplete)))
+        if self.awaits_detail(dio).await? {
+            return Ok(Some((row, CacheStatus::Incomplete)));
+        }
+        let unconfirmed = matches!(
+            dio.cache.get_value_with_status(&self.id).await?,
+            Some((_, CacheStatus::Unconfirmed))
+        );
+        let status = match unconfirmed {
+            true => CacheStatus::Unconfirmed,
+            false => CacheStatus::Complete,
+        };
+        Ok(Some((row, status)))
     }
 
     /// Whether the cached row waits for the detail pass; queues it, one
@@ -173,7 +186,7 @@ impl RecordSceneryState {
             return;
         };
         let (record, status) = match self.read(&dio_inner).await {
-            Ok(Some((row, incomplete))) => shown(row, incomplete),
+            Ok(Some((row, status))) => shown(row, status),
             Ok(None) if self.fetching.load(Ordering::SeqCst) => (None, RecordStatus::Loading),
             Ok(None) => (None, RecordStatus::NotFound),
             Err(e) => return self.set_error(e.to_string()),
@@ -211,15 +224,16 @@ impl RecordSceneryState {
     }
 }
 
-/// `row` as shown, `Incomplete` when it waits for its detail pass.
+/// `row` as shown: `Incomplete` when it waits for its detail pass,
+/// `Unconfirmed` when the backend only accepted it.
 pub(crate) fn shown(
     row: Record<CborValue>,
-    incomplete: bool,
+    status: CacheStatus,
 ) -> (Option<Arc<EnrichedRecord>>, RecordStatus) {
-    let (record, status) = if incomplete {
-        (EnrichedRecord::incomplete(row), RecordStatus::Incomplete)
-    } else {
-        (EnrichedRecord::fresh(row), RecordStatus::Fresh)
+    let (record, status) = match status {
+        CacheStatus::Incomplete => (EnrichedRecord::incomplete(row), RecordStatus::Incomplete),
+        CacheStatus::Unconfirmed => (EnrichedRecord::unconfirmed(row), RecordStatus::Unconfirmed),
+        _ => (EnrichedRecord::fresh(row), RecordStatus::Fresh),
     };
     (Some(Arc::new(record)), status)
 }

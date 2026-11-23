@@ -43,6 +43,11 @@ impl EnrichedRecord {
         Self::now(record, RowStatus::PendingWrite)
     }
 
+    /// Wrap a row the backend accepted but no read has confirmed yet.
+    pub fn unconfirmed(record: Record<CborValue>) -> Self {
+        Self::now(record, RowStatus::Unconfirmed)
+    }
+
     /// Wrap a row whose optimistic write failed and was rolled back: `record`
     /// is the restored pre-image, `status` carries the error for the UI.
     pub fn write_failed(record: Record<CborValue>, error: String) -> Self {
@@ -73,6 +78,9 @@ pub enum RowStatus {
     /// awaiting hydration by the detail pass.
     Incomplete,
     PendingWrite,
+    /// An insert the backend accepted (`Inserted::Accepted`) that no read of
+    /// the master has confirmed yet: queued, it may still land or vanish.
+    Unconfirmed,
     WriteFailed {
         error: String,
     },
