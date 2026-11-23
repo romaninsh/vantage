@@ -363,7 +363,7 @@ async fn surreal_relation_exists() {
         .with_many("lines", "invoice", line_table)
         .with_relation_column(
             "r",
-            RelationQuery::new("lines").with_condition(surreal_expr!("void = true OR net = 7")),
+            RelationQuery::new("lines").with_condition(surreal_expr!("void = true\nOR(net = 7)")),
             Aggregate::Exists,
         )
         .unwrap();

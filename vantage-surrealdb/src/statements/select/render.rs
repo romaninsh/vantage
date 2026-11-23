@@ -136,16 +136,16 @@ impl<T: QueryResult> Expressive<AnySurrealType> for SurrealSelect<T> {
     }
 }
 
-/// `conditions` joined with `AND`. Next to another condition, one holding
-/// an `OR` is wrapped: `AND` binds tighter, so `x = $parent.id AND a OR b`
-/// would read `b` rows of every parent.
+/// `conditions` joined with `AND`. Next to another condition, one holding an
+/// operator that binds looser than `AND` is wrapped, so
+/// `x = $parent.id AND a OR b` can't read `b` rows of every parent.
+/// Conditions without one render bare, as before.
 pub(crate) fn and_all(conditions: Vec<Expr>) -> Expr {
     let many = conditions.len() > 1;
     let parts = conditions
         .into_iter()
         .map(|c| {
-            let text = c.preview().to_ascii_uppercase();
-            if many && (text.contains(" OR ") || text.contains("||")) {
+            if many && binds_looser_than_and(&c.preview()) {
                 surreal_expr!("({})", (c))
             } else {
                 c
@@ -153,4 +153,17 @@ pub(crate) fn and_all(conditions: Vec<Expr>) -> Expr {
         })
         .collect();
     Expression::from_vec(parts, " AND ")
+}
+
+/// Whether `surql` holds `OR` as a word (any spacing, any case), `||`, or a
+/// null-coalescing `??` / `?:`. It errs towards `true`: a match inside a
+/// literal or a sub-select only adds parentheses.
+fn binds_looser_than_and(surql: &str) -> bool {
+    let upper = surql.to_ascii_uppercase();
+    let word = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '$';
+    let or_word = upper.match_indices("OR").any(|(at, _)| {
+        !upper[..at].chars().next_back().is_some_and(word)
+            && !upper[at + 2..].chars().next().is_some_and(word)
+    });
+    or_word || ["||", "??", "?:"].iter().any(|op| upper.contains(op))
 }
