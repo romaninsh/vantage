@@ -1,6 +1,6 @@
 use crate::{AnySurrealType, Expr, surreal_expr};
 use vantage_expressions::result::QueryResult;
-use vantage_expressions::{Expression, Expressive};
+use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 
 use super::SurrealSelect;
 use super::select_target::SelectTarget;
@@ -145,7 +145,7 @@ pub(crate) fn and_all(conditions: Vec<Expr>) -> Expr {
     let parts = conditions
         .into_iter()
         .map(|c| {
-            if many && binds_looser_than_and(&c.preview()) {
+            if many && needs_group(&c) {
                 surreal_expr!("({})", (c))
             } else {
                 c
@@ -155,14 +155,68 @@ pub(crate) fn and_all(conditions: Vec<Expr>) -> Expr {
     Expression::from_vec(parts, " AND ")
 }
 
-/// Whether `surql` holds `OR` as a word (any spacing, any case), `||`, or a
-/// null-coalescing `??` / `?:`, outside one pair of parentheses around the
-/// whole condition. It errs towards `true`: a match inside a literal or a
-/// sub-select only adds parentheses.
-fn binds_looser_than_and(surql: &str) -> bool {
-    if enclosed(surql) {
-        return false;
+/// Whether `condition` holds an operator that binds looser than `AND`
+/// outside one pair of parentheses around all of it. It reads the
+/// condition's shape (bound values as `?`, so nothing a user typed) with
+/// quoted literals blanked; an unclosed quote wraps.
+fn needs_group(condition: &Expr) -> bool {
+    let Some(text) = unquoted(&shape(condition)) else {
+        return true;
+    };
+    !enclosed(&text) && binds_looser_than_and(&text)
+}
+
+/// `expr`'s text with every bound value as `?`: what the templates say,
+/// never a value a caller passed in.
+fn shape(expr: &Expr) -> String {
+    let mut out = String::new();
+    let mut params = expr.parameters.iter();
+    let mut parts = expr.template.split("{}").peekable();
+    while let Some(part) = parts.next() {
+        out.push_str(part);
+        if parts.peek().is_some() {
+            match params.next() {
+                Some(ExpressiveEnum::Nested(nested)) => out.push_str(&shape(nested)),
+                _ => out.push('?'),
+            }
+        }
     }
+    out
+}
+
+/// `text` with quoted literals and identifiers (`'…'`, `"…"`, `` `…` ``,
+/// `⟨…⟩`) blanked, or `None` when one isn't closed.
+fn unquoted(text: &str) -> Option<String> {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars();
+    while let Some(c) = chars.next() {
+        let close = match c {
+            '\'' | '"' | '`' => c,
+            '⟨' => '⟩',
+            _ => {
+                out.push(c);
+                continue;
+            }
+        };
+        out.push(' ');
+        loop {
+            match chars.next() {
+                None => return None,
+                Some('\\') => {
+                    chars.next();
+                }
+                Some(x) if x == close => break,
+                Some(_) => {}
+            }
+        }
+    }
+    Some(out)
+}
+
+/// Whether `surql` holds `OR` as a word (any spacing, any case), `||`, or a
+/// null-coalescing `??` / `?:`. A match inside a sub-select only adds
+/// parentheses.
+fn binds_looser_than_and(surql: &str) -> bool {
     let upper = surql.to_ascii_uppercase();
     let word = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '$';
     let or_word = upper.match_indices("OR").any(|(at, _)| {
@@ -172,9 +226,8 @@ fn binds_looser_than_and(surql: &str) -> bool {
     or_word || ["||", "??", "?:"].iter().any(|op| upper.contains(op))
 }
 
-/// Whether `text` is one parenthesised group: its first `(` closes at its
-/// last character. A `(` or `)` inside a literal can only make this `false`,
-/// which wraps once more.
+/// Whether `text` (literals already blanked) is one parenthesised group:
+/// its first `(` closes at its last character.
 fn enclosed(text: &str) -> bool {
     let text = text.trim();
     if !text.starts_with('(') {
