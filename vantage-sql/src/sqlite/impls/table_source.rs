@@ -12,7 +12,8 @@ use vantage_expressions::traits::datasource::ExprDataSource;
 use vantage_expressions::traits::expressive::ExpressiveEnum;
 use vantage_expressions::{Expression, Expressive, Selectable};
 use vantage_table::column::core::{Column, ColumnType};
-use vantage_table::table::Table;
+use vantage_table::sorting::SortDirection;
+use vantage_table::table::{Aggregate, Table};
 use vantage_table::traits::column_like::ColumnLike;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
@@ -22,8 +23,10 @@ use crate::declared::{sql_coerce_fn, sql_declared_types, without_option};
 use crate::primitives::identifier::ident;
 use crate::sqlite::SqliteDB;
 use crate::sqlite::types::{AnySqliteType, SqliteType};
+use crate::set_writes::id_target;
 use crate::table_writes::{
-    guard_insert, guard_new_row, guard_patch, guard_replace, settle_failed_insert, upsert_on_id,
+    existing_by_record, guard_insert, guard_new_row, guard_patch, guard_replace, null_derived_id,
+    settle_failed_derived_insert, settle_failed_insert, upsert_on_id,
 };
 use vantage_expressions::expr_any;
 
@@ -197,6 +200,35 @@ impl TableSource for SqliteDB {
         vantage_table::conditions::condition_column_of(&condition.0)
     }
 
+    fn expression_condition(
+        &self,
+        expr: Expression<Self::Value>,
+    ) -> Result<Self::Condition> {
+        Ok(expr.into())
+    }
+
+    fn render_list_aggregate(
+        &self,
+        rows: Expression<Self::Value>,
+        aggregate: &Aggregate,
+        order: &[SortDirection],
+    ) -> Result<Expression<Self::Value>> {
+        // The derived table is in order; SQLite aggregates in scan order.
+        let _ = order;
+        Ok(match aggregate {
+            Aggregate::JoinConcat { separator, .. } => expr_any!(
+                "(SELECT COALESCE(group_concat(v, {}), '') FROM ({}) AS r)",
+                (AnySqliteType::from(separator.clone())),
+                (rows)
+            ),
+            Aggregate::JoinJson(_) => expr_any!(
+                "(SELECT COALESCE(json_group_array(v), '[]') FROM ({}) AS r)",
+                (rows)
+            ),
+            other => return Err(error!(format!("not a list aggregate: {other:?}"))),
+        })
+    }
+
     fn can_confine_writes(&self) -> bool {
         true
     }
@@ -339,7 +371,7 @@ impl TableSource for SqliteDB {
         let id_field_name = table.id_field_name();
 
         let id_val = id.clone();
-        let condition = sqlite_expr!("{} = {}", (ident(&id_field_name)), id_val);
+        let condition = sqlite_expr!("{} = {}", (id_target(table)?), id_val);
         let select = table.try_select()?.with_condition(condition);
         let result = self.execute(&select.expr()).await?;
 
@@ -481,9 +513,8 @@ impl TableSource for SqliteDB {
     {
         guard_patch(self, table, id, partial).await?;
 
-        let id_field_name = table.id_field_name();
         let id_val = id.clone();
-        let id_condition = sqlite_expr!("{} = {}", (ident(&id_field_name)), id_val);
+        let id_condition = sqlite_expr!("{} = {}", (id_target(table)?), id_val);
         let mut update = crate::sqlite::statements::SqliteUpdate::new(table.table_name())
             .with_record(partial)
             .with_condition(id_condition);
@@ -499,10 +530,9 @@ impl TableSource for SqliteDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_field_name = table.id_field_name();
 
         let id_val = id.clone();
-        let id_condition = sqlite_expr!("{} = {}", (ident(&id_field_name)), id_val);
+        let id_condition = sqlite_expr!("{} = {}", (id_target(table)?), id_val);
         // A missing row, or one outside the conditions, matches nothing: Ok.
         let mut delete = crate::sqlite::statements::SqliteDelete::new(table.table_name())
             .with_condition(id_condition);
@@ -551,6 +581,43 @@ impl TableSource for SqliteDB {
                 table = table.table_name()
             )
         })
+    }
+
+    /// `INSERT … RETURNING (<id expression>) AS <id>`; a failed insert
+    /// settles by the record.
+    async fn insert_table_derived_id_value<E>(
+        &self,
+        table: &Table<Self, E>,
+        record: &Record<Self::Value>,
+    ) -> Result<(Self::Id, Inserted<Self::Value>)>
+    where
+        E: Entity<Self::Value>,
+    {
+        guard_new_row(self, table, record).await?;
+        if let Some(existed) = existing_by_record(self, table, record).await? {
+            return Ok(existed);
+        }
+        let id_field_name = table.id_field_name();
+        let insert =
+            crate::sqlite::statements::SqliteInsert::new(table.table_name()).with_record(record);
+        let returning = expr_any!(
+            "{} RETURNING {} AS {}",
+            (or_abort(insert.expr())),
+            (id_target(table)?),
+            (ident(&id_field_name))
+        );
+        let result = match self.execute(&returning).await {
+            Ok(result) => result,
+            Err(e) => return settle_failed_derived_insert(self, table, record, e).await,
+        };
+        let Some((id, _)) = parse_rows(table, result, &id_field_name)?.swap_remove_index(0) else {
+            return Err(null_derived_id(table));
+        };
+        let stored = self
+            .get_table_value(table, &id)
+            .await?
+            .ok_or_else(|| error!("Inserted row disappeared", id = id.clone()))?;
+        Ok((id, Inserted::Created(stored)))
     }
 
     fn related_in_condition<SourceE: Entity<Self::Value> + 'static>(

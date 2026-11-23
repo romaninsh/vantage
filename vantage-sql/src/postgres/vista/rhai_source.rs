@@ -78,3 +78,38 @@ pub(crate) fn eval_to_select(
 ) -> vantage_core::Result<PostgresSelect> {
     eval_to_select_args(code, base, &[])
 }
+
+/// The host `expr:` scripts run on: the SQL vocabulary plus `table.ref(…)`
+/// relation expressions over this dialect's tables.
+fn __expr_host() -> &'static vantage_rhai::Host {
+    static HOST: std::sync::LazyLock<vantage_rhai::Host> = std::sync::LazyLock::new(|| {
+        vantage_rhai::Host::builder(vantage_rhai::Limits::background())
+            .vocab(SqlVocab)
+            .vocab_fn(crate::rhai_engine::relation::register_relations::<crate::postgres::PostgresDB>)
+            .build()
+    });
+    &HOST
+}
+
+/// Evaluate a column's `expr:` script into the expression the column
+/// projects. With `table`, the script has it as `table`, so it can build a
+/// relation expression; `env` carries the caller's other variables
+/// (`session`, `app`).
+pub fn eval_column_expr(
+    code: &str,
+    table: Option<vantage_table::table::Table<crate::postgres::PostgresDB, vantage_types::EmptyEntity>>,
+    env: vantage_rhai::Env,
+) -> vantage_core::Result<vantage_expressions::Expression<AnyPostgresType>> {
+    let env = match table {
+        Some(table) => env.var(
+            "table",
+            rhai::Dynamic::from(crate::rhai_engine::relation::RhaiTable::new(table)),
+        ),
+        None => env,
+    };
+    __expr_host()
+        .compile(&vantage_rhai::Block::from(code))
+        .and_then(|script| script.eval_as::<Ex>(&env))
+        .map(|expr| expr.into_inner())
+        .map_err(|e| vantage_core::error!(format!("expr: {e}"), detail = e.to_string()))
+}

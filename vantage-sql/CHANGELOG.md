@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.18.0 — 2026-11-23
+
+- Expression ids on SQLite, PostgreSQL and MySQL: the insert ends in `RETURNING (<id expression>) AS <id>` (MySQL reads the row back by its values), a duplicate settles to `Existed` by the record's values, and a NULL computed id is an error naming the table. By-id reads and writes compare the expression. The vista shell's insert without an id reports `Existed` for such a table.
+- Relation expressions on SQLite, PostgreSQL and MySQL: `join_concat` renders `group_concat` / `string_agg … ORDER BY` / `GROUP_CONCAT … ORDER BY … SEPARATOR`, `join_json` renders `json_group_array` / `json_agg … ORDER BY` / `JSON_ARRAYAGG` over the rows in order, both `""` and `[]` over no rows. A roll-up of a child's expression column aggregates the expression instead of being refused.
+- Rhai: `sql::json(expr, path)` (a key or a list of keys, as text) and `sql::json_raw(expr, path)` (raw JSON), over `JsonExtract`. Path keys are letters, digits, `_` and `-`; anything else is refused, since keys are written into the SQL.
+- Rhai: `eval_column_expr(code, table, env)` per dialect (`sqlite::vista::rhai_source`, `postgres::…`, `mysql::…`) evaluates an `expr:` script; with `table` in scope the script builds relation expressions: `table.ref(name)`, `.where(col, value)`, `.where(expr)`, `.order_by(col[, "desc"])`, `.limit(n)`, then `count`, `sum`, `min`, `max`, `avg`, `exists`, `first`, `join_concat`, `join_json` or `field`.
+- `expr:` columns in SQLite, PostgreSQL and MySQL specs: the script runs when a query includes the column, with the table as `table`; `Table::check_expressions` (the factory's load check) runs it once.
+- SQLite and PostgreSQL vistas take native conditions (`Capability::NativeConditions`), as MySQL's do: the dialect's condition or a query expression; `self.with_condition(<expr>)` in their scripts.
+- `where_expr(|t| …)` on data handles and rule tables, on SQLite, PostgreSQL and MySQL. `rhai_engine::relation::register_relation_vocab` registers the relation vocabulary of every enabled dialect for a data-script host.
+
 ## 0.17.1 — 2026-11-23
 
 - A roll-up of a child's expression column aggregates the expression (vantage-table 5.2) instead of being refused.

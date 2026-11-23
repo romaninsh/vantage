@@ -10,6 +10,8 @@ pub(crate) mod types;
 #[cfg(any(feature = "sqlite", feature = "postgres", feature = "mysql"))]
 mod declared;
 #[cfg(any(feature = "sqlite", feature = "postgres", feature = "mysql"))]
+mod list_aggregate;
+#[cfg(any(feature = "sqlite", feature = "postgres", feature = "mysql"))]
 mod set_writes;
 #[cfg(any(feature = "sqlite", feature = "postgres", feature = "mysql"))]
 mod sql_exec;

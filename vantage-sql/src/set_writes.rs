@@ -61,10 +61,72 @@ where
         "SELECT 1 AS {} FROM {} WHERE {} = {} LIMIT 1",
         (id_field),
         (T::quoted(table.table_name())),
-        (id_field),
+        (id_target(table)?),
         id_val
     );
     Ok(has_rows::<T>(db.execute(&probe).await?))
+}
+
+/// What a by-id `WHERE` compares with the id: the id column, or its
+/// expression when the database computes the id from the row.
+pub(crate) fn id_target<T, E>(table: &Table<T, E>) -> Result<Expression<T::Value>>
+where
+    T: SetWrites,
+    E: Entity<T::Value>,
+{
+    Ok(match table.id_expression()? {
+        Some(expr) => expr_any!("({})", (expr)),
+        None => T::quoted(&table.id_field_name()),
+    })
+}
+
+/// The one row of the set matching every stored column `record` sets (a
+/// NULL as `IS NULL`), with its id: how a table whose id is an expression
+/// finds the row an insert wrote, or one already holding the record. `None`
+/// when no row matches, or more than one does, so the record doesn't single
+/// one out.
+pub(crate) async fn find_by_record<T, E>(
+    db: &T,
+    table: &Table<T, E>,
+    record: &Record<T::Value>,
+) -> Result<Option<(String, Record<T::Value>)>>
+where
+    T: SetWrites,
+    E: Entity<T::Value>,
+{
+    let mut matching = table.clone();
+    for (column, value) in record.iter() {
+        if !table.columns().contains_key(column) || table.is_calculated_column(column) {
+            continue;
+        }
+        let condition = match T::into_cbor(value.clone()) {
+            CborValue::Null => {
+                db.expression_condition(expr_any!("{} IS NULL", (T::quoted(column))))?
+            }
+            _ => db.eq_value_condition(column, value.clone())?,
+        };
+        matching.add_condition(condition);
+    }
+    let mut rows = db.list_table_values(&matching).await?.into_iter();
+    Ok(match (rows.next(), rows.next()) {
+        (Some(row), None) => Some(row),
+        _ => None,
+    })
+}
+
+/// Whether `record` sets every stored column of `table` but the id: only
+/// then does a row matching it hold the same record.
+pub(crate) fn covers_record<T, E>(table: &Table<T, E>, record: &Record<T::Value>) -> bool
+where
+    T: SetWrites,
+    E: Entity<T::Value>,
+{
+    let id = table.id_field_name();
+    table
+        .columns()
+        .keys()
+        .filter(|c| **c != id && !table.is_calculated_column(c))
+        .all(|c| record.contains_key(c))
 }
 
 /// Whether `row` — the record as it would be stored, id included —

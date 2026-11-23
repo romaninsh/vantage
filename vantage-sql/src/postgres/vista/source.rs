@@ -15,7 +15,7 @@ use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Entity};
 #[cfg(feature = "rhai")]
 use vantage_vista::rhai::RuleHandle;
-use vantage_vista::{Transaction, Vista, VistaChangeStream};
+use vantage_vista::{NativeCondition, Transaction, Vista, VistaChangeStream};
 
 #[cfg(feature = "rhai")]
 use crate::postgres::vista::rhai_source::register_postgres_onto;
@@ -146,6 +146,35 @@ impl SqlShellDialect for PostgresDB {
     /// `listen:` says nothing about triggers on its targets' tables. The
     /// parent's `listen:` tables are not inherited either; they describe
     /// what the parent's own rows read.
+    /// Takes the dialect's own condition or a query expression.
+    fn add_native_condition<E>(shell: &mut Shell<Self, E>, condition: NativeCondition) -> Result<()>
+    where
+        E: Entity<AnyPostgresType> + 'static,
+    {
+        crate::sql_vista::add_native_condition(shell, condition)
+    }
+
+    /// The PostgreSQL query vocabulary, `self.with_condition(<expr>)`, and the
+    /// relation vocabulary a `where_expr` closure's `table` reads.
+    #[cfg(feature = "rhai")]
+    fn register_rhai_extensions(engine: &mut vantage_rhai::rhai::Engine) {
+        crate::postgres::vista::rhai_source::register_postgres_onto(engine);
+        crate::sql_vista::scripted::register_handle_verbs::<Self>(engine);
+    }
+
+    #[cfg(feature = "rhai")]
+    fn script_table<E>(shell: &Shell<Self, E>) -> Option<vantage_rhai::rhai::Dynamic>
+    where
+        E: Entity<AnyPostgresType> + 'static,
+    {
+        crate::sql_vista::scripted::script_table(shell)
+    }
+
+    #[cfg(feature = "rhai")]
+    fn script_condition(expr: vantage_rhai::rhai::Dynamic) -> Result<vantage_vista::NativeCondition> {
+        crate::sql_vista::scripted::script_condition::<Self>(expr)
+    }
+
     fn target_factory<E>(
         shell: &Shell<Self, E>,
     ) -> impl Fn(Table<Self, EmptyEntity>) -> Result<Vista> + Send + Sync + 'static
@@ -185,4 +214,5 @@ pub fn register_rule_conditions(engine: &mut Engine) {
             Ok(h.clone())
         },
     );
+    crate::sql_vista::scripted::register_rule_where_expr::<crate::postgres::PostgresDB>(engine);
 }

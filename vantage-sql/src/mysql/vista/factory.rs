@@ -113,6 +113,15 @@ impl SqlSpecDialect for MysqlDB {
     }
 
     #[cfg(feature = "rhai")]
+    fn eval_column_expr(
+        code: &str,
+        table: Option<Table<Self, vantage_types::EmptyEntity>>,
+        env: vantage_rhai::Env,
+    ) -> Result<vantage_expressions::Expression<<Self as vantage_table::traits::table_source::TableSource>::Value>> {
+        crate::mysql::vista::rhai_source::eval_column_expr(code, table, env)
+    }
+
+    #[cfg(feature = "rhai")]
     fn eval_select(
         code: &str,
         base: Option<MysqlSelect>,

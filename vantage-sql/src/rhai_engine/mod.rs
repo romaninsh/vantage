@@ -27,6 +27,8 @@ pub mod select_methods;
 #[macro_use]
 pub mod operators;
 pub mod window_case;
+#[cfg(any(feature = "sqlite", feature = "postgres", feature = "mysql"))]
+pub mod relation;
 
 // Re-export wrapper types so macros can reference them via $crate
 pub use types::{RhaiCase, RhaiExpr, RhaiIdent, RhaiSelect, RhaiWindow};

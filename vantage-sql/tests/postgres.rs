@@ -3,6 +3,14 @@
 #[path = "common/safe_writes.rs"]
 mod safe_writes_contract;
 
+#[macro_use]
+#[path = "common/expression_ids.rs"]
+mod expression_ids_contract;
+
+#[macro_use]
+#[path = "common/relation_aggregates.rs"]
+mod relation_aggregates_contract;
+
 #[cfg(all(feature = "postgres", feature = "vista"))]
 #[path = "common/dotted.rs"]
 mod dotted;
@@ -55,6 +63,10 @@ mod postgres {
     #[cfg(all(feature = "vista", feature = "rhai"))]
     #[path = "7_rule_conditions.rs"]
     mod rule_conditions;
+    #[path = "9_expression_ids.rs"]
+    mod expression_ids;
+    #[path = "5_relation_aggregates.rs"]
+    mod relation_aggregates;
     #[path = "9_safe_writes.rs"]
     mod safe_writes;
     #[path = "2_search.rs"]

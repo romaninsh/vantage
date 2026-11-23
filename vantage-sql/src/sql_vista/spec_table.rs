@@ -8,6 +8,8 @@ use ciborium::Value as CborValue;
 use vantage_core::Result;
 #[cfg(not(feature = "rhai"))]
 use vantage_core::error;
+#[cfg(feature = "rhai")]
+use vantage_expressions::Expression;
 use vantage_expressions::{Expressive, SelectableDataSource};
 use vantage_table::source::SelectSource;
 use vantage_table::table::spec::spec_references;
@@ -79,6 +81,15 @@ pub(crate) trait SqlSpecDialect:
         base: Option<Self::Query>,
         args: &[(String, String)],
     ) -> Result<Self::Query>;
+
+    /// Run a column's `expr:` script into its expression, `table` in scope
+    /// when given (relation expressions).
+    #[cfg(feature = "rhai")]
+    fn eval_column_expr(
+        code: &str,
+        table: Option<Table<Self, EmptyEntity>>,
+        env: vantage_rhai::Env,
+    ) -> Result<Expression<<Self as TableSource>::Value>>;
 }
 
 /// A spec lowered for a dialect's shell.
@@ -172,6 +183,11 @@ where
     table.set_spec_id(&spec.resolve_id_column("id"), &spec.columns)?;
 
     let mut table = table.with_spec_references(spec, env, build_spec_table::<T>)?;
+    for (name, col_spec) in &spec.columns {
+        if let Some(code) = &col_spec.expr {
+            table = with_expr_column::<T>(table, name, code)?;
+        }
+    }
 
     if spec.columns.keys().any(|n| n.contains('.')) {
         // Every non-lazy spec column is listed, so the plain set keeps
@@ -232,6 +248,32 @@ where
     let mut table = table.with_spec_references(spec, env, build_spec_table::<T>)?;
     env.inject(&spec.name, &mut table, build_spec_table::<T>)?;
     Ok(table)
+}
+
+/// Column `name` as its `expr:` script's expression. The script runs each
+/// time a query that includes the column is built, with the table as
+/// `table`, so a relation expression's target is built then, never here.
+/// [`Table::check_expressions`] runs it once at the load.
+#[cfg(feature = "rhai")]
+fn with_expr_column<T>(table: Table<T, EmptyEntity>, name: &str, code: &str) -> Result<Table<T, EmptyEntity>>
+where
+    T: SqlSpecDialect,
+{
+    let code = code.to_string();
+    Ok(table.with_try_expression(name, move |table| {
+        T::eval_column_expr(&code, Some(table.clone()), vantage_rhai::Env::new())
+    }))
+}
+
+#[cfg(not(feature = "rhai"))]
+fn with_expr_column<T>(_table: Table<T, EmptyEntity>, name: &str, _code: &str) -> Result<Table<T, EmptyEntity>>
+where
+    T: SqlSpecDialect,
+{
+    Err(error!(
+        "column declares an `expr:` script but vantage-sql was built without the `rhai` feature",
+        column = name
+    ))
 }
 
 #[cfg(feature = "rhai")]

@@ -53,6 +53,7 @@ pub fn register_rule_conditions(engine: &mut Engine) {
             Ok(h.clone())
         },
     );
+    crate::sql_vista::scripted::register_rule_where_expr::<crate::mysql::MysqlDB>(engine);
 }
 
 impl<E> MysqlTableShell<E>

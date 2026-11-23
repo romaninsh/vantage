@@ -15,7 +15,9 @@ use vantage_expressions::{Expression, Expressive, expr_any};
 
 #[cfg(any(feature = "sqlite", feature = "postgres"))]
 use crate::primitives::identifier::{Identifier, ident};
-use crate::set_writes::{SetWrites, id_exists_anywhere, row_in_set};
+use crate::set_writes::{
+    SetWrites, covers_record, find_by_record, id_exists_anywhere, row_in_set,
+};
 
 /// Checks before an insert of `id`. `Some(row)` when the set already holds
 /// `id`: the insert is a no-op that reports the stored row as `Existed`. On a conditioned
@@ -64,6 +66,69 @@ where
         return Err(held_outside(table, id));
     }
     Err(err)
+}
+
+/// Before an insert into a table whose id is an expression: the row already
+/// holding `record`, reported as `Existed`. Only a record that sets every
+/// stored column is looked up, so a partial one can't match another row. On
+/// PostgreSQL this keeps a known duplicate from failing the statement, which
+/// would abort an open transaction.
+pub(crate) async fn existing_by_record<T, E>(
+    db: &T,
+    table: &Table<T, E>,
+    record: &Record<T::Value>,
+) -> Result<Option<(String, Inserted<T::Value>)>>
+where
+    T: SetWrites,
+    E: Entity<T::Value>,
+{
+    if !covers_record(table, record) {
+        return Ok(None);
+    }
+    Ok(find_by_record(db, table, record)
+        .await?
+        .map(|(id, stored)| (id, Inserted::Existed(stored))))
+}
+
+/// Settle a failed insert into a table whose id is an expression. Only a
+/// duplicate key (another writer's row) or a lost reply (this call's row)
+/// can have left the record stored; then the one row in the set matching it
+/// is reported by [`landed`] with its computed id. Any other failure, or no
+/// single matching row, is `err`.
+pub(crate) async fn settle_failed_derived_insert<T, E>(
+    db: &T,
+    table: &Table<T, E>,
+    record: &Record<T::Value>,
+    err: VantageError,
+) -> Result<(String, Inserted<T::Value>)>
+where
+    T: SetWrites,
+    E: Entity<T::Value>,
+{
+    if !(err.is_unavailable() || crate::sql_exec::is_unique_violation(&err)) {
+        return Err(err);
+    }
+    match find_by_record(db, table, record).await? {
+        Some((id, stored)) => Ok((id, landed(&err, stored))),
+        None => Err(err),
+    }
+}
+
+/// An insert into a table whose id is an expression, where the expression
+/// came back NULL: a column it reads is NULL, so the row has no id.
+pub(crate) fn null_derived_id<T, E>(table: &Table<T, E>) -> VantageError
+where
+    T: TableSource,
+    E: Entity<T::Value>,
+{
+    error!(
+        format!(
+            "insert into `{}` returned a NULL id: a column its id expression reads is NULL, \
+             or the record doesn't single out the row it wrote",
+            table.table_name()
+        ),
+        table = table.table_name()
+    )
 }
 
 /// The outcome of a failed INSERT whose row is in the set afterwards. A

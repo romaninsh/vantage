@@ -287,6 +287,55 @@ where
     Ok(RhaiExpr(gc.expr()))
 }
 
+/// `sql::json(expr, path)`: the JSON value at `path` (a key or a list of
+/// keys) of `expr`, as text; `raw` keeps it JSON.
+pub fn fn_json<V>(
+    expr: rhai::Dynamic,
+    path: rhai::Dynamic,
+    raw: bool,
+) -> Result<RhaiExpr<V>, Box<rhai::EvalAltResult>>
+where
+    V: Clone + Debug + Display + 'static,
+    Identifier: Expressive<V>,
+    crate::primitives::json_extract::JsonExtract<V>: Expressive<V>,
+{
+    use crate::primitives::json_extract::JsonExtract;
+    let keys: Vec<String> = if let Some(key) = path.clone().try_cast::<rhai::ImmutableString>() {
+        vec![key.to_string()]
+    } else if let Some(keys) = path.clone().try_cast::<Array>() {
+        keys.into_iter()
+            .map(|k| {
+                k.try_cast::<rhai::ImmutableString>()
+                    .map(|k| k.to_string())
+                    .ok_or_else(|| super::convert::rhai_err("sql::json path keys are strings"))
+            })
+            .collect::<Result<_, _>>()?
+    } else {
+        return Err(super::convert::rhai_err(format!(
+            "sql::json path is a key or a list of keys, got '{}'",
+            super::convert::friendly_type_name(&path)
+        )));
+    };
+    if keys.is_empty() {
+        return Err(super::convert::rhai_err("sql::json needs a path"));
+    }
+    // The keys are written into the SQL as literals: only plain names, so
+    // no quote, backslash or `{}` can reach the statement.
+    if let Some(bad) = keys.iter().find(|k| {
+        k.is_empty()
+            || !k
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    }) {
+        return Err(super::convert::rhai_err(format!(
+            "sql::json path keys are letters, digits, `_` and `-`; got {bad:?}"
+        )));
+    }
+    let extract = JsonExtract::new(unwrap_expr::<V>(expr)?, keys);
+    let extract = if raw { extract.as_json() } else { extract };
+    Ok(RhaiExpr(extract.expr()))
+}
+
 pub fn fn_mul<V: Clone + Debug + Display + 'static>(
     a: rhai::Dynamic,
     b: rhai::Dynamic,
@@ -391,7 +440,13 @@ macro_rules! register_constructors {
         .func(
             "group_concat",
             $crate::rhai_engine::constructors::fn_group_concat::<$V>,
-        );
+        )
+        .func("json", |e: rhai::Dynamic, path: rhai::Dynamic| {
+            $crate::rhai_engine::constructors::fn_json::<$V>(e, path, false)
+        })
+        .func("json_raw", |e: rhai::Dynamic, path: rhai::Dynamic| {
+            $crate::rhai_engine::constructors::fn_json::<$V>(e, path, true)
+        });
 
         $engine.register_fn("dot_of", |id: &mut Id, prefix: &str| -> Id {
             $crate::rhai_engine::RhaiIdent($crate::rhai_engine::constructors::ident_dot_of(
