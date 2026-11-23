@@ -2,10 +2,10 @@
 //! dialects share. The rows arrive as a select projecting the value as `v`
 //! and each ordering expression as `o0`, `o1`…
 
-use vantage_table::sorting::SortDirection;
-
 /// `o0 ASC, o1 DESC`: the rows' order, by the ordering columns' aliases.
-pub(crate) fn order_list(order: &[SortDirection]) -> String {
+#[cfg(any(feature = "postgres", feature = "mysql"))]
+pub(crate) fn order_list(order: &[vantage_table::sorting::SortDirection]) -> String {
+    use vantage_table::sorting::SortDirection;
     order
         .iter()
         .enumerate()

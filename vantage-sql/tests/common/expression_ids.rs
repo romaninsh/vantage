@@ -95,6 +95,14 @@ macro_rules! expression_ids_tests {
                 };
                 assert_eq!(id_of(&existed), <$value>::from("7:5".to_string()));
                 assert_eq!(all.get_count().await.unwrap(), 1);
+
+                // A paged view of the set settles by the whole set: its page
+                // would hide the stored row.
+                let mut paged = set.clone();
+                paged.set_pagination(Some(vantage_table::pagination::Pagination::window(1, 1)));
+                let (_, third) = paged.insert_derived_value(&rec(&[("b", 5)])).await.unwrap();
+                assert!(matches!(third, Inserted::Existed(_)), "got: {third:?}");
+                assert_eq!(all.get_count().await.unwrap(), 1);
             }
 
             #[tokio::test]

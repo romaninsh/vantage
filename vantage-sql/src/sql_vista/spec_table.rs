@@ -252,6 +252,11 @@ where
         T::spec_column,
     )?;
     let mut table = table.with_spec_references(spec, env, build_spec_table::<T>)?;
+    for (name, col_spec) in &spec.columns {
+        if let Some(code) = &col_spec.expr {
+            table = with_expr_column::<T>(table, name, code)?;
+        }
+    }
     env.inject(&spec.name, &mut table, build_spec_table::<T>)?;
     Ok(table)
 }
