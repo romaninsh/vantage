@@ -46,6 +46,12 @@ pub(super) fn metadata_from_spec(
         .as_ref()
         .is_some_and(|b| b.base.is_some());
     let mut metadata = metadata_from_table(table);
+    // Only the spec knows a column reads the session (the loader flags it).
+    for (name, column) in &spec.columns {
+        if column.has_flag(vantage_vista::ColumnFlag::PerSession) {
+            metadata = metadata.with_column_flag(name, vantage_vista::ColumnFlag::PerSession);
+        }
+    }
     for mut reference in spec_references(spec, &table.id_field_name())? {
         if !metadata.references.contains_key(&reference.name) {
             return Err(error!(

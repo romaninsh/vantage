@@ -20,7 +20,8 @@ use vantage_surrealdb::surreal_expr;
 use vantage_surrealdb::surrealdb::SurrealDB;
 use vantage_surrealdb::vista::spec::SurrealVistaSpec;
 use vantage_table::pagination::Pagination;
-use vantage_table::table::{RollupOp, Table};
+use vantage_table::sorting::SortDirection;
+use vantage_table::table::{Aggregate, RelationQuery, RollupOp, Table};
 use vantage_types::EmptyEntity;
 use vantage_vista::SpecResolver;
 
@@ -256,21 +257,188 @@ async fn query_time_error(table: &Table<SurrealDB, EmptyEntity>) -> String {
     read.message().to_string()
 }
 
-/// A computed child column would aggregate the stored field of the same name,
-/// not the expression: refused when the column is read.
+/// A computed child column is aggregated by its expression, read through a
+/// sub-select.
 #[tokio::test]
-async fn rollup_over_a_computed_child_column_is_refused() {
+async fn rollup_over_a_computed_child_column_aggregates_the_expression() {
     let db = seeded(true).await;
     fn doubled_lines(db: SurrealDB) -> Table<SurrealDB, EmptyEntity> {
-        line_table(db).with_expression("net", |_| surreal_expr!("net * 2"))
+        line_table(db).with_expression("net", |_| surreal_expr!("(net ?? 0) * 2"))
     }
     let table = Table::<SurrealDB, EmptyEntity>::new("invoice", db)
+        .with_id_column("id")
         .with_many("lines", "invoice", doubled_lines)
         .with_rollup("total", "lines", RollupOp::Sum, Some("net"), None)
         .unwrap();
     assert_eq!(
-        query_time_error(&table).await,
-        "a roll-up can't aggregate a computed column"
+        read(&table, "total").await,
+        json!({"invoice:one": 36, "invoice:two": 14, "invoice:three": 0})
+    );
+}
+
+/// Column `column` of every row, by id.
+async fn read(table: &Table<SurrealDB, EmptyEntity>, column: &str) -> JsonValue {
+    let rows = table.list_values().await.unwrap();
+    let out: serde_json::Map<String, JsonValue> = rows
+        .into_iter()
+        .map(|(id, row)| {
+            let value = row
+                .get(column)
+                .cloned()
+                .map_or(JsonValue::Null, JsonValue::from);
+            (id.to_string(), value)
+        })
+        .collect();
+    JsonValue::Object(out)
+}
+
+/// Invoices with `aggregate` over their lines that carry a net, as `name`.
+fn with_relation(
+    db: SurrealDB,
+    q: RelationQuery<vantage_surrealdb::Expr>,
+    aggregate: Aggregate,
+) -> Table<SurrealDB, EmptyEntity> {
+    Table::new("invoice", db)
+        .with_id_column("id")
+        .with_many("lines", "invoice", line_table)
+        .with_relation_column(
+            "r",
+            q.with_condition(surreal_expr!("net != NONE")),
+            aggregate,
+        )
+        .unwrap()
+}
+
+/// `table.ref(…)` in a script builds the expression the Rust API does.
+#[cfg(feature = "rhai")]
+#[tokio::test]
+async fn surreal_rhai_relation_chain_reads_values() {
+    use vantage_surrealdb::vista::rhai_source::eval_column_expr;
+    let db = seeded(true).await;
+    let invoices = Table::<SurrealDB, EmptyEntity>::new("invoice", db)
+        .with_id_column("id")
+        .with_many("lines", "invoice", line_table);
+    let expr = eval_column_expr(
+        r#"table.ref("lines").where("void", false).count()"#,
+        Some(invoices.clone()),
+        vantage_rhai::Env::new(),
+    )
+    .unwrap();
+    let invoices = invoices.with_expression("live", move |_| expr.clone());
+    assert_eq!(
+        read(&invoices, "live").await,
+        json!({"invoice:one": 3, "invoice:two": 1, "invoice:three": 0})
+    );
+}
+
+#[tokio::test]
+async fn surreal_relation_join_json_ordered() {
+    let invoices = with_relation(
+        seeded(true).await,
+        RelationQuery::new("lines").with_order("net", SortDirection::Ascending),
+        Aggregate::JoinJson("net".into()),
+    );
+    assert_eq!(
+        read(&invoices, "r").await,
+        json!({"invoice:one": [2, 6, 10], "invoice:two": [7], "invoice:three": []})
+    );
+}
+
+#[tokio::test]
+async fn surreal_relation_exists() {
+    let invoices = with_relation(
+        seeded(true).await,
+        RelationQuery::new("lines").with_condition(surreal_expr!("void = {}", true)),
+        Aggregate::Exists,
+    );
+    assert_eq!(
+        read(&invoices, "r").await,
+        json!({"invoice:one": true, "invoice:two": false, "invoice:three": false})
+    );
+    // An `OR` stays inside the correlation: invoice:three has no lines, so
+    // line c's `net = 7` (invoice:two's) mustn't count for it. Plain links
+    // correlate in the sub-select's WHERE, next to the `OR`.
+    let either = Table::<SurrealDB, EmptyEntity>::new("invoice", seeded(false).await)
+        .with_id_column("id")
+        .with_many("lines", "invoice", line_table)
+        .with_relation_column(
+            "r",
+            RelationQuery::new("lines").with_condition(surreal_expr!("void = true\nOR(net = 7)")),
+            Aggregate::Exists,
+        )
+        .unwrap();
+    assert_eq!(
+        read(&either, "r").await,
+        json!({"invoice:one": true, "invoice:two": true, "invoice:three": false})
+    );
+}
+
+/// A limited aggregate takes its rows first, then skips missing values, as
+/// SQL does: invoice:one's lowest-net line (d) has none, so its sum is 0.
+#[tokio::test]
+async fn surreal_relation_limit_before_skipping_missing_values() {
+    let invoices = Table::<SurrealDB, EmptyEntity>::new("invoice", seeded(true).await)
+        .with_id_column("id")
+        .with_many("lines", "invoice", line_table)
+        .with_relation_column(
+            "r",
+            RelationQuery::new("lines")
+                .with_order("net", SortDirection::Ascending)
+                .with_limit(1),
+            Aggregate::Sum("net".into()),
+        )
+        .unwrap();
+    assert_eq!(
+        read(&invoices, "r").await,
+        json!({"invoice:one": 0, "invoice:two": 7, "invoice:three": 0})
+    );
+}
+
+#[tokio::test]
+async fn surreal_relation_first() {
+    let invoices = with_relation(
+        seeded(true).await,
+        RelationQuery::new("lines").with_order("net", SortDirection::Descending),
+        Aggregate::First("net".into()),
+    );
+    assert_eq!(
+        read(&invoices, "r").await,
+        json!({"invoice:one": 10, "invoice:two": 7, "invoice:three": null})
+    );
+}
+
+/// A has_one's field keeps the target's own conditions and the chain's
+/// `where`, as on SQL: a hidden invoice gives null, not its value through
+/// the link.
+#[tokio::test]
+async fn surreal_relation_field_keeps_target_conditions() {
+    let db = seeded(true).await;
+    for statement in [
+        "UPDATE invoice:one SET number = 1, open = true",
+        "UPDATE invoice:two SET number = 2, open = false",
+    ] {
+        db.execute(&surreal_expr!(statement)).await.unwrap();
+    }
+    fn open_invoices(db: SurrealDB) -> Table<SurrealDB, EmptyEntity> {
+        Table::new("invoice", db)
+            .with_id_column("id")
+            .with_column_of::<i64>("number")
+            .with_condition(surreal_expr!("open = {}", true))
+    }
+    let lines = |q: RelationQuery<vantage_surrealdb::Expr>| {
+        line_table(db.clone())
+            .with_one("invoice", "invoice", open_invoices)
+            .with_relation_column("number", q, Aggregate::Field("number".into()))
+            .unwrap()
+    };
+    assert_eq!(
+        read(&lines(RelationQuery::new("invoice")), "number").await,
+        json!({"line:a": 1, "line:b": 1, "line:c": null, "line:d": 1, "line:x": 1})
+    );
+    let not_one = RelationQuery::new("invoice").with_condition(surreal_expr!("number != {}", 1));
+    assert_eq!(
+        read(&lines(not_one), "number").await,
+        json!({"line:a": null, "line:b": null, "line:c": null, "line:d": null, "line:x": null})
     );
 }
 

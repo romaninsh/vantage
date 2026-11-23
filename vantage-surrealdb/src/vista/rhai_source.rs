@@ -53,19 +53,47 @@ pub(crate) fn eval_to_select_args(
         .ok_or_else(|| vantage_core::error!("Rhai vista source must evaluate to a select"))
 }
 
+/// The host `expr:` scripts run on: the SurrealDB vocabulary plus
+/// `table.ref(…)` relation expressions.
+fn __expr_host() -> &'static vantage_rhai::Host {
+    static HOST: std::sync::LazyLock<vantage_rhai::Host> = std::sync::LazyLock::new(|| {
+        vantage_rhai::Host::builder(vantage_rhai::Limits::background())
+            .vocab(crate::rhai_engine::SurrealVocab)
+            .vocab_fn(crate::rhai_engine::relation::register_relations)
+            .build()
+    });
+    &HOST
+}
+
 /// Run `code`, returning the expression it builds. A bare identifier
 /// (`surreal::ident("x")`) is accepted as well as an expression.
 pub(crate) fn eval_to_expr(code: &str) -> vantage_core::Result<crate::Expr> {
+    eval_column_expr(code, None, Env::new())
+}
+
+/// Evaluate a column's `expr:` script into the expression the column
+/// projects. With `table`, the script has it as `table`, so it can build a
+/// relation expression; `env` carries the caller's other variables
+/// (`session`, `app`).
+pub fn eval_column_expr(
+    code: &str,
+    table: Option<
+        vantage_table::table::Table<crate::surrealdb::SurrealDB, vantage_types::EmptyEntity>,
+    >,
+    env: Env,
+) -> vantage_core::Result<crate::Expr> {
     use vantage_expressions::Expressive as _;
-    let value = __host()
+    let env = match table {
+        Some(table) => env.var(
+            "table",
+            rhai::Dynamic::from(crate::rhai_engine::relation::RhaiTable(table)),
+        ),
+        None => env,
+    };
+    let value = __expr_host()
         .compile(&Block::from(code))
-        .and_then(|script| script.eval(&Env::new()))
-        .map_err(|e| {
-            vantage_core::error!(
-                "Rhai column expression failed to evaluate",
-                detail = e.to_string()
-            )
-        })?;
+        .and_then(|script| script.eval(&env))
+        .map_err(|e| vantage_core::error!(format!("expr: {e}"), detail = e.to_string()))?;
     if value.is::<Ex>() {
         return Ok(value.cast::<Ex>().into_inner());
     }

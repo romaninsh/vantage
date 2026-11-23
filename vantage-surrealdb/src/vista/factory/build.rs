@@ -103,15 +103,37 @@ fn import_dotted_columns(
 }
 
 /// Lower a column's `expr:` script into a server-side computed column,
-/// projected as `(<expr>) AS <name>`.
+/// projected as `(<expr>) AS <name>`. A script that reads `table` (a
+/// relation expression) runs each time a query that includes the column is
+/// built, so the relation's target is built then, never here; any other
+/// runs once, now.
 #[cfg(feature = "rhai")]
 fn add_expr_column(
     table: Table<SurrealDB, EmptyEntity>,
     name: &str,
     code: &str,
 ) -> Result<Table<SurrealDB, EmptyEntity>> {
-    let expr = crate::vista::rhai_source::eval_to_expr(code)?;
+    use crate::vista::rhai_source::{eval_column_expr, eval_to_expr};
+    if reads_table(code) {
+        let code = code.to_string();
+        return Ok(table.with_try_expression(name, move |table| {
+            eval_column_expr(&code, Some(table.clone()), vantage_rhai::Env::new())
+        }));
+    }
+    let expr = eval_to_expr(code)?;
     Ok(table.with_expression(name, move |_| expr.clone()))
+}
+
+/// Whether `code` names `table` as a whole word (`table.ref(…)`, or
+/// `let t = table;`). A match inside a string only defers the evaluation.
+#[cfg(feature = "rhai")]
+fn reads_table(code: &str) -> bool {
+    let word = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    code.match_indices("table").any(|(at, _)| {
+        let before = code[..at].chars().next_back();
+        let after = code[at + "table".len()..].chars().next();
+        !before.is_some_and(word) && !after.is_some_and(word)
+    })
 }
 
 #[cfg(not(feature = "rhai"))]

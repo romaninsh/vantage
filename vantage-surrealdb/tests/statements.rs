@@ -116,6 +116,21 @@ fn select_where_multiple() {
             .preview()
             .contains("WHERE status = \"pending\" AND total > 100")
     );
+
+    // A top-level OR is wrapped even when a value or a literal holds the
+    // parentheses that would make it look enclosed; one already in one
+    // group isn't wrapped twice.
+    let tricky = surreal_expr!("(label = {}) OR (label = {})", "(", ")");
+    let literal = surreal_expr!("(label = '(') OR (label = ')')");
+    let grouped = surreal_expr!("(label = {} OR label = {})", "a", "b");
+    for (condition, wrapped) in [(tricky, true), (literal, true), (grouped, false)] {
+        let rendered = SurrealSelect::new()
+            .from("tag")
+            .with_where(Field::new("status").eq("open"))
+            .with_where(condition)
+            .preview();
+        assert_eq!(rendered.contains("AND (("), wrapped, "{rendered}");
+    }
 }
 
 #[test]

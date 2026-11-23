@@ -10,7 +10,7 @@ use vantage_expressions::traits::datasource::ExprDataSource;
 use vantage_expressions::traits::expressive::ExpressiveEnum;
 use vantage_expressions::{Expression, Expressive};
 use vantage_table::column::core::{Column, ColumnType};
-use vantage_table::table::{RollupOp, Table};
+use vantage_table::table::{Aggregate, RelationQuery, Table};
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 use vantage_vista::Transaction;
@@ -802,21 +802,24 @@ impl TableSource for SurrealDB {
         )
     }
 
-    /// `<~` over a `REFERENCE` link, else a correlated `$parent` subquery
-    /// (see the `rollup` module).
-    fn rollup_expression<E>(
+    /// See the `relation` module: `<~` over a `REFERENCE` link, else a
+    /// correlated `$parent` subquery; an ordered sub-select for orders,
+    /// limits and lists; the record link for a has_one's field.
+    fn relation_expression<E>(
         &self,
         parent: &Table<Self, E>,
-        name: &str,
-        relation: &str,
-        op: RollupOp,
-        column: Option<&str>,
-        condition: Option<Self::Condition>,
+        name: Option<&str>,
+        q: &RelationQuery<Self::Condition>,
+        aggregate: &Aggregate,
     ) -> Result<Expression<Self::Value>>
     where
         E: Entity<Self::Value> + 'static,
     {
-        self.render_rollup(parent, name, relation, op, column, condition)
+        self.render_relation(parent, name, q, aggregate)
+    }
+
+    fn expression_condition(&self, expr: Expression<Self::Value>) -> Result<Self::Condition> {
+        Ok(expr)
     }
 
     fn try_related_correlated_condition(

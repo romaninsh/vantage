@@ -151,9 +151,12 @@ where
         Ok(self)
     }
 
-    fn limit(mut self, limit: i64) -> Self {
+    fn limit(mut self, limit: i64) -> Rhai<Self> {
+        if limit < 0 {
+            return Err(rhai_err(format!("limit must be 0 or more, got {limit}")));
+        }
         self.q.limit = Some(limit);
-        self
+        Ok(self)
     }
 
     fn aggregate(&self, aggregate: Aggregate) -> Rhai<RhaiExpr<T::Value>> {

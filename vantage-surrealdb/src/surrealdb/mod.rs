@@ -1,6 +1,7 @@
 pub(crate) mod declared;
 pub mod impls;
 pub(crate) mod references;
+pub(crate) mod relation;
 pub(crate) mod rollup;
 mod schema;
 pub(crate) mod tx;

@@ -12,6 +12,8 @@ mod namespace;
 #[cfg(feature = "rhai")]
 pub mod operators;
 #[cfg(feature = "rhai")]
+pub mod relation;
+#[cfg(feature = "rhai")]
 pub mod select_methods;
 #[cfg(feature = "rhai")]
 pub mod types;

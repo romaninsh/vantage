@@ -252,6 +252,15 @@ impl ValueGen {
                 CborValue::Float(cents as f64 / 100.0)
             }
             "bool" | "boolean" => CborValue::Bool(fake::Faker.fake_with_rng(rng)),
+            // A short list of small ids, the shape a `join_json` column reads.
+            "json" => {
+                let len: usize = (0..4).fake_with_rng(rng);
+                CborValue::Array(
+                    (0..len)
+                        .map(|_| CborValue::Integer((1..100i64).fake_with_rng::<i64, _>(rng).into()))
+                        .collect(),
+                )
+            }
             "datetime" | "date" | "timestamp" => {
                 // A random instant within the last `RECENT_DAYS` days of `now`.
                 let secs: i64 = (0..RECENT_DAYS * 86_400).fake_with_rng(rng);
