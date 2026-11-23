@@ -2,9 +2,10 @@
 
 ## 3.1.0 — 2026-11-23
 
-- Relation expressions (`Table::with_relation_column`): roll-up ops and `exists` read the child rows as roll-ups do (`<~child[WHERE …]` or a `$parent` subquery); `first`, `join_concat`, `join_json` and limited aggregates read an ordered sub-select `(SELECT … AS v, … AS o0 … ORDER BY o0).v`; `field` follows the record link, or reads the sub-select when the target has conditions or a query source or the chain narrows it, so the target's conditions hold as on SQL. A roll-up of a child's expression column aggregates the expression through the sub-select instead of being refused.
+- Relation expressions (`Table::with_relation_column`): roll-up ops and `exists` read the child rows as roll-ups do (`<~child[WHERE …]` or a `$parent` subquery); `first`, `join_concat`, `join_json` and limited aggregates read an ordered sub-select `(SELECT … AS v, … AS o0 … ORDER BY o0).v`; `field` follows the record link, or reads the sub-select when the target has conditions or a query source, joins on a column other than its id, or the chain narrows it, so the target's conditions hold as on SQL; a paginated target is refused. Limited aggregates skip missing values after the limit, as SQL does; `count` and `exists` count rows whether or not they project `id`; a limit outside `0..=4294967295` is refused, naming the relation. A roll-up of a child's expression column aggregates the expression through the sub-select instead of being refused.
+- A `WHERE` (and a `<~child[WHERE …]` filter) wraps a condition holding `OR` when other conditions join it, so `a OR b` can't escape a relation's correlation or a table's own conditions.
 - Rhai: `vista::rhai_source::eval_column_expr(code, table, env)` with the same `table.ref(…)` relation vocabulary as the SQL dialects. `.limit(n)` refuses a negative `n`.
-- An `expr:` that reads `table` (a relation expression) runs when a query includes the column; a plain one still runs once at build.
+- An `expr:` that reads `table` (a relation expression, `let t = table;` included) runs when a query includes the column; a plain one still runs once at build.
 
 ## 3.0.0 — 2026-11-22
 

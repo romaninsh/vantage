@@ -43,14 +43,24 @@ impl SurrealDB {
         };
         if let Aggregate::Field(column) = aggregate {
             let target = parent.get_ref_target_erased(relation)?;
+            if target.pagination().is_some() {
+                return Err(error!(
+                    "a has_one field's target can't have pagination",
+                    relation = relation
+                ));
+            }
             // The link reads the linked record as stored. Anything that
             // narrows the target (its own conditions, a query source, the
-            // chain's where/order/limit) needs the sub-select, as on SQL.
+            // chain's where/order/limit) or joins it on a column other than
+            // its id needs the sub-select, as on SQL.
+            let keys = parent.ref_keys(relation)?;
             let narrowed = !q.conditions.is_empty()
                 || !q.order.is_empty()
                 || q.limit.is_some()
                 || target.conditions().next().is_some()
-                || !matches!(target.source(), SelectSource::Name(_));
+                || !matches!(target.source(), SelectSource::Name(_))
+                || keys.len() != 1
+                || keys.iter().any(|key| key.to.is_some());
             if narrowed {
                 return self.relation_rows(parent, target, q, aggregate);
             }
@@ -105,6 +115,16 @@ impl SurrealDB {
         aggregate: &Aggregate,
     ) -> Result<Expr> {
         let relation = q.relation.as_str();
+        // SurrealDB refuses a LIMIT outside 0..=u32::MAX at the server.
+        if let Some(limit) = q.limit.filter(|l| !(0..=i64::from(u32::MAX)).contains(l)) {
+            return Err(error!(
+                format!(
+                    "relation `{relation}` has limit {limit}, outside 0..={}",
+                    u32::MAX
+                ),
+                relation = relation
+            ));
+        }
         // `$parent` names the outer row, so a child over the parent's own
         // table needs no alias.
         let mut child = parent.correlate_ref_target(relation, target, None)?;
@@ -123,25 +143,16 @@ impl SurrealDB {
                 )
             })
         };
-        let value = match aggregate.column() {
-            Some(name) => column(name)?,
-            None => Identifier::new("id").expr(),
+        let value = match (aggregate.column(), aggregate) {
+            (Some(name), _) => column(name)?,
+            // One truthy value per row: a query-sourced child may not
+            // project `id`, and `count()` skips NONE.
+            (None, Aggregate::Count | Aggregate::Exists) => surreal_expr!("1"),
+            (None, _) => Identifier::new("id").expr(),
         };
         let mut select = child.select_empty();
         select.clear_fields();
         select.clear_order_by();
-        if aggregate
-            .rollup_op()
-            .is_some_and(|op| op != RollupOp::Count)
-        {
-            // Rows without the value are skipped, as SQL's aggregates skip
-            // NULL; `math::sum` would refuse a NONE.
-            select.add_where_condition(surreal_expr!(
-                "({}) != NONE AND ({}) != NULL",
-                (value.clone()),
-                (value.clone())
-            ));
-        }
         let mut select = select.with_expression(value, Some("v".to_string()));
         for (at, (name, direction)) in q.order.iter().enumerate() {
             let alias = format!("o{at}");
@@ -160,7 +171,17 @@ impl SurrealDB {
         if limit.is_some() {
             select.set_limit(limit, None);
         }
-        let rows = surreal_expr!("({}).v", (select.expr()));
+        let mut rows = surreal_expr!("({}).v", (select.expr()));
+        if aggregate
+            .rollup_op()
+            .is_some_and(|op| op != RollupOp::Count)
+        {
+            // Values missing from the ordered, limited rows are skipped, as
+            // SQL's aggregates skip NULL (`math::sum` would refuse a NONE).
+            // Filtered after the LIMIT, so a NULL first row isn't replaced
+            // by the next one.
+            rows = surreal_expr!("array::filter({}, |$v| $v != NONE AND $v != NULL)", (rows));
+        }
         let call = |name: &str, args: Vec<Expr>| Fx::new(name, args).expr();
         Ok(match aggregate {
             Aggregate::Exists => surreal_expr!("(count({}) > 0)", (rows)),

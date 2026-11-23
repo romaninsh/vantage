@@ -42,7 +42,7 @@ impl<T: QueryResult> SurrealSelect<T> {
         if self.where_conditions.is_empty() {
             surreal_expr!("")
         } else {
-            let combined = Expression::from_vec(self.where_conditions.clone(), " AND ");
+            let combined = and_all(self.where_conditions.clone());
             surreal_expr!(" WHERE {}", (combined))
         }
     }
@@ -134,4 +134,23 @@ impl<T: QueryResult> Expressive<AnySurrealType> for SurrealSelect<T> {
     fn expr(&self) -> Expr {
         self.render()
     }
+}
+
+/// `conditions` joined with `AND`. Next to another condition, one holding
+/// an `OR` is wrapped: `AND` binds tighter, so `x = $parent.id AND a OR b`
+/// would read `b` rows of every parent.
+pub(crate) fn and_all(conditions: Vec<Expr>) -> Expr {
+    let many = conditions.len() > 1;
+    let parts = conditions
+        .into_iter()
+        .map(|c| {
+            let text = c.preview().to_ascii_uppercase();
+            if many && (text.contains(" OR ") || text.contains("||")) {
+                surreal_expr!("({})", (c))
+            } else {
+                c
+            }
+        })
+        .collect();
+    Expression::from_vec(parts, " AND ")
 }
