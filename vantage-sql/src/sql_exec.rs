@@ -224,9 +224,19 @@ fn refusal(e: &sqlx::Error) -> Option<VantageError> {
 pub(crate) const VIOLATION: &str = "violation";
 pub(crate) const UNIQUE_VIOLATION: &str = "unique";
 
+/// Context key [`mark_transport`] sets when the statement never reached the
+/// database (the pool gave no connection).
+pub(crate) const NOT_SENT: &str = "not_sent";
+
 /// Whether `err` is a duplicate unique or primary key ([`mark_transport`]).
 pub(crate) fn is_unique_violation(err: &VantageError) -> bool {
     err.context.get(VIOLATION).map(String::as_str) == Some(UNIQUE_VIOLATION)
+}
+
+/// Whether `err`'s statement never reached the database ([`mark_transport`]):
+/// nothing it would have written can be there.
+pub(crate) fn was_not_sent(err: &VantageError) -> bool {
+    err.context.contains_key(NOT_SENT)
 }
 
 /// `err` marked Unavailable when `e` says the database couldn't be reached
@@ -238,6 +248,9 @@ pub(crate) fn mark_transport(mut err: VantageError, e: &sqlx::Error) -> VantageE
     {
         err.context
             .insert(VIOLATION.to_string(), UNIQUE_VIOLATION.to_string());
+    }
+    if matches!(e, sqlx::Error::PoolTimedOut | sqlx::Error::PoolClosed) {
+        err.context.insert(NOT_SENT.to_string(), "true".to_string());
     }
     match e {
         sqlx::Error::Io(_)

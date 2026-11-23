@@ -169,6 +169,21 @@ macro_rules! relation_aggregates_tests {
             let names = read(&projects, "tag_names").await;
             assert_eq!(names["7"], json!("alpha, beta"));
             assert_eq!(names["8"], json!(""));
+
+            // Past MySQL's default 1024-byte GROUP_CONCAT limit: whole, not cut.
+            let separator = "-".repeat(400);
+            let tasks = project(setup().await)
+                .with_relation_column(
+                    "task_ids",
+                    RelationQuery::new("tasks").with_order("id", SortDirection::Ascending),
+                    Aggregate::JoinConcat {
+                        column: "id".into(),
+                        separator: separator.clone(),
+                    },
+                )
+                .unwrap();
+            let ids = read(&tasks, "task_ids").await;
+            assert_eq!(ids["7"], json!(["1", "2", "3", "5"].join(&separator)));
         }
 
         #[tokio::test]
