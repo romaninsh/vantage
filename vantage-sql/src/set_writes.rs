@@ -7,6 +7,7 @@ use ciborium::Value as CborValue;
 use vantage_core::Result;
 use vantage_expressions::traits::datasource::ExprDataSource;
 use vantage_expressions::{Expression, expr_any};
+use vantage_table::pagination::Pagination;
 use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
@@ -95,6 +96,9 @@ where
     E: Entity<T::Value>,
 {
     let mut matching = table.clone();
+    // The caller's page would hide a match or a second one; two rows are
+    // enough to tell "one" from "several".
+    matching.set_pagination(Some(Pagination::window(0, 2)));
     for (column, value) in record.iter() {
         if !table.columns().contains_key(column) || table.is_calculated_column(column) {
             continue;
