@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.1 — 2026-11-26
+
+- Requires vantage-table 6.0.0. No code change.
+
 ## 0.9.0 — 2026-11-22
 
 - **Breaking:** `insert_table_value` returns `Inserted<AnyRedbType>`. Use `.into_record()` for the

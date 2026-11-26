@@ -43,7 +43,7 @@ pub(super) fn build_surreal_table(
     };
 
     for (name, col_spec) in &spec.columns {
-        if table.add_spec_column(name, col_spec, build_column)?
+        if table.add_spec_column(name, col_spec, env.context(), build_column)?
             && let Some(code) = &col_spec.expr
         {
             table = add_expr_column(table, name, code)?;
@@ -52,7 +52,7 @@ pub(super) fn build_surreal_table(
     let id = spec.resolve_id_column("id");
     check_auto_id(spec, &id)?;
     table.set_spec_id(&id, &spec.columns)?;
-    let table = with_nested_columns(table, spec)?;
+    let table = with_nested_columns(table, spec, env.context())?;
 
     let table = table
         .with_spec_references(spec, env, build_surreal_table)?
@@ -207,6 +207,7 @@ fn build_derived_table(
         select,
         &inherit.columns,
         &inherit.relations,
+        env.context(),
         build_column,
     )?
     .with_spec_references(spec, env, build_surreal_table)?;

@@ -8,7 +8,7 @@ use vantage_core::{Result, error};
 use vantage_table::references::ContainedRelation;
 use vantage_table::table::Table;
 use vantage_types::EmptyEntity;
-use vantage_vista::{ColumnFlag, ColumnSpec, ContainedYaml};
+use vantage_vista::{BuildContext, ColumnFlag, ColumnSpec, ContainedYaml};
 
 use super::columns::build_column;
 use crate::identifier::Identifier;
@@ -36,6 +36,7 @@ pub(super) fn refuse_on_derived(spec: &SurrealVistaSpec) -> Result<()> {
 pub(super) fn with_nested_columns(
     mut table: Table<SurrealDB, EmptyEntity>,
     spec: &SurrealVistaSpec,
+    cx: &BuildContext,
 ) -> Result<Table<SurrealDB, EmptyEntity>> {
     for (name, column) in &spec.columns {
         let Some(path) = &column.nested_path else {
@@ -67,7 +68,7 @@ pub(super) fn with_nested_columns(
             let hidden = ColumnSpec::<SurrealColumnExtras>::new()
                 .with_type("json")
                 .with_flag(ColumnFlag::Hidden);
-            table.add_spec_column(host, &hidden, build_column)?;
+            table.add_spec_column(host, &hidden, cx, build_column)?;
         }
         let read = Identifier::new(host).dot(key);
         table = table.with_expression(name, move |_| read.clone());

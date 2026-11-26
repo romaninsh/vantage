@@ -81,11 +81,21 @@ impl Column {
     /// The script compiles here, so one that doesn't parse fails the build
     /// rather than the first read.
     #[cfg(feature = "rhai")]
-    pub fn with_expression(mut self, code: impl Into<String>) -> Result<Self> {
+    pub fn with_expression(self, code: impl Into<String>) -> Result<Self> {
+        self.with_expression_in(code.into(), None)
+    }
+
+    /// [`with_expression`](Self::with_expression) compiled on `host`; `None`
+    /// is the fixed host `with_expression` uses.
+    #[cfg(feature = "rhai")]
+    pub(crate) fn with_expression_in(
+        mut self,
+        code: String,
+        host: Option<&Arc<vantage_rhai::Host>>,
+    ) -> Result<Self> {
         use vantage_core::{Context, error};
 
-        let code = code.into();
-        let eval = crate::rhai::lazy_value_closure(&code).with_context(|| {
+        let eval = crate::rhai::lazy_value_closure(&code, host).with_context(|| {
             error!(
                 "Computed column expression doesn't compile",
                 column = self.name.clone()

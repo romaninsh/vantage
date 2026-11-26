@@ -63,6 +63,8 @@ columns:
 "#
             ))?;
 
+            #[cfg(feature = "rhai")]
+            let (lazy_client, mut lazy_orders) = (client_spec.clone(), orders_spec.clone());
             let factory = db
                 .vista_factory()
                 .with_resolver(spec_resolver(vec![("orders", orders_spec)]));
@@ -83,6 +85,34 @@ columns:
             assert!(rows.contains_key("o1"));
             assert!(rows.contains_key("o2"));
             assert!(!rows.contains_key("o3"));
+
+            // What if the load gives a script host: the traversed target's
+            // `lazy:` column compiles on it, so it can call `twice`.
+            #[cfg(feature = "rhai")]
+            {
+                let host = vantage_rhai::Host::builder(vantage_rhai::Limits::background())
+                    .vocab_fn(|engine| {
+                        engine.register_fn("twice", |x: i64| x * 2);
+                    })
+                    .build();
+                let cx = vantage_vista::BuildContext::default()
+                    .with_script_host(std::sync::Arc::new(host));
+                lazy_orders.columns.insert(
+                    "doubled".into(),
+                    vantage_vista::ColumnSpec::new()
+                        .with_type("int")
+                        .with_lazy("twice(row.total)"),
+                );
+                let clients = db
+                    .vista_factory()
+                    .with_resolver(spec_resolver(vec![("orders", lazy_orders)]))
+                    .build_from_spec_in(lazy_client, &cx)?;
+                let rows = clients.get_ref("orders", Some(&alice))?.list_values().await?;
+                assert_eq!(
+                    rows["o1"].get("doubled"),
+                    Some(&ciborium::Value::Integer(20.into()))
+                );
+            }
             Ok(())
         }
 

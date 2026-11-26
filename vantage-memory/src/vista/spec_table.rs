@@ -41,15 +41,15 @@ pub(super) fn build_memory_table(
             vista = spec.name
         ));
     }
-    let metadata = metadata_from_spec(spec)?;
     let id_column = spec.resolve_id_column(DEFAULT_ID_COLUMN);
+    let mut table = Table::<MemoryDB, EmptyEntity>::new(spec.name.clone(), db.clone());
+    table.add_spec_columns(&spec.columns, env.context(), build_column)?;
+    let metadata = metadata_from_spec(spec, &table)?;
     // A traversal must not reseed a table emptied since, nor seed past an
     // open transaction's rollback.
     if env.kind == BuildKind::Root {
         define_store_table(spec, &db, &metadata, &id_column)?;
     }
-    let mut table = Table::<MemoryDB, EmptyEntity>::new(spec.name.clone(), db);
-    table.add_spec_columns(&spec.columns, build_column)?;
     // An undeclared id column is the store table's, which `MemoryDB` reads.
     if table.columns().contains_key(&id_column) {
         table.set_spec_id(&id_column, &spec.columns)?;
@@ -113,8 +113,12 @@ fn build_column(name: &str, spec: &ColumnSpec<NoExtras>) -> Result<TableColumn<A
 
 /// Every stored column is orderable: the store sorts on any field. A column
 /// without `type:` is untyped, so its cells are stored as given. A `lazy:`
-/// column is computed by the Vista. An `expr:` column is refused.
-pub(super) fn metadata_from_spec(spec: &MemoryVistaSpec) -> Result<VistaMetadata> {
+/// column is computed by the Vista, as `table` compiled it. An `expr:`
+/// column is refused.
+pub(super) fn metadata_from_spec(
+    spec: &MemoryVistaSpec,
+    table: &Table<MemoryDB, EmptyEntity>,
+) -> Result<VistaMetadata> {
     let id = spec.resolve_id_column(DEFAULT_ID_COLUMN);
     let mut metadata = VistaMetadata::new().with_id_column(id.clone());
     for (name, col) in &spec.columns {
@@ -124,7 +128,14 @@ pub(super) fn metadata_from_spec(spec: &MemoryVistaSpec) -> Result<VistaMetadata
                 column = name
             ));
         }
-        let column = match col.lazy_column(name)? {
+        let computed = col.lazy.as_ref().map(|_| {
+            table
+                .computed_columns()
+                .find(|(_, c)| c.name == *name)
+                .map(|(_, c)| c.clone())
+                .ok_or_else(|| error!("lazy column missing from its built table", column = name))
+        });
+        let column = match computed.transpose()? {
             Some(computed) => computed,
             None => {
                 let column = match &col.col_type {

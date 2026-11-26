@@ -13,7 +13,7 @@ use indexmap::IndexMap;
 use vantage_core::Result;
 use vantage_table::table::{BuildEnv, Table, TableInjector};
 use vantage_types::{EmptyEntity, Entity};
-use vantage_vista::{Capability, SpecResolver, Vista, VistaCapabilities};
+use vantage_vista::{BuildContext, Capability, SpecResolver, Vista, VistaCapabilities};
 
 use crate::mongodb::MongoDB;
 use crate::mongodb::impls::joins::table_joins;
@@ -123,11 +123,20 @@ impl MongoVistaFactory {
     /// columns when wrapped (`from_table`). A target whose build fails makes
     /// the traversal an error.
     pub fn table_from_spec(&self, spec: &MongoVistaSpec) -> Result<Table<MongoDB, EmptyEntity>> {
+        self.table_from_spec_in(spec, &BuildContext::default())
+    }
+
+    fn table_from_spec_in(
+        &self,
+        spec: &MongoVistaSpec,
+        cx: &BuildContext,
+    ) -> Result<Table<MongoDB, EmptyEntity>> {
         let resolver = self.resolver_with_fallback();
         let spec = build::with_common_nested_paths(spec)?;
         let spec = spec.as_ref();
         ref_keys::check_spec(spec, Some(&resolver))?;
-        let env = BuildEnv::root(&spec.name, Some(resolver), self.injector.clone());
+        let env = BuildEnv::root(&spec.name, Some(resolver), self.injector.clone())
+            .with_context(cx.clone());
         build_mongo_table(spec, self.mongo.clone(), &env)
     }
 }

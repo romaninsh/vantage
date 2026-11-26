@@ -16,7 +16,7 @@ use vantage_table::table::spec::spec_references;
 use vantage_table::table::{Orderable, Table, VistaMetadataOptions};
 use vantage_types::{EmptyEntity, Entity};
 use vantage_vista::{
-    Capability, Vista, VistaCapabilities, VistaFactory, VistaMetadata, VistaResolver,
+    BuildContext, Capability, Vista, VistaCapabilities, VistaFactory, VistaMetadata, VistaResolver,
 };
 
 use super::source::RestApiTableShell;
@@ -127,20 +127,21 @@ impl RestApiVistaFactory {
 
     /// The installed resolver, else one that builds registered specs by name
     /// and reports any other name as not found.
-    fn resolver_for_specs(&self) -> Arc<dyn VistaResolver> {
+    fn resolver_for_specs(&self, cx: &BuildContext) -> Arc<dyn VistaResolver> {
         if let Some(r) = &self.resolver {
             return r.clone();
         }
         let specs = self.specs.clone();
         let api = self.api.clone();
         let secrets = self.insert_secrets.clone();
+        let cx = cx.clone();
         Arc::new(move |name: &str| -> Result<Vista> {
             let spec = registry_get(&specs, name)?;
             // Reuse the same factory pipeline as the top-level build.
             let mut factory =
                 RestApiVistaFactory::new(api.clone()).with_insert_secrets(secrets.clone());
             factory.specs = specs.clone();
-            factory.build_from_spec(spec)
+            factory.build_from_spec_in(spec, &cx)
         })
     }
 }
@@ -151,7 +152,11 @@ impl VistaFactory for RestApiVistaFactory {
     type ReferenceExtras = ApiReferenceExtras;
 
     fn build_from_spec(&self, spec: RestApiVistaSpec) -> Result<Vista> {
-        let table = self.table_from_spec(&spec)?;
+        self.build_from_spec_in(spec, &BuildContext::default())
+    }
+
+    fn build_from_spec_in(&self, spec: RestApiVistaSpec, cx: &BuildContext) -> Result<Vista> {
+        let table = self.table_from_spec(&spec, cx)?;
 
         // Column / id / title metadata from the typed table, plus the YAML
         // references, so generic UI layers see them through
@@ -165,7 +170,7 @@ impl VistaFactory for RestApiVistaFactory {
 
         let capabilities = rest_capabilities(table.data_source());
         let shell = RestApiTableShell::new(table, capabilities, metadata)
-            .with_resolver(self.resolver_for_specs());
+            .with_resolver(self.resolver_for_specs(cx));
         Ok(Vista::new(spec.name, shell))
     }
 }
@@ -197,7 +202,11 @@ impl RestApiVistaFactory {
     /// Lower a `RestApiVistaSpec` into a typed `Table<RestApi,
     /// EmptyEntity>`. Endpoint defaults to `spec.name` when the
     /// `api.endpoint` block is absent.
-    fn table_from_spec(&self, spec: &RestApiVistaSpec) -> Result<Table<RestApi, EmptyEntity>> {
+    fn table_from_spec(
+        &self,
+        spec: &RestApiVistaSpec,
+        cx: &BuildContext,
+    ) -> Result<Table<RestApi, EmptyEntity>> {
         if let Some(name) = spec
             .columns
             .iter()
@@ -225,7 +234,7 @@ impl RestApiVistaFactory {
         let inserts = insert.is_some();
         let api = self.api.for_table(insert, read);
         let mut table = Table::<RestApi, EmptyEntity>::new(endpoint, api);
-        table.add_spec_columns(&spec.columns, build_column)?;
+        table.add_spec_columns(&spec.columns, cx, build_column)?;
         // A table that inserts has no rows to key, so it needn't declare an id.
         let id = spec.resolve_id_column("id");
         if table.columns().contains_key(&id) || (read && !inserts) {

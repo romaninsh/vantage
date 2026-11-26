@@ -9,7 +9,8 @@ use vantage_table::column::core::Column as TableColumn;
 use vantage_table::table::{BuildEnv, Table, TableInjector};
 use vantage_types::{EmptyEntity, Entity};
 use vantage_vista::{
-    Capability, ColumnSpec, NoExtras, SpecResolver, Vista, VistaFactory, VistaMetadata,
+    BuildContext, Capability, ColumnSpec, NoExtras, SpecResolver, Vista, VistaFactory,
+    VistaMetadata,
 };
 
 use crate::postgres::PostgresDB;
@@ -50,8 +51,8 @@ impl PostgresVistaFactory {
         self
     }
 
-    fn env(&self, key: &str) -> BuildEnv<PostgresVistaSpec, PostgresDB> {
-        BuildEnv::root(key, self.resolver.clone(), self.injector.clone())
+    fn env(&self, key: &str, cx: &BuildContext) -> BuildEnv<PostgresVistaSpec, PostgresDB> {
+        BuildEnv::root(key, self.resolver.clone(), self.injector.clone()).with_context(cx.clone())
     }
 
     /// Attach a spec resolver, which finds a YAML spec by table name so
@@ -133,7 +134,8 @@ impl PostgresVistaFactory {
         &self,
         spec: &PostgresVistaSpec,
     ) -> Result<Table<PostgresDB, EmptyEntity>> {
-        build_spec_table(spec, self.db.clone(), &self.env(&spec.name))
+        let env = self.env(&spec.name, &BuildContext::default());
+        build_spec_table(spec, self.db.clone(), &env)
     }
 }
 
@@ -143,7 +145,11 @@ impl VistaFactory for PostgresVistaFactory {
     type ReferenceExtras = NoExtras;
 
     fn build_from_spec(&self, spec: PostgresVistaSpec) -> Result<Vista> {
-        let lowered = lower_spec(&spec, self.db.clone(), &self.env(&spec.name))?;
+        self.build_from_spec_in(spec, &BuildContext::default())
+    }
+
+    fn build_from_spec_in(&self, spec: PostgresVistaSpec, cx: &BuildContext) -> Result<Vista> {
+        let lowered = lower_spec(&spec, self.db.clone(), &self.env(&spec.name, cx))?;
         // Only here, on the table the caller asked for: a reference target
         // or a `base:` table checking its own would build this one again.
         lowered.table.check_expressions()?;

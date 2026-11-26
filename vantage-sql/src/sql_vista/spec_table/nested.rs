@@ -9,7 +9,7 @@ use vantage_table::references::ContainedRelation;
 use vantage_table::table::Table;
 use vantage_table::traits::column_like::ColumnLike as _;
 use vantage_types::EmptyEntity;
-use vantage_vista::{ColumnFlag, ColumnSpec, ContainedYaml};
+use vantage_vista::{BuildContext, ColumnFlag, ColumnSpec, ContainedYaml};
 
 use super::{SpecOf, SqlSpecDialect};
 
@@ -63,6 +63,7 @@ pub(super) fn refuse_on_derived<T: SqlSpecDialect>(spec: &SpecOf<T>) -> Result<(
 pub(super) fn with_nested_columns<T>(
     mut table: Table<T, EmptyEntity>,
     spec: &SpecOf<T>,
+    cx: &BuildContext,
 ) -> Result<Table<T, EmptyEntity>>
 where
     T: SqlSpecDialect,
@@ -89,7 +90,7 @@ where
             let hidden = ColumnSpec::<T::ColumnExtras>::new()
                 .with_type("json")
                 .with_flag(ColumnFlag::Hidden);
-            table.add_spec_column(host, &hidden, T::spec_column)?;
+            table.add_spec_column(host, &hidden, cx, T::spec_column)?;
         }
         let read = T::nested_read(host, key);
         table = table.with_expression(name, move |_| read.clone());

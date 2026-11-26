@@ -1027,6 +1027,20 @@ impl core::marker::Unpin for vantage_vista::VistaChange
 impl core::marker::UnsafeUnpin for vantage_vista::VistaChange
 impl core::panic::unwind_safe::RefUnwindSafe for vantage_vista::VistaChange
 impl core::panic::unwind_safe::UnwindSafe for vantage_vista::VistaChange
+#[non_exhaustive] pub struct vantage_vista::BuildContext
+impl vantage_vista::BuildContext
+pub fn vantage_vista::BuildContext::with_script_host(self, alloc::rcs::arc::Arc<vantage_rhai::host::Host>) -> Self
+impl core::clone::Clone for vantage_vista::BuildContext
+pub fn vantage_vista::BuildContext::clone(&self) -> Self
+impl core::default::Default for vantage_vista::BuildContext
+pub fn vantage_vista::BuildContext::default() -> Self
+impl core::marker::Freeze for vantage_vista::BuildContext
+impl core::marker::Send for vantage_vista::BuildContext
+impl core::marker::Sync for vantage_vista::BuildContext
+impl core::marker::Unpin for vantage_vista::BuildContext
+impl core::marker::UnsafeUnpin for vantage_vista::BuildContext
+impl !core::panic::unwind_safe::RefUnwindSafe for vantage_vista::BuildContext
+impl !core::panic::unwind_safe::UnwindSafe for vantage_vista::BuildContext
 pub struct vantage_vista::Catalog
 impl vantage_vista::Catalog
 pub fn vantage_vista::Catalog::new() -> Self
@@ -1094,6 +1108,7 @@ impl<C> vantage_vista::ColumnSpec<C>
 pub fn vantage_vista::ColumnSpec<C>::has_flag(&self, impl core::convert::Into<vantage_vista::ColumnFlag>) -> bool
 impl<C> vantage_vista::ColumnSpec<C>
 pub fn vantage_vista::ColumnSpec<C>::lazy_column(&self, &str) -> vantage_core::util::error::Result<core::option::Option<vantage_vista::Column>>
+pub fn vantage_vista::ColumnSpec<C>::lazy_column_in(&self, &str, &vantage_vista::BuildContext) -> vantage_core::util::error::Result<core::option::Option<vantage_vista::Column>>
 impl<'de, C> serde_core::de::Deserialize<'de> for vantage_vista::ColumnSpec<C> where C: serde_core::de::DeserializeOwned + core::default::Default
 pub fn vantage_vista::ColumnSpec<C>::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
 impl<C: core::clone::Clone> core::clone::Clone for vantage_vista::ColumnSpec<C>
@@ -1795,6 +1810,7 @@ pub type vantage_vista::VistaFactory::ColumnExtras: serde_core::ser::Serialize +
 pub type vantage_vista::VistaFactory::ReferenceExtras: serde_core::ser::Serialize + serde_core::de::DeserializeOwned + core::default::Default + core::marker::Send + core::marker::Sync + 'static
 pub type vantage_vista::VistaFactory::TableExtras: serde_core::ser::Serialize + serde_core::de::DeserializeOwned + core::default::Default + core::marker::Send + core::marker::Sync + 'static
 pub fn vantage_vista::VistaFactory::build_from_spec(&self, vantage_vista::VistaSpec<Self::TableExtras, Self::ColumnExtras, Self::ReferenceExtras>) -> vantage_core::util::error::Result<vantage_vista::Vista>
+pub fn vantage_vista::VistaFactory::build_from_spec_in(&self, vantage_vista::VistaSpec<Self::TableExtras, Self::ColumnExtras, Self::ReferenceExtras>, &vantage_vista::BuildContext) -> vantage_core::util::error::Result<vantage_vista::Vista>
 pub fn vantage_vista::VistaFactory::from_yaml(&self, &str) -> vantage_core::util::error::Result<vantage_vista::Vista>
 pub trait vantage_vista::VistaResolver: core::marker::Send + core::marker::Sync
 pub fn vantage_vista::VistaResolver::adopt(&self, vantage_vista::Vista) -> vantage_vista::Vista

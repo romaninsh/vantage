@@ -39,7 +39,7 @@ pub use change::{VistaChange, VistaChangeStream};
 pub use column::{Column, ColumnFamily, ColumnFlag};
 pub use contained::{ContainedWriteback, build_contained_vista};
 pub use denials::{Denials, forbidden, forbidden_column};
-pub use factory::VistaFactory;
+pub use factory::{BuildContext, VistaFactory};
 pub use filter::{FilterOp, operand_text};
 pub use id_generator::{IdGenerator, ShortId};
 pub use metadata::VistaMetadata;

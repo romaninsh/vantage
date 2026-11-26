@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.2.1 — 2026-11-26
+
+- Requires vantage-table 6.0.0. No code change.
+
 ## 2.2.0 — 2026-11-22
 
 - A view shows an insert the backend only accepted as `RowStatus::Unconfirmed` instead of

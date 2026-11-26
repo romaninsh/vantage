@@ -60,7 +60,7 @@ pub(crate) fn build_mongo_table(
         table.add_column(TableColumn::<AnyMongoType>::new("_id"));
         table.set_spec_id_field("_id")?;
     } else {
-        table.add_spec_columns(&spec.columns, build_column)?;
+        table.add_spec_columns(&spec.columns, env.context(), build_column)?;
         let id = spec.resolve_id_column("_id");
         check_auto_id(spec, &id)?;
         table.set_spec_id(&id, &spec.columns)?;

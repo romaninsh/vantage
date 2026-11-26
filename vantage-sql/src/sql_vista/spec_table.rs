@@ -190,7 +190,7 @@ where
     // identifier. They lower through `with_active_columns` below, once the
     // references they traverse are registered.
     for (name, col_spec) in spec.columns.iter().filter(|(n, _)| !n.contains('.')) {
-        table.add_spec_column(name, col_spec, T::spec_column)?;
+        table.add_spec_column(name, col_spec, env.context(), T::spec_column)?;
     }
     table.set_spec_id(&spec.resolve_id_column("id"), &spec.columns)?;
 
@@ -200,7 +200,7 @@ where
             table = with_expr_column::<T>(table, name, code)?;
         }
     }
-    let mut table = nested::with_nested_columns(table, spec)?;
+    let mut table = nested::with_nested_columns(table, spec, env.context())?;
 
     if spec.columns.keys().any(|n| n.contains('.')) {
         // Every non-lazy spec column is listed, so the plain set keeps
@@ -260,6 +260,7 @@ where
         select,
         block.inherit_columns,
         block.inherit_relations,
+        env.context(),
         T::spec_column,
     )?;
     let mut table = table.with_spec_references(spec, env, build_spec_table::<T>)?;

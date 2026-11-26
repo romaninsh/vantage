@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use vantage_core::Result;
 
 use crate::column::{Column, ColumnFlag};
+use crate::factory::BuildContext;
 use crate::reference::{JoinKey, ReferenceKind};
 
 mod lowering;
@@ -192,6 +193,12 @@ impl<C> ColumnSpec<C> {
     /// stored column. Errors when the script doesn't compile, or when this
     /// crate was built without the `rhai` feature.
     pub fn lazy_column(&self, name: &str) -> Result<Option<Column>> {
+        self.lazy_column_in(name, &BuildContext::default())
+    }
+
+    /// [`lazy_column`](Self::lazy_column) compiled on `ctx`'s script host,
+    /// when it has one.
+    pub fn lazy_column_in(&self, name: &str, ctx: &BuildContext) -> Result<Option<Column>> {
         let Some(code) = &self.lazy else {
             return Ok(None);
         };
@@ -200,17 +207,17 @@ impl<C> ColumnSpec<C> {
             None => Column::untyped(name),
         };
         let column = self.flags.iter().cloned().fold(typed, Column::with_flag);
-        computed(column, code).map(Some)
+        computed(column, code, ctx).map(Some)
     }
 }
 
 #[cfg(feature = "rhai")]
-fn computed(column: Column, code: &str) -> Result<Column> {
-    column.with_expression(code)
+fn computed(column: Column, code: &str, ctx: &BuildContext) -> Result<Column> {
+    column.with_expression_in(code.to_string(), ctx.script_host.as_ref())
 }
 
 #[cfg(not(feature = "rhai"))]
-fn computed(column: Column, _code: &str) -> Result<Column> {
+fn computed(column: Column, _code: &str, _ctx: &BuildContext) -> Result<Column> {
     Err(vantage_core::error!(
         "Column declares a `lazy:` script but vantage-vista was built without the `rhai` feature",
         column = column.name

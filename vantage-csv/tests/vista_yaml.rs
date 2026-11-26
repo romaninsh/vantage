@@ -50,6 +50,26 @@ csv:
     );
     assert_eq!(marty.get("is_active"), Some(&CborValue::Bool(true)));
 
+    // What if the load gives a script host: a `lazy:` column compiles on it.
+    let host = vantage_rhai::Host::builder(vantage_rhai::Limits::background())
+        .vocab_fn(|engine| {
+            engine.register_fn("twice", |s: &str| format!("{s}{s}"));
+        })
+        .build();
+    let cx = vantage_vista::BuildContext::default().with_script_host(std::sync::Arc::new(host));
+    let lazy = yaml.replace(
+        "csv:\n  path",
+        "  shout: { type: string, lazy: 'twice(row.id)' }\ncsv:\n  path",
+    );
+    let shouting = csv
+        .vista_factory()
+        .build_from_spec_in(serde_yaml_ng::from_str(&lazy).unwrap(), &cx)?;
+    let rows = shouting.list_values().await?;
+    assert_eq!(
+        rows["marty"].get("shout"),
+        Some(&CborValue::Text("martymarty".to_string()))
+    );
+
     // Filtering must match spec names, not raw CSV headers.
     vista.add_condition("is_active", FilterOp::Eq, CborValue::Bool(true))?;
     let filtered = vista.list_values().await?;

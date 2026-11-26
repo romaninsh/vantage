@@ -43,14 +43,19 @@ impl GraphqlApiTableShell {
             )
             .mark_not_found()
         })?;
-        let bare =
-            build_table(&target.spec, &target.api, Some(resolver.clone())).with_context(|| {
-                error!(
-                    "GraphQL reference target spec can't be built",
-                    relation = relation,
-                    target = target_name
-                )
-            })?;
+        let bare = build_table(
+            &target.spec,
+            &target.api,
+            Some(resolver.clone()),
+            &target.cx,
+        )
+        .with_context(|| {
+            error!(
+                "GraphQL reference target spec can't be built",
+                relation = relation,
+                target = target_name
+            )
+        })?;
         Ok(Some((target, bare)))
     }
 

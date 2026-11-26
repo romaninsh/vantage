@@ -2,6 +2,7 @@
 
 ## 0.8.2 — 2026-11-26
 
+- `build_from_spec_in(spec, cx)`: `lazy:` columns compile on the context's script host. Requires vantage-table 6.0.0.
 - A spec column with `nested_path` (vantage-vista 3.2.0) fails the build: "column <name>: nested_path isn't supported by vantage-cmd".
 
 ## 0.8.1 — 2026-11-22

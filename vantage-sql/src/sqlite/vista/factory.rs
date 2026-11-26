@@ -8,7 +8,9 @@ use vantage_expressions::{Expression, Expressive as _};
 use vantage_table::column::core::Column as TableColumn;
 use vantage_table::table::{BuildEnv, Table, TableInjector};
 use vantage_types::{EmptyEntity, Entity};
-use vantage_vista::{ColumnSpec, NoExtras, SpecResolver, Vista, VistaFactory, VistaMetadata};
+use vantage_vista::{
+    BuildContext, ColumnSpec, NoExtras, SpecResolver, Vista, VistaFactory, VistaMetadata,
+};
 
 use crate::primitives::identifier::ident;
 use crate::primitives::json_extract::json_extract;
@@ -46,8 +48,8 @@ impl SqliteVistaFactory {
         self
     }
 
-    fn env(&self, key: &str) -> BuildEnv<SqliteVistaSpec, SqliteDB> {
-        BuildEnv::root(key, self.resolver.clone(), self.injector.clone())
+    fn env(&self, key: &str, cx: &BuildContext) -> BuildEnv<SqliteVistaSpec, SqliteDB> {
+        BuildEnv::root(key, self.resolver.clone(), self.injector.clone()).with_context(cx.clone())
     }
 
     /// Attach a spec resolver, which finds a YAML spec by table name so
@@ -97,7 +99,8 @@ impl SqliteVistaFactory {
     /// Build a `Table<SqliteDB, EmptyEntity>` from a spec, resolving any
     /// `references:` against the attached resolver.
     pub fn table_from_spec(&self, spec: &SqliteVistaSpec) -> Result<Table<SqliteDB, EmptyEntity>> {
-        build_spec_table(spec, self.db.clone(), &self.env(&spec.name))
+        let env = self.env(&spec.name, &BuildContext::default());
+        build_spec_table(spec, self.db.clone(), &env)
     }
 }
 
@@ -107,7 +110,11 @@ impl VistaFactory for SqliteVistaFactory {
     type ReferenceExtras = NoExtras;
 
     fn build_from_spec(&self, spec: SqliteVistaSpec) -> Result<Vista> {
-        let lowered = lower_spec(&spec, self.db.clone(), &self.env(&spec.name))?;
+        self.build_from_spec_in(spec, &BuildContext::default())
+    }
+
+    fn build_from_spec_in(&self, spec: SqliteVistaSpec, cx: &BuildContext) -> Result<Vista> {
+        let lowered = lower_spec(&spec, self.db.clone(), &self.env(&spec.name, cx))?;
         // Only here, on the table the caller asked for: a reference target
         // or a `base:` table checking its own would build this one again.
         lowered.table.check_expressions()?;

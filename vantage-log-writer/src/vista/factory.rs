@@ -2,7 +2,7 @@ use vantage_core::{Result, error};
 use vantage_table::column::core::Column as TableColumn;
 use vantage_table::table::{Table, VistaMetadataOptions};
 use vantage_types::{EmptyEntity, Entity};
-use vantage_vista::{Capability, NoExtras, Vista, VistaCapabilities, VistaFactory};
+use vantage_vista::{BuildContext, Capability, NoExtras, Vista, VistaCapabilities, VistaFactory};
 
 use crate::log_writer::LogWriter;
 use crate::type_system::AnyJsonType;
@@ -37,6 +37,14 @@ impl LogWriterVistaFactory {
         &self,
         spec: &LogWriterVistaSpec,
     ) -> Result<Table<LogWriter, EmptyEntity>> {
+        self.table_from_spec_in(spec, &BuildContext::default())
+    }
+
+    fn table_from_spec_in(
+        &self,
+        spec: &LogWriterVistaSpec,
+        cx: &BuildContext,
+    ) -> Result<Table<LogWriter, EmptyEntity>> {
         let table_name = spec
             .driver
             .log_writer
@@ -56,7 +64,7 @@ impl LogWriterVistaFactory {
             )));
         }
         let mut table = Table::<LogWriter, EmptyEntity>::new(table_name, log_writer);
-        table.add_spec_columns(&spec.columns, build_column)?;
+        table.add_spec_columns(&spec.columns, cx, build_column)?;
         table.set_spec_id_field(&id_column)?;
         Ok(table)
     }
@@ -68,8 +76,12 @@ impl VistaFactory for LogWriterVistaFactory {
     type ReferenceExtras = NoExtras;
 
     fn build_from_spec(&self, spec: LogWriterVistaSpec) -> Result<Vista> {
+        self.build_from_spec_in(spec, &BuildContext::default())
+    }
+
+    fn build_from_spec_in(&self, spec: LogWriterVistaSpec, cx: &BuildContext) -> Result<Vista> {
         let vista_name = spec.name.clone();
-        let table = self.table_from_spec(&spec)?;
+        let table = self.table_from_spec_in(&spec, cx)?;
         Ok(self.from_table(table)?.with_name(vista_name))
     }
 }

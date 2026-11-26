@@ -11,7 +11,7 @@ use vantage_core::Result;
 use vantage_table::table::{BuildEnv, Orderable, Table, TableInjector, VistaMetadataOptions};
 use vantage_types::{EmptyEntity, Entity};
 use vantage_vista::{
-    ColumnFlag, NoExtras, SpecResolver, Vista, VistaFactory, VistaMetadata, VistaSpec,
+    BuildContext, ColumnFlag, NoExtras, SpecResolver, Vista, VistaFactory, VistaMetadata, VistaSpec,
 };
 
 use super::MemoryTableShell;
@@ -96,7 +96,16 @@ impl MemoryVistaFactory {
     /// empty. A reference to `spec.name` is then rebuilt from `spec` when
     /// no resolver is attached.
     pub fn table_from_spec(&self, spec: &MemoryVistaSpec) -> Result<Table<MemoryDB, EmptyEntity>> {
-        let env = BuildEnv::root(&spec.name, Some(self.specs()), self.injector.clone());
+        self.table_from_spec_in(spec, &BuildContext::default())
+    }
+
+    fn table_from_spec_in(
+        &self,
+        spec: &MemoryVistaSpec,
+        cx: &BuildContext,
+    ) -> Result<Table<MemoryDB, EmptyEntity>> {
+        let env = BuildEnv::root(&spec.name, Some(self.specs()), self.injector.clone())
+            .with_context(cx.clone());
         let table = build_memory_table(spec, MemoryDB::from_store(self.store.clone()), &env)?;
         self.built.write().insert(spec.name.clone(), spec.clone());
         Ok(table)
@@ -131,7 +140,7 @@ pub(super) fn spec_vista(
     spec: &MemoryVistaSpec,
     specs: Resolver,
 ) -> Result<Vista> {
-    let mut metadata = metadata_from_spec(spec)?.with_denials(table.denials().clone());
+    let mut metadata = metadata_from_spec(spec, &table)?.with_denials(table.denials().clone());
     for column in metadata.columns.values_mut() {
         if table.is_calculated_column(&column.name) {
             *column = column.clone().with_flag(ColumnFlag::Calculated);
@@ -177,7 +186,11 @@ impl VistaFactory for MemoryVistaFactory {
     type ReferenceExtras = NoExtras;
 
     fn build_from_spec(&self, spec: MemoryVistaSpec) -> Result<Vista> {
-        let table = self.table_from_spec(&spec)?;
+        self.build_from_spec_in(spec, &BuildContext::default())
+    }
+
+    fn build_from_spec_in(&self, spec: MemoryVistaSpec, cx: &BuildContext) -> Result<Vista> {
+        let table = self.table_from_spec_in(&spec, cx)?;
         // Only here, on the table the caller asked for: a reference target
         // checking its own would build this one again.
         table.data_source().check_rollups(&table)?;

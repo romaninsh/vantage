@@ -18,7 +18,7 @@ use vantage_expressions::{Expression, Expressive as _, ExpressiveEnum};
 use vantage_table::column::core::Column as TableColumn;
 use vantage_table::table::{BuildEnv, Table, TableInjector};
 use vantage_types::{EmptyEntity, Entity};
-use vantage_vista::{ColumnSpec, ReferenceSpec, SpecResolver, Vista};
+use vantage_vista::{BuildContext, ColumnSpec, ReferenceSpec, SpecResolver, Vista};
 
 use crate::mysql::MysqlDB;
 use crate::mysql::statements::MysqlSelect;
@@ -59,8 +59,8 @@ impl MysqlVistaFactory {
         self
     }
 
-    fn env(&self, key: &str) -> BuildEnv<MysqlVistaSpec, MysqlDB> {
-        BuildEnv::root(key, self.resolver.clone(), self.injector.clone())
+    fn env(&self, key: &str, cx: &BuildContext) -> BuildEnv<MysqlVistaSpec, MysqlDB> {
+        BuildEnv::root(key, self.resolver.clone(), self.injector.clone()).with_context(cx.clone())
     }
 
     /// Attach a spec resolver, which finds a YAML spec by table name so
@@ -85,7 +85,8 @@ impl MysqlVistaFactory {
     /// Build a `Table<MysqlDB, EmptyEntity>` from a spec, resolving any
     /// `references:` against the attached resolver.
     pub fn table_from_spec(&self, spec: &MysqlVistaSpec) -> Result<Table<MysqlDB, EmptyEntity>> {
-        build_spec_table(spec, self.db.clone(), &self.env(&spec.name))
+        let env = self.env(&spec.name, &BuildContext::default());
+        build_spec_table(spec, self.db.clone(), &env)
     }
 }
 

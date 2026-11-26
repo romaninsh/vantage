@@ -207,6 +207,32 @@ mongo:
     assert_eq!(row.get("name"), Some(&CborValue::Text("Marty".to_string())));
     assert_eq!(row.get("is_paying_client"), Some(&CborValue::Bool(true)));
 
+    // What if the load gives a script host: a `lazy:` column compiles on it.
+    #[cfg(feature = "rhai")]
+    {
+        let host = vantage_rhai::Host::builder(vantage_rhai::Limits::background())
+            .vocab_fn(|engine| {
+                engine.register_fn("twice", |s: &str| format!("{s}{s}"));
+            })
+            .build();
+        let cx = vantage_vista::BuildContext::default().with_script_host(std::sync::Arc::new(host));
+        let lazy = yaml.replace(
+            "mongo:\n",
+            "  shout: { type: string, lazy: 'twice(row.name)' }\nmongo:\n",
+        );
+        let spec = serde_yaml_ng::from_str(&lazy)?;
+        let rows = db
+            .vista_factory()
+            .build_from_spec_in(spec, &cx)?
+            .list_values()
+            .await?;
+        let (_, row) = rows.into_iter().next().unwrap();
+        assert_eq!(
+            row.get("shout"),
+            Some(&CborValue::Text("MartyMarty".into()))
+        );
+    }
+
     // MongoDB generates only `_id`: an auto id stored anywhere else would be
     // missing from every inserted row, so the build refuses it.
     let auto = |column: &str| format!("name: client\ncolumns:\n  id: {column}\n");

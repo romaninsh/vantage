@@ -6,7 +6,7 @@ use vantage_core::Result;
 use vantage_core::error;
 use vantage_table::table::Table;
 use vantage_types::Entity;
-use vantage_vista::{Capability, Vista, VistaFactory, VistaMetadata};
+use vantage_vista::{BuildContext, Capability, Vista, VistaFactory, VistaMetadata};
 
 use super::MysqlVistaFactory;
 use crate::mysql::MysqlDB;
@@ -47,6 +47,10 @@ impl VistaFactory for MysqlVistaFactory {
     type ReferenceExtras = MysqlReferenceExtras;
 
     fn build_from_spec(&self, spec: MysqlVistaSpec) -> Result<Vista> {
+        self.build_from_spec_in(spec, &BuildContext::default())
+    }
+
+    fn build_from_spec_in(&self, spec: MysqlVistaSpec, cx: &BuildContext) -> Result<Vista> {
         let modify = spec.driver.mysql.as_ref().and_then(|m| m.modify.clone());
         #[cfg(not(feature = "rhai"))]
         if modify.is_some() {
@@ -56,7 +60,7 @@ impl VistaFactory for MysqlVistaFactory {
             ));
         }
 
-        let lowered = lower_spec(&spec, self.db.clone(), &self.env(&spec.name))?;
+        let lowered = lower_spec(&spec, self.db.clone(), &self.env(&spec.name, cx))?;
         // Only here, on the table the caller asked for: a reference target
         // or a `base:` table checking its own would build this one again.
         lowered.table.check_expressions()?;

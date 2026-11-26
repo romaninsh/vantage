@@ -2,6 +2,7 @@
 
 ## 0.18.4 — 2026-11-26
 
+- `build_from_spec_in(spec, cx)` on SQLite, PostgreSQL and MySQL: `lazy:` columns compile on the context's script host, on the root table, its reference targets and its `base:` table. Requires vantage-table 6.0.0.
 - A table whose id is an expression declared an integer type (`type: int`, `expr: '"a" * 1000000 + "b"'`) binds the id as an integer on PostgreSQL and SQLite, so a row reads, patches and deletes by the id its insert returned. Before, PostgreSQL failed with `operator does not exist: integer = text` and SQLite found no row.
 - A vista condition (`=`, `>`, `in_set`, `like`, …) and a quicksearch on an `expr:` column put the column's expression in WHERE, on PostgreSQL, MySQL and SQLite: `where("mine", true)` over `table.ref("assignments").where("user_id", session.uid).exists()` filters by the `EXISTS`. Before, PostgreSQL and MySQL failed with `column "mine" does not exist`, since SQL has no SELECT alias in WHERE. ORDER BY keeps the alias.
 - Vista conditions `"is"` / `"is_not"` are NULL-safe: `IS NULL` / `IS NOT NULL` for `null()`, and `IS [NOT] DISTINCT FROM` on PostgreSQL, `IS [NOT]` on SQLite and `<=>` / `NOT (… <=> …)` on MySQL for a value. `where("is_template", "is_not", true)` matches false and NULL. A rule's `where` takes them too (`TableSource::is_value_condition`), and so does a relation's `table.ref(…).where(col, "is", null())` in an `expr:`; `where(col, ())` there is refused like the vista's.

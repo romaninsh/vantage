@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.11.2 — 2026-11-26
+
+- Requires vantage-table 6.0.0. No code change; Cargo.lock refreshed.
+
 ## 0.11.1 — 2026-11-22
 
 - Cargo.lock refreshed for vantage-core 1.5.0, vantage-api-pool 1.4.1 and vantage-table 5.1.0.

@@ -12,7 +12,7 @@ use surreal_client::{MockSurrealEngine, SurrealClient};
 use vantage_surrealdb::surrealdb::SurrealDB;
 use vantage_surrealdb::vista::{SurrealVistaFactory, SurrealVistaSpec};
 use vantage_types::Record;
-use vantage_vista::{SpecResolver, Vista, VistaFactory};
+use vantage_vista::{BuildContext, SpecResolver, Vista, VistaFactory};
 
 const TAG: &str = r#"
 name: tag
@@ -41,12 +41,16 @@ references:
 "#;
 
 fn factory() -> SurrealVistaFactory {
+    factory_with(TAG)
+}
+
+fn factory_with(tag: &str) -> SurrealVistaFactory {
     let db = SurrealDB::new(SurrealClient::new(
         Box::new(MockSurrealEngine::new()),
         Some("test".into()),
         Some("test".into()),
     ));
-    let specs: IndexMap<String, SurrealVistaSpec> = [("tag", TAG), ("event", EVENT)]
+    let specs: IndexMap<String, SurrealVistaSpec> = [("tag", tag), ("event", EVENT)]
         .into_iter()
         .map(|(name, yaml)| (name.to_string(), serde_yaml_ng::from_str(yaml).unwrap()))
         .collect();
@@ -92,6 +96,22 @@ fn has_one_target_carries_its_lazy_columns() {
         .expect("traverse parent");
     assert!(parent.column("label").unwrap().is_computed());
     assert!(parent.is_narrowed());
+
+    // What if the load gives a script host: the target's `lazy:` compiles
+    // on it, and this host resolves no `import`, so the traversal fails.
+    let tag = TAG.replace(
+        "'row.name.to_upper()'",
+        r#"'import "nope" as n; n::up(row.name)'"#,
+    );
+    let host = vantage_rhai::Host::builder(vantage_rhai::Limits::background()).build();
+    let cx = BuildContext::default().with_script_host(Arc::new(host));
+    let event = factory_with(&tag)
+        .build_from_spec_in(serde_yaml_ng::from_str(EVENT).unwrap(), &cx)
+        .unwrap();
+    let Err(err) = event.get_ref("parent", Some(&row(&[("id", "event:1"), ("tag", "a")]))) else {
+        panic!("the target's import must fail on the given host");
+    };
+    assert!(format!("{err:?}").contains("nope"), "{err:?}");
 }
 
 /// The backend holds no values for a computed column, so a has-many can't
