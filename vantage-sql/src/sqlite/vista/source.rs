@@ -6,6 +6,7 @@
 
 use ciborium::Value as CborValue;
 use vantage_core::Result;
+use vantage_expressions::{Expression, Expressive};
 #[cfg(feature = "rhai")]
 use vantage_rhai::rhai::{Engine, EvalAltResult};
 use vantage_table::column::core::Column;
@@ -52,28 +53,32 @@ impl SqlShellDialect for SqliteDB {
         Ok(table.try_select()?.preview())
     }
 
+    fn column_expr(column: &Column<AnySqliteType>) -> Expression<AnySqliteType> {
+        column.expr()
+    }
+
     fn compare(
-        column: &Column<AnySqliteType>,
+        subject: Expression<AnySqliteType>,
         template: &str,
         value: AnySqliteType,
     ) -> SqliteCondition {
-        build_sql_binary::<AnySqliteType, AnySqliteType, _>(column, value, template)
+        build_sql_binary::<AnySqliteType, AnySqliteType, _>(&subject, value, template)
     }
 
     fn in_list(
-        column: &Column<AnySqliteType>,
+        subject: Expression<AnySqliteType>,
         values: &[AnySqliteType],
         negate: bool,
     ) -> SqliteCondition {
         if negate {
-            column.not_in_list(values)
+            subject.not_in_list(values)
         } else {
-            column.in_list(values)
+            subject.in_list(values)
         }
     }
 
-    fn like(field: &str, pattern: String) -> SqliteCondition {
-        crate::sqlite_expr!("{} LIKE {} ESCAPE '$'", (ident(field)), pattern).into()
+    fn like(subject: Expression<AnySqliteType>, pattern: String) -> SqliteCondition {
+        crate::sqlite_expr!("{} LIKE {} ESCAPE '$'", (subject), pattern).into()
     }
 
     fn order_term(field: &str) -> SqliteCondition {

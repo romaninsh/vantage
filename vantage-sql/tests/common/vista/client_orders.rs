@@ -346,6 +346,102 @@ columns:
             Ok(())
         }
 
+        /// `client` with `expr:` columns over its orders and its own name, and
+        /// a searchable stored `name` next to a searchable `expr:` `label`.
+        #[cfg(feature = "rhai")]
+        async fn computed_clients(
+            suffix: &str,
+        ) -> std::result::Result<vantage_vista::Vista, Box<dyn std::error::Error>> {
+            let (db, client_t, orders_t) = clients_orders(suffix).await;
+            let block = $block;
+            let client_spec: $spec = serde_yaml_ng::from_str(&format!(
+                r#"
+name: client
+columns:
+  id: {{ type: string, flags: [id] }}
+  name: {{ type: string, flags: [title, searchable] }}
+  big_order: {{ type: bool, expr: 'table.ref("orders").where("total", 30).exists()' }}
+  n_orders: {{ type: int, expr: 'table.ref("orders").count()' }}
+  early_name: {{ type: bool, expr: 'sql::expr("{{}} < {{}}", [sql::ident("name"), "B"])' }}
+  label: {{ type: string, flags: [searchable], expr: 'sql::concat(["vip-", sql::ident("id")])' }}
+{block}:
+  table: {client_t}
+references:
+  orders:
+    table: orders
+    kind: has_many
+    foreign_key: client_id
+"#
+            ))?;
+            let orders_spec: $spec = serde_yaml_ng::from_str(&format!(
+                r#"
+name: orders
+columns:
+  id: {{ type: string, flags: [id] }}
+  client_id: {{ type: string }}
+  total: {{ type: int }}
+{block}:
+  table: {orders_t}
+"#
+            ))?;
+            Ok(db
+                .vista_factory()
+                .with_resolver(spec_resolver(vec![("orders", orders_spec)]))
+                .build_from_spec(client_spec)?)
+        }
+
+        #[cfg(feature = "rhai")]
+        async fn ids_of(
+            vista: &vantage_vista::Vista,
+        ) -> std::result::Result<Vec<String>, Box<dyn std::error::Error>> {
+            let mut ids: Vec<String> = vista.list_values().await?.into_keys().collect();
+            ids.sort();
+            Ok(ids)
+        }
+
+        /// A condition on an `expr:` column compares its expression: SQL
+        /// has no SELECT alias in WHERE.
+        #[cfg(feature = "rhai")]
+        #[tokio::test]
+        async fn condition_on_expression_columns() -> TestResult {
+            use vantage_vista::FilterOp;
+            let clients = computed_clients("cond_expr").await?;
+            let cases = [
+                ("big_order", FilterOp::Eq, ciborium::Value::Bool(true), "EXISTS", "bob"),
+                (
+                    "n_orders",
+                    FilterOp::Gt,
+                    ciborium::Value::Integer(1.into()),
+                    "COUNT(*)",
+                    "alice",
+                ),
+                ("early_name", FilterOp::Eq, ciborium::Value::Bool(true), "< 'B'", "alice"),
+            ];
+            for (column, op, value, expression, id) in cases {
+                let narrowed = clients.clone().with_condition(column, op, value)?;
+                let query = narrowed.preview().query.unwrap_or_default();
+                // `label` is the last column the SELECT lists.
+                let (_, filter) = query.rsplit_once("label").expect("a projected label");
+                assert!(filter.contains(expression), "{column}: {query}");
+                assert!(!filter.contains(column), "{column}: {query}");
+                assert_eq!(ids_of(&narrowed).await?, [id], "{column}: {query}");
+            }
+            Ok(())
+        }
+
+        /// Quicksearch ORs an `expr:` column's expression with the stored
+        /// searchable columns.
+        #[cfg(feature = "rhai")]
+        #[tokio::test]
+        async fn search_matches_expression_and_stored_columns() -> TestResult {
+            let clients = computed_clients("search_expr").await?;
+            let by_label = clients.clone().with_search("vip-al")?;
+            assert_eq!(ids_of(&by_label).await?, ["alice"]);
+            let by_name = clients.with_search("Bob")?;
+            assert_eq!(ids_of(&by_name).await?, ["bob"]);
+            Ok(())
+        }
+
         /// An integer out of a CBOR scalar, whether the backend returned an
         /// integer (SQLite) or a decimal: Postgres and MySQL `SUM(bigint)`
         /// return `numeric`/`DECIMAL`, surfacing as `Tag(_, Text("30"))`.

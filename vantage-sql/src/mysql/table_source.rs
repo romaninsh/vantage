@@ -341,7 +341,8 @@ impl TableSource for MysqlDB {
             .filter(|col| !table.is_imported_column(col.name()))
             .map(|col| {
                 let p = pattern.clone();
-                mysql_expr!("{} LIKE {} ESCAPE '$'", (ident(col.name())), p)
+                let subject = crate::search_subject(table, col.name());
+                mysql_expr!("{} LIKE {} ESCAPE '$'", (subject), p)
             })
             .collect();
 

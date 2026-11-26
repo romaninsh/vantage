@@ -318,7 +318,8 @@ impl TableSource for SqliteDB {
             .filter(|col| !table.is_imported_column(col.name()))
             .map(|col| {
                 let p = pattern.clone();
-                sqlite_expr!("{} LIKE {} ESCAPE '$'", (ident(col.name())), p)
+                let subject = crate::search_subject(table, col.name());
+                sqlite_expr!("{} LIKE {} ESCAPE '$'", (subject), p)
             })
             .collect();
 

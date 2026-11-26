@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.2.2 — 2026-11-26
+
+- A rule's `table.where(column, value)` on an `expr:` column compares the column's expression, so `table.where("mine", true)` over an `exists()` column filters by the `EXISTS`. Before, the condition named the SELECT alias, which PostgreSQL and MySQL refuse in WHERE. `where(column, "in", values)` on an expression column is an error.
+
 ## 5.2.1 — 2026-11-23
 
 - A relation's `field` reads at most one row, as `first` does (none for a limit of 0). A has_one joined on a column other than the target's id with several matching rows failed the parent query on PostgreSQL and MySQL.

@@ -321,10 +321,11 @@ impl TableSource for PostgresDB {
             .filter(|col| !table.is_imported_column(col.name()))
             .map(|col| {
                 let p = pattern.clone();
+                let subject = crate::search_subject(table, col.name());
                 // ILIKE: quicksearch is case-insensitive everywhere else
                 // (SQLite LIKE folds case by default) — matching that here
                 // is parity, not a liberty.
-                postgres_expr!("{}::text ILIKE {} ESCAPE '$'", (ident(col.name())), p)
+                postgres_expr!("{}::text ILIKE {} ESCAPE '$'", (subject), p)
             })
             .collect();
 

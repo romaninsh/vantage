@@ -3,6 +3,7 @@
 ## 0.18.4 — 2026-11-26
 
 - A table whose id is an expression declared an integer type (`type: int`, `expr: '"a" * 1000000 + "b"'`) binds the id as an integer on PostgreSQL and SQLite, so a row reads, patches and deletes by the id its insert returned. Before, PostgreSQL failed with `operator does not exist: integer = text` and SQLite found no row.
+- A vista condition (`=`, `>`, `in_set`, `like`, …) and a quicksearch on an `expr:` column put the column's expression in WHERE, on PostgreSQL, MySQL and SQLite: `where("mine", true)` over `table.ref("assignments").where("user_id", session.uid).exists()` filters by the `EXISTS`. Before, PostgreSQL and MySQL failed with `column "mine" does not exist`, since SQL has no SELECT alias in WHERE. ORDER BY keeps the alias.
 
 ## 0.18.3 — 2026-11-23
 

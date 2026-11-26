@@ -15,6 +15,7 @@ use vantage_vista::{
 use super::dialect::{Shell, SqlShellDialect};
 use super::shell::cbor_record;
 use crate::declared::{is_absent, is_temporal};
+use crate::where_subject;
 
 /// The binary comparison template of `op`, `None` for the other operators.
 fn comparison(op: FilterOp) -> Option<&'static str> {
@@ -95,10 +96,11 @@ where
             .ok_or_else(|| error!("Unknown column for condition", field = field))?
             .clone();
         let value = &condition.value;
+        let subject = where_subject(&self.table, field, T::column_expr(&column))?;
         if let Some(template) = comparison(condition.op) {
             let cell = self.operand(field, value)?;
             self.table
-                .add_condition(T::compare(&column, template, cell));
+                .add_condition(T::compare(subject, template, cell));
             return Ok(());
         }
         match condition.op {
@@ -115,13 +117,14 @@ where
                     .collect::<Result<Vec<T::Value>>>()?;
                 let negate = op == FilterOp::NotInSet;
                 self.table
-                    .add_condition(T::in_list(&column, &values, negate));
+                    .add_condition(T::in_list(subject, &values, negate));
             }
             // The same `LIKE '%…%' ESCAPE '$'` pattern quicksearch uses, on
             // one column.
             FilterOp::Like => {
                 let pattern = crate::like_pattern(value);
-                self.table.add_condition(T::like(field, pattern));
+                let subject = where_subject(&self.table, field, T::quoted(field))?;
+                self.table.add_condition(T::like(subject, pattern));
             }
             _ => return unsupported(Capability::FilterOps),
         }
