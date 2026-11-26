@@ -398,8 +398,20 @@ where
             .iter()
             .find(|rel| rel.host_column() == host)
             .is_some_and(|rel| rel.kind() == vantage_vista::ReferenceKind::ContainsMany);
+        let prefix = format!("{host}.");
+        // A rule on the host under another name (a column read as `name`)
+        // covers all of it: the stored value stays whole.
+        let whole_ruled = self.columns_of_key(host).into_iter().any(|column| {
+            self.denials().column_rule(column).is_some()
+                && !self
+                    .nested_column_path(column)
+                    .unwrap_or(column)
+                    .starts_with(&prefix)
+        });
         let source = self.data_source();
-        let (Some(mut written), false) = (source.contained_records(written)?, many) else {
+        let (Some(mut written), false, false) =
+            (source.contained_records(written)?, many, whole_ruled)
+        else {
             return Ok(stored.clone());
         };
         let stored = source
@@ -411,7 +423,6 @@ where
             written.push(Record::new());
         }
         let record = &mut written[0];
-        let prefix = format!("{host}.");
         let ruled = self
             .denials()
             .columns()

@@ -233,6 +233,21 @@ async fn a_nested_write_keeps_host_keys_outside_the_projection() -> TestResult {
         .fetch_one(db.pool())
         .await?;
     assert_eq!(stored, r#"{"city":"c","zip":"z"}"#);
+
+    // A rule on the host under another name (`addr` stored at `address`)
+    // covers all of it: the replace keeps the stored host whole.
+    let mut addr_locked = people.clone().with_column(
+        vantage_table::column::core::Column::<AnySqliteType>::new("addr").with_alias("address"),
+    );
+    addr_locked.deny_column("addr", "policy/address-locked");
+    let town: Record<AnySqliteType> = [("town".to_string(), AnySqliteType::from("d".to_string()))]
+        .into_iter()
+        .collect();
+    addr_locked.replace_value("p1", &town).await?;
+    let (stored,): (String,) = sqlx::query_as("SELECT address FROM person WHERE id = 'p1'")
+        .fetch_one(db.pool())
+        .await?;
+    assert_eq!(stored, r#"{"city":"c","zip":"z"}"#);
     Ok(())
 }
 
