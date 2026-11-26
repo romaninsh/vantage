@@ -360,7 +360,11 @@ where
         };
         self.before_write(self.before_update_hooks(), &mut record, Some(update))
             .await?;
-        for (name, value) in kept_hosts {
+        for (name, stored) in kept_hosts {
+            let value = match record.get(&name) {
+                Some(written) => self.restore_ruled_fields(&name, written, &stored)?,
+                None => stored,
+            };
             let value = self.data_source().coerce_column_value(self, &name, value)?;
             record.insert(name, value);
         }
@@ -377,6 +381,54 @@ where
         )
         .await?;
         Ok(result)
+    }
+
+    /// A ruled contained host the replace wrote (`written`, after the
+    /// contained merge): the fields under it that a rule covers take their
+    /// stored values back, and the rest of the write stands. A contains_many
+    /// host has no fields to pick from, so it keeps its stored value whole.
+    fn restore_ruled_fields(
+        &self,
+        host: &str,
+        written: &T::Value,
+        stored: &T::Value,
+    ) -> Result<T::Value> {
+        let many = self
+            .contained
+            .iter()
+            .find(|rel| rel.host_column() == host)
+            .is_some_and(|rel| rel.kind() == vantage_vista::ReferenceKind::ContainsMany);
+        let source = self.data_source();
+        let (Some(mut written), false) = (source.contained_records(written)?, many) else {
+            return Ok(stored.clone());
+        };
+        let stored = source
+            .contained_records(stored)?
+            .and_then(|records| records.into_iter().next())
+            .unwrap_or_default();
+        written.truncate(1);
+        if written.is_empty() {
+            written.push(Record::new());
+        }
+        let record = &mut written[0];
+        let prefix = format!("{host}.");
+        let ruled = self
+            .denials()
+            .columns()
+            .filter_map(|(name, _)| {
+                let path = self.nested_column_path(name).unwrap_or(name);
+                let field = path.strip_prefix(&prefix)?;
+                // A rule deeper down (`a.b.c`) keeps the whole first-level field.
+                Some(field.split('.').next().unwrap_or(field).to_string())
+            })
+            .collect::<Vec<_>>();
+        for field in ruled {
+            match stored.get(&field) {
+                Some(value) => record.insert(field, value.clone()),
+                None => record.shift_remove(&field),
+            };
+        }
+        source.contained_host(written, false)
     }
 
     /// The stored columns a rule made read-only: a replace keeps their
