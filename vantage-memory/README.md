@@ -214,8 +214,8 @@ search and order to the store, which evaluates them.
 - **Comparison.** Integers and floats compare numerically across the two types (`1` and `1.0` are
   equal); text compares by code point; booleans compare `false < true`. Values of different kinds
   never match `Gt`/`Gte`/`Lt`/`Lte`.
-- **Null.** A null cell matches `Eq null`, `Ne <non-null value>`, and `NotInSet` against a set
-  holding no null. It fails every other op.
+- **Null.** A null cell matches `Eq null`, `Is null`, `IsNot <non-null value>`, and `NotInSet`
+  against a set holding no null. It fails every other op, `Ne` included: `Ne` is SQL's `!=`.
 - **`Like`.** `%` (any run) and `_` (one character), case-insensitive, over the text form of the
   cell — numbers compare by their decimal form.
 - **Search.** Case-insensitive substring over the text cells, and the text form of the number

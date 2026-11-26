@@ -30,6 +30,10 @@ fn comparison(op: FilterOp) -> Option<&'static str> {
     })
 }
 
+fn is_op(op: FilterOp) -> bool {
+    matches!(op, FilterOp::Is | FilterOp::IsNot)
+}
+
 impl<T, E> Shell<T, E>
 where
     T: SqlShellDialect,
@@ -68,7 +72,9 @@ where
                 .map(|v| self.operand(field, v).map(T::cbor))
                 .collect::<Result<_>>()
                 .map(CborValue::Array),
-            (op, value) if comparison(*op).is_some() => self.operand(field, value).map(T::cbor),
+            (op, value) if comparison(*op).is_some() || is_op(*op) => {
+                self.operand(field, value).map(T::cbor)
+            }
             _ => return condition.clone(),
         };
         let mut condition = condition.clone();
@@ -104,6 +110,14 @@ where
             return Ok(());
         }
         match condition.op {
+            op @ (FilterOp::Is | FilterOp::IsNot) => {
+                let cell = match value {
+                    CborValue::Null => None,
+                    value => Some(self.operand(field, value)?),
+                };
+                self.table
+                    .add_condition(T::is(subject, cell, op == FilterOp::IsNot));
+            }
             op @ (FilterOp::InSet | FilterOp::NotInSet) => {
                 let CborValue::Array(items) = value else {
                     return Err(error!(

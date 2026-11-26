@@ -55,7 +55,8 @@ pub use atomic::{
 pub use bridge::block_on;
 pub use cell::{CellGuard, ResolverCell};
 pub use convert::{
-    cbor_to_dynamic, dynamic_to_cbor, map_to_record, record_to_dynamic, record_to_map, value_arg,
+    Null, cbor_to_dynamic, condition_arg, dynamic_to_cbor, empty_condition_value, map_to_record,
+    null_needs_is, record_to_dynamic, record_to_map, register_null, value_arg,
 };
 pub use eval::{eval_modify_script, eval_ref_script, reject_dropped_narrowing};
 pub use handle::Handle;

@@ -452,6 +452,28 @@ macro_rules! define_sql_operation {
     };
 }
 
+/// `subject` NULL-safely equal to `value`, or not when `negate`. NULL is
+/// `IS [NOT] NULL`; a value uses the dialect's `is` templates, the equal
+/// spelling first and the distinct one second.
+pub(crate) fn null_safe<T, Cond>(
+    subject: Expression<T>,
+    value: Option<T>,
+    templates: [&str; 2],
+    negate: bool,
+) -> Cond
+where
+    T: Expressive<T> + Send + Clone + 'static,
+    Cond: From<Expression<T>>,
+{
+    match value {
+        None => Cond::from(Expression::new(
+            if negate { "{} IS NOT NULL" } else { "{} IS NULL" },
+            vec![ExpressiveEnum::Nested(subject)],
+        )),
+        Some(value) => build_sql_binary::<T, T, Cond>(&subject, value, templates[negate as usize]),
+    }
+}
+
 /// Helper for `define_sql_operation!`: build a binary expression, map to
 /// the backend's condition type. Public so the macro can call it from
 /// any module.

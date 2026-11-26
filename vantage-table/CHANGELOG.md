@@ -3,6 +3,7 @@
 ## 5.2.2 — 2026-11-26
 
 - A rule's `table.where(column, value)` on an `expr:` column compares the column's expression, so `table.where("mine", true)` over an `exists()` column filters by the `EXISTS`. Before, the condition named the SELECT alias, which PostgreSQL and MySQL refuse in WHERE. `where(column, "in", values)` on an expression column is an error.
+- `TableSource::is_value_condition(field, value, negate)`: a NULL-safe condition, `None` being NULL. A rule's `table.where(column, "is" | "is_not", value)` uses it; the default refuses it as unsupported, and so does an expression column.
 
 ## 5.2.1 — 2026-11-23
 

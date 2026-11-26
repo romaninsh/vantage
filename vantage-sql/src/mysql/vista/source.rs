@@ -19,8 +19,9 @@ use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Entity, Record};
 use vantage_vista::{NativeCondition, Reference, Transaction, Vista};
 
-use crate::condition::{MysqlCondition, build_sql_binary};
+use crate::condition::{MysqlCondition, build_sql_binary, null_safe};
 use crate::mysql::MysqlDB;
+use crate::mysql::table_source::IS_TEMPLATES;
 use crate::mysql::operation::MysqlOperation;
 use crate::mysql::types::AnyMysqlType;
 use crate::mysql::vista::factory::MysqlVistaFactory;
@@ -78,6 +79,14 @@ impl SqlShellDialect for MysqlDB {
         value: AnyMysqlType,
     ) -> MysqlCondition {
         build_sql_binary::<AnyMysqlType, AnyMysqlType, _>(&subject, value, template)
+    }
+
+    fn is(
+        subject: Expression<AnyMysqlType>,
+        value: Option<AnyMysqlType>,
+        negate: bool,
+    ) -> MysqlCondition {
+        null_safe(subject, value, IS_TEMPLATES, negate)
     }
 
     fn in_list(

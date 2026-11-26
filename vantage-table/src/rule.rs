@@ -38,11 +38,13 @@ impl<T: TableSource> Copy for RuleCodec<T> {}
 /// one clone, hands another to the `RuleHandle`, and takes the narrowed
 /// table back with [`Self::into_table`] once the script has run.
 ///
-/// `where` takes `eq` and `in`, through
-/// [`TableSource::eq_value_condition`] and
-/// [`TableSource::in_values_condition`]; any other operator is an error
+/// `where` takes `eq`, `in` and the NULL-safe `is` / `is_not`, through
+/// [`TableSource::eq_value_condition`],
+/// [`TableSource::in_values_condition`] and
+/// [`TableSource::is_value_condition`]; any other operator is an error
 /// naming it. On an expression column `eq` compares the expression
-/// ([`TableSource::expression_condition`]) and `in` is refused. Hooks run in [`Phase::Validate`], so they see the record as
+/// ([`TableSource::expression_condition`]); `in`, `is` and `is_not` are
+/// refused. Hooks run in [`Phase::Validate`], so they see the record as
 /// it will be written. On a patch the script's `record` is the full row,
 /// the stored row with the patched fields on top; on an insert or a replace
 /// it is exactly the record written. A delete hands the id and the stored
@@ -130,7 +132,19 @@ where
                     )
                     .mark_unsupported());
                 }
+                (FilterOp::Is | FilterOp::IsNot, Some(_)) => {
+                    return Err(error!(
+                        "where(column, \"is\" | \"is_not\", value) isn't supported on an \
+                         expression column",
+                        column = column
+                    )
+                    .mark_unsupported());
+                }
                 (FilterOp::Eq, None) => source.eq_value_condition(column, from_cbor(value))?,
+                (FilterOp::Is | FilterOp::IsNot, None) => {
+                    let value = (!value.is_null()).then(|| from_cbor(value));
+                    source.is_value_condition(column, value, op == FilterOp::IsNot)?
+                }
                 (FilterOp::InSet, None) => {
                     let CborValue::Array(items) = value else {
                         return Err(error!(

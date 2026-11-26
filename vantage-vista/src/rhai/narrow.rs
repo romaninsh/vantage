@@ -6,7 +6,7 @@ use std::sync::Arc;
 use vantage_rhai::ModuleDir;
 use vantage_rhai::rhai::{Dynamic, Engine, FnPtr, NativeCallContext};
 
-use super::convert::value_arg;
+use super::convert::{condition_arg, register_null};
 use super::handle::{Handle, Step};
 use super::read::RhaiResult;
 use crate::{FilterOp, VistaResolver, sort::SortDirection};
@@ -15,6 +15,7 @@ use crate::{FilterOp, VistaResolver, sort::SortDirection};
 /// when `resolver` is `Some`; the handle it returns carries that resolver.
 pub(crate) fn register_narrowing(engine: &mut Engine, resolver: Option<Arc<dyn VistaResolver>>) {
     engine.register_type_with_name::<Handle>("Table");
+    register_null(engine);
 
     if let Some(resolver) = resolver {
         engine.register_fn(
@@ -40,11 +41,7 @@ pub(crate) fn register_narrowing(engine: &mut Engine, resolver: Option<Arc<dyn V
     engine.register_fn(
         "where",
         |h: &mut Handle, col: &str, op: &str, value: Dynamic| -> RhaiResult<Handle> {
-            let op = FilterOp::parse(op).ok_or_else(|| {
-                format!(
-                    "unknown operator \"{op}\" in where (expected eq/ne/gt/gte/lt/lte/in/not_in/like)"
-                )
-            })?;
+            let op = FilterOp::parse(op).ok_or_else(|| unknown_operator(op))?;
             narrow_where(h, col, op, value)
         },
     );
@@ -121,8 +118,15 @@ fn narrow_where(h: &Handle, col: &str, op: FilterOp, value: Dynamic) -> RhaiResu
     Ok(h.push(Step::Where {
         col: col.into(),
         op,
-        value: value_arg("where", value)?,
+        value: condition_arg(col, op, value)?,
     }))
+}
+
+/// The error of an operator `where` doesn't know.
+pub(crate) fn unknown_operator(op: &str) -> String {
+    format!(
+        "unknown operator \"{op}\" in where (expected eq/ne/gt/gte/lt/lte/in/not_in/like/is/is_not)"
+    )
 }
 
 fn parse_dir(dir: &str) -> RhaiResult<SortDirection> {

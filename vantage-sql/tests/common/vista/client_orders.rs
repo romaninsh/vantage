@@ -442,6 +442,45 @@ columns:
             Ok(())
         }
 
+        /// `is` and `is_not` are NULL-safe on a column holding true, false
+        /// and NULL; `ne` keeps SQL's `!=`, which a NULL row doesn't match.
+        #[tokio::test]
+        async fn null_safe_operators() -> TestResult {
+            use ciborium::Value;
+            use vantage_vista::FilterOp;
+            let (db, _, _) = clients_orders("null_safe").await;
+            let t = "vista_tri_null_safe";
+            for sql in [
+                format!("DROP TABLE IF EXISTS {t}"),
+                format!("CREATE TABLE {t} (id VARCHAR(20) PRIMARY KEY, t BOOLEAN)"),
+                format!("INSERT INTO {t} VALUES ('yes', true), ('no', false), ('none', NULL)"),
+            ] {
+                sqlx::query(sqlx::AssertSqlSafe(sql))
+                    .execute(db.pool())
+                    .await?;
+            }
+            let block = $block;
+            let spec: $spec = serde_yaml_ng::from_str(&format!(
+                "name: tri\ncolumns:\n  id: {{ type: string, flags: [id] }}\n  \
+                 t: {{ type: bool }}\n{block}:\n  table: {t}\n"
+            ))?;
+            let tri = db.vista_factory().build_from_spec(spec)?;
+            let cases = [
+                (FilterOp::Is, Value::Null, vec!["none"]),
+                (FilterOp::IsNot, Value::Null, vec!["no", "yes"]),
+                (FilterOp::IsNot, Value::Bool(true), vec!["no", "none"]),
+                (FilterOp::Is, Value::Bool(true), vec!["yes"]),
+                (FilterOp::Ne, Value::Bool(true), vec!["no"]),
+            ];
+            for (op, value, expected) in cases {
+                let narrowed = tri.clone().with_condition("t", op, value.clone())?;
+                let mut ids: Vec<String> = narrowed.list_values().await?.into_keys().collect();
+                ids.sort();
+                assert_eq!(ids, expected, "{op:?} {value:?}: {:?}", narrowed.preview().query);
+            }
+            Ok(())
+        }
+
         /// An integer out of a CBOR scalar, whether the backend returned an
         /// integer (SQLite) or a decimal: Postgres and MySQL `SUM(bigint)`
         /// return `numeric`/`DECIMAL`, surfacing as `Tag(_, Text("30"))`.

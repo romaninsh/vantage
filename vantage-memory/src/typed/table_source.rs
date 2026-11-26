@@ -136,6 +136,17 @@ impl TableSource for MemoryDB {
         ))
     }
 
+    fn is_value_condition(
+        &self,
+        field: &str,
+        value: Option<Self::Value>,
+        negate: bool,
+    ) -> Result<Self::Condition> {
+        let op = if negate { FilterOp::IsNot } else { FilterOp::Is };
+        let value = value.map_or(ciborium::Value::Null, |v| v.into_value());
+        Ok(MemoryCondition::cmp(field, op, value))
+    }
+
     fn in_values_condition(
         &self,
         field: &str,

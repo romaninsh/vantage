@@ -5972,7 +5972,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-memory"
-version = "5.0.0"
+version = "5.0.1"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -6091,7 +6091,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-surrealdb"
-version = "3.2.0"
+version = "3.2.1"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -6189,7 +6189,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "3.1.0"
+version = "3.1.1"
 dependencies = [
  "async-stream",
  "async-trait",

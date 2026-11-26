@@ -228,10 +228,11 @@ fn an_absent_cell_matches_only_the_negative_operators() {
     let meta = VistaMetadata::new();
     let row = rec(&[("other", i(1))]);
     let set = CborValue::Array(vec![i(1)]);
-    assert!(cond("n", FilterOp::Ne, i(1)).matches(&row, &meta));
+    assert!(cond("n", FilterOp::IsNot, i(1)).matches(&row, &meta));
     assert!(cond("n", FilterOp::NotInSet, set.clone()).matches(&row, &meta));
     for op in [
         FilterOp::Eq,
+        FilterOp::Ne,
         FilterOp::Gt,
         FilterOp::Gte,
         FilterOp::Lt,

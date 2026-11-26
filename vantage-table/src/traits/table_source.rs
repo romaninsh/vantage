@@ -109,6 +109,23 @@ pub trait TableSource: DataSource + Clone + 'static {
         ))
     }
 
+    /// Build a NULL-safe `field is value` condition, or its negation when
+    /// `negate`: `None` is NULL (`IS NULL` / `IS NOT NULL`), and a NULL cell
+    /// never equals a value. A rule's `where(col, "is", null())` comes here.
+    /// The default refuses it as unsupported.
+    fn is_value_condition(
+        &self,
+        field: &str,
+        value: Option<Self::Value>,
+        negate: bool,
+    ) -> Result<Self::Condition> {
+        let _ = (field, value, negate);
+        Err(
+            vantage_core::error!("is_value_condition not implemented for this TableSource")
+                .mark_unsupported(),
+        )
+    }
+
     /// Build a `field IN (values)` condition from native-typed values: the
     /// list-valued sibling of [`Self::eq_value_condition`].
     /// [`Self::condition_column`] names `field` for it. An empty `values`

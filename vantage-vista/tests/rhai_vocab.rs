@@ -5,6 +5,7 @@ mod rhai_vocab {
     mod discard;
     mod eval;
     mod handle;
+    mod null;
     mod read;
     mod record;
     mod runtime;

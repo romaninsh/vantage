@@ -19,6 +19,7 @@ use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 use vantage_vista::Transaction;
 
+use crate::condition::null_safe;
 use crate::declared::{sql_coerce_fn, sql_declared_types, without_option};
 use crate::primitives::identifier::ident;
 use crate::set_writes::{SetWrites as _, id_target};
@@ -162,6 +163,9 @@ fn or_abort(expr: Expression<AnySqliteType>) -> Expression<AnySqliteType> {
     Expression::new(template, expr.parameters)
 }
 
+/// The NULL-safe `is` / `is_not` against a value.
+pub(crate) const IS_TEMPLATES: [&str; 2] = ["{} IS {}", "{} IS NOT {}"];
+
 #[async_trait]
 impl TableSource for SqliteDB {
     type Column<Type>
@@ -177,6 +181,16 @@ impl TableSource for SqliteDB {
     fn eq_value_condition(&self, field: &str, value: Self::Value) -> Result<Self::Condition> {
         let column: Column<AnySqliteType> = Column::new(field);
         Ok(SqliteOperation::eq(&column, value))
+    }
+
+    fn is_value_condition(
+        &self,
+        field: &str,
+        value: Option<Self::Value>,
+        negate: bool,
+    ) -> Result<Self::Condition> {
+        let column: Column<AnySqliteType> = Column::new(field);
+        Ok(null_safe(column.expr(), value, IS_TEMPLATES, negate))
     }
 
     fn in_values_condition(

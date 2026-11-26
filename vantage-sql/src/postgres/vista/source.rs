@@ -23,8 +23,9 @@ use crate::postgres::vista::rhai_source::register_postgres_onto;
 #[cfg(feature = "rhai")]
 use crate::rhai_engine::RhaiExpr;
 
-use crate::condition::{PostgresCondition, build_sql_binary};
+use crate::condition::{PostgresCondition, build_sql_binary, null_safe};
 use crate::postgres::PostgresDB;
+use crate::postgres::impls::table_source::IS_TEMPLATES;
 use crate::postgres::operation::PostgresOperation;
 use crate::postgres::types::AnyPostgresType;
 use crate::postgres::vista::factory::PostgresVistaFactory;
@@ -95,6 +96,14 @@ impl SqlShellDialect for PostgresDB {
         value: AnyPostgresType,
     ) -> PostgresCondition {
         build_sql_binary::<AnyPostgresType, AnyPostgresType, _>(&subject, value, template)
+    }
+
+    fn is(
+        subject: Expression<AnyPostgresType>,
+        value: Option<AnyPostgresType>,
+        negate: bool,
+    ) -> PostgresCondition {
+        null_safe(subject, value, IS_TEMPLATES, negate)
     }
 
     fn in_list(

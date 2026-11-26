@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.2.1 — 2026-11-26
+
+- Vista and rule conditions `"is"` / `"is_not"`: `null()` matches a missing field and a stored NULL (`(t = NONE OR t = NULL)`, negated `(t != NONE AND t != NULL)`); `"is_not"` with a value also counts rows without the field (`(t != $v OR t = NONE)`).
+
 ## 3.2.0 — 2026-11-23
 
 - Rhai: `surreal::concat([parts])` (`string::concat`) and `surreal::concat_ws(sep, [parts])` (`array::join` over the parts that are not NONE or NULL), with `sql::concat`'s argument rules: a string is a bound value, a number or bool is bound as its text (`1.5` → `"1.5"`, not SurrealDB's `1.5f`; `true` → `"true"`).

@@ -19,6 +19,8 @@ use vantage_table::source::SelectSeed;
 use vantage_table::table::{Aggregate, RelationQuery, Table};
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::EmptyEntity;
+use vantage_vista::FilterOp;
+use vantage_vista::rhai::{Null, empty_condition_value, null_needs_is, register_null};
 
 use super::RhaiExpr;
 use super::convert::rhai_err;
@@ -56,6 +58,15 @@ impl<T: TableSource> Clone for RhaiRelation<T> {
 }
 
 type Rhai<R> = Result<R, Box<rhai::EvalAltResult>>;
+
+/// `value` as a condition's: `()` (an unset `session.uid`) is refused, so
+/// it can't widen the set; `null()` asks for NULL.
+fn refuse_unit(column: &str, value: Dynamic) -> Rhai<Dynamic> {
+    if value.is_unit() {
+        return Err(rhai_err(empty_condition_value(column)));
+    }
+    Ok(value)
+}
 
 /// A Rhai value as a cell: a scalar binds as a parameter.
 fn scalar<V>(value: &Dynamic) -> Rhai<V>
@@ -96,13 +107,15 @@ where
             .map_err(|e| rhai_err(e.to_string()))
     }
 
-    fn where_eq(mut self, column: &str, value: Dynamic) -> Rhai<Self> {
-        // The column is the child's: an unknown one is an error, not a
-        // reference that SQL would resolve to the outer table's column.
-        let relation = self.q.relation.clone();
+    /// The child's column `column`: whether it is an expression column, and
+    /// its expression. The column is the child's: an unknown one is an
+    /// error, not a reference that SQL would resolve to the outer table's
+    /// column.
+    fn child_column(&self, column: &str) -> Rhai<(bool, Expression<T::Value>)> {
+        let relation = &self.q.relation;
         let child = self
             .table
-            .get_ref_target_erased(&relation)
+            .get_ref_target_erased(relation)
             .map_err(|e| rhai_err(e.to_string()))?;
         let computed = child.is_calculated_column(column);
         let target = child
@@ -114,6 +127,52 @@ where
                     child.table_name()
                 ))
             })?;
+        Ok((computed, target))
+    }
+
+    fn where_op(self, column: &str, op: &str, value: Dynamic) -> Rhai<Self> {
+        match FilterOp::parse(op) {
+            Some(FilterOp::Eq) => self.where_eq(column, value),
+            Some(op @ (FilterOp::Is | FilterOp::IsNot)) => {
+                self.where_is(column, value, op == FilterOp::IsNot)
+            }
+            _ => Err(rhai_err(format!(
+                "operator \"{op}\" isn't supported in a relation's where (expected eq/is/is_not)"
+            ))),
+        }
+    }
+
+    /// `where(column, "is" | "is_not", value)`: NULL-safe, `null()` being
+    /// NULL.
+    fn where_is(mut self, column: &str, value: Dynamic, negate: bool) -> Rhai<Self> {
+        let value = refuse_unit(column, value)?;
+        let (computed, _) = self.child_column(column)?;
+        if computed {
+            return Err(rhai_err(format!(
+                "where({column}): \"is\" and \"is_not\" aren't supported on an expression column \
+                 in a relation"
+            )));
+        }
+        let value = if value.is::<Null>() {
+            None
+        } else {
+            Some(scalar::<T::Value>(&value)?)
+        };
+        let condition = self
+            .table
+            .data_source()
+            .is_value_condition(column, value, negate)
+            .map_err(|e| rhai_err(e.to_string()))?;
+        self.q.conditions.push(condition);
+        Ok(self)
+    }
+
+    fn where_eq(mut self, column: &str, value: Dynamic) -> Rhai<Self> {
+        let value = refuse_unit(column, value)?;
+        if value.is::<Null>() {
+            return Err(rhai_err(null_needs_is(column)));
+        }
+        let (computed, target) = self.child_column(column)?;
         let condition = match (value.clone().try_cast::<RhaiExpr<T::Value>>(), computed) {
             (Some(e), false) => self.condition(expr_any!("{} = ({})", (ident(column)), (e.0)))?,
             (Some(e), true) => self.condition(expr_any!("({}) = ({})", (target), (e.0)))?,
@@ -184,6 +243,7 @@ where
 
     engine.register_type_with_name::<RhaiTable<T>>("Table");
     engine.register_type_with_name::<Rel<T>>("Relation");
+    register_null(engine);
 
     engine.register_fn("ref", |t: &mut RhaiTable<T>, name: &str| -> Rhai<Rel<T>> {
         t.0.ref_cardinality(name)
@@ -197,6 +257,12 @@ where
     engine.register_fn("where", |r: &mut Rel<T>, column: &str, value: Dynamic| {
         r.clone().where_eq(column, value)
     });
+    engine.register_fn(
+        "where",
+        |r: &mut Rel<T>, column: &str, op: &str, value: Dynamic| {
+            r.clone().where_op(column, op, value)
+        },
+    );
     engine.register_fn("where", |r: &mut Rel<T>, condition: Ex<T>| {
         r.clone().where_expr(condition)
     });

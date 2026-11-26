@@ -55,6 +55,14 @@ pub(crate) trait SqlShellDialect:
         value: Self::Value,
     ) -> Self::Condition;
 
+    /// `subject` NULL-safely equal to `value` (`None` is NULL), or not when
+    /// `negate`.
+    fn is(
+        subject: Expression<Self::Value>,
+        value: Option<Self::Value>,
+        negate: bool,
+    ) -> Self::Condition;
+
     /// `subject IN (values)`, or `NOT IN` when `negate`.
     fn in_list(
         subject: Expression<Self::Value>,

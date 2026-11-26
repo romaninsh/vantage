@@ -101,7 +101,7 @@ fn a_null_cell_matches_only_what_the_null_rules_allow() {
         ["null", "missing"]
     );
     assert_eq!(
-        found(&t, cmp("x", FilterOp::Ne, int(1))),
+        found(&t, cmp("x", FilterOp::IsNot, int(1))),
         ["null", "missing"]
     );
     assert_eq!(found(&t, cmp("x", FilterOp::Gt, int(0))), ["one"]);
@@ -128,6 +128,28 @@ fn a_null_cell_matches_only_what_the_null_rules_allow() {
         ),
         Vec::<String>::new()
     );
+}
+
+/// `is` / `is_not` are NULL-safe, a missing cell being NULL; `ne` is SQL's
+/// `!=`, which a NULL cell doesn't match.
+#[test]
+fn null_safe_operators() {
+    let t = table(vec![
+        ("yes", vec![("t", CborValue::Bool(true))]),
+        ("no", vec![("t", CborValue::Bool(false))]),
+        ("none", vec![("t", CborValue::Null)]),
+        ("missing", vec![("y", int(1))]),
+    ]);
+    let truth = CborValue::Bool(true);
+    let null = CborValue::Null;
+    assert_eq!(found(&t, cmp("t", FilterOp::Is, null.clone())), ["none", "missing"]);
+    assert_eq!(found(&t, cmp("t", FilterOp::IsNot, null)), ["yes", "no"]);
+    assert_eq!(
+        found(&t, cmp("t", FilterOp::IsNot, truth.clone())),
+        ["no", "none", "missing"]
+    );
+    assert_eq!(found(&t, cmp("t", FilterOp::Is, truth.clone())), ["yes"]);
+    assert_eq!(found(&t, cmp("t", FilterOp::Ne, truth)), ["no"]);
 }
 
 #[test]

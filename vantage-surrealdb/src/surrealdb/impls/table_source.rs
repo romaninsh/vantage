@@ -18,6 +18,7 @@ use vantage_vista::Transaction;
 use super::set_writes;
 use crate::identifier::Identifier;
 use crate::statements::delete::SurrealDelete;
+use crate::surreal_expr;
 use crate::statements::insert::SurrealInsert;
 use crate::statements::update::SurrealUpdate;
 
@@ -115,6 +116,24 @@ async fn ensure_row_affected<E: Entity<AnySurrealType>>(
     Err(error!("Row not found", table = table.table_name(), id = id.clone()).mark_not_found())
 }
 
+/// `subject` NULL-safely equal to `value`, or not when `negate`. NULL
+/// matches a missing field (`NONE`) and a stored `NULL`, which SurrealDB
+/// tells apart.
+pub(crate) fn null_safe(
+    subject: Expression<AnySurrealType>,
+    value: Option<AnySurrealType>,
+    negate: bool,
+) -> Expression<AnySurrealType> {
+    match (value, negate) {
+        (None, false) => surreal_expr!("({} = NONE OR {} = NULL)", (subject), (subject)),
+        (None, true) => surreal_expr!("({} != NONE AND {} != NULL)", (subject), (subject)),
+        (Some(value), false) => subject.eq(value),
+        (Some(value), true) => {
+            surreal_expr!("({} != {} OR {} = NONE)", (subject), value, (subject))
+        }
+    }
+}
+
 #[async_trait]
 impl TableSource for SurrealDB {
     type Column<Type>
@@ -134,6 +153,16 @@ impl TableSource for SurrealDB {
     fn eq_value_condition(&self, field: &str, value: Self::Value) -> Result<Self::Condition> {
         let column: Column<AnySurrealType> = Column::new(field);
         Ok(SurrealOperation::eq(&column, value))
+    }
+
+    fn is_value_condition(
+        &self,
+        field: &str,
+        value: Option<Self::Value>,
+        negate: bool,
+    ) -> Result<Self::Condition> {
+        let column: Column<AnySurrealType> = Column::new(field);
+        Ok(null_safe(column.expr(), value, negate))
     }
 
     /// `field IN ([…])`: the values travel as one array literal.

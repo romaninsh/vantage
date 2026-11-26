@@ -18,8 +18,9 @@ use vantage_core::{Context, Result, error};
 use vantage_rhai::rhai::{AST, Dynamic, Engine, EvalAltResult, FnPtr};
 use vantage_rhai::{Env, Host};
 
-use super::convert::{cbor_to_dynamic, value_arg};
+use super::convert::{cbor_to_dynamic, condition_arg, register_null};
 use super::eval::compile;
+use super::narrow::unknown_operator;
 use super::read::RhaiResult;
 use crate::FilterOp;
 
@@ -151,7 +152,7 @@ impl RuleHandle {
     }
 
     fn where_value(&self, column: &str, op: FilterOp, value: Dynamic) -> RhaiResult<RuleHandle> {
-        let value = value_arg("where", value)?;
+        let value = condition_arg(column, op, value)?;
         let described = self
             .target()
             .where_value(column, op, value)
@@ -235,6 +236,7 @@ fn refusal(err: EvalAltResult) -> String {
 /// `remove_column(name)`. Each returns the handle, so calls chain.
 pub fn register_rule_vocab(engine: &mut Engine) {
     engine.register_type_with_name::<RuleHandle>("Table");
+    register_null(engine);
 
     engine.register_fn(
         "where",
@@ -245,11 +247,7 @@ pub fn register_rule_vocab(engine: &mut Engine) {
     engine.register_fn(
         "where",
         |h: &mut RuleHandle, column: &str, op: &str, value: Dynamic| -> RhaiResult<RuleHandle> {
-            let op = FilterOp::parse(op).ok_or_else(|| {
-                format!(
-                    "unknown operator \"{op}\" in where (expected eq/ne/gt/gte/lt/lte/in/not_in/like)"
-                )
-            })?;
+            let op = FilterOp::parse(op).ok_or_else(|| unknown_operator(op))?;
             h.where_value(column, op, value)
         },
     );

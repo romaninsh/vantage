@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.0.1 — 2026-11-26
+
+- Conditions `Is` / `IsNot` (`"is"` / `"is_not"`): NULL-safe equality and its negation, a missing cell being NULL. `Ne` is SQL's `!=`: a NULL or missing cell no longer matches it, so memory (and scenario tests) agree with the SQL backends. Use `IsNot` for the NULL-safe negation.
+
 ## 5.0.0 — 2026-11-22
 
 - **Breaking:** `insert_table_value` returns `Inserted<AnyMemoryType>` and the vista shell's

@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.1.1 — 2026-11-26
+- `where(col, ())` used to match nothing silently; it is now refused with a message naming the column: "where(col): the value is empty (()); use null() to match NULL". An unset `session.uid` in a rule's `where("user_id", session.uid)` fails the rule instead of widening it. `null()` with `"is"` / `"is_not"` matches NULL.
+- `FilterOp::Is` / `FilterOp::IsNot`, parsed from `"is"` / `"is_not"`: NULL-safe equality and its negation. `null()` is a Rhai `Null` value distinct from `()`; it stores NULL on a write. Ordering operators refuse it: `where(col): null() can't be ordered; use "is" or "is_not"`; so do `eq` (`where(col, null())`) and `ne` / `"!"`, which SQL can't match against NULL: `where(col): null() needs "is" or "is_not"`.
+- The in-memory evaluator (`Condition::matches`, the live cache) reads `Ne` as SQL's `!=`: a NULL or absent cell no longer matches it. `IsNot` is the NULL-safe negation.
+
 ## 3.1.0 — 2026-11-23
 - `where_expr(|t| …)` on data handles: the closure gets the backend's table (`TableShell::script_table`) and returns a query expression (`t.ref("tags").where("tag_id", 5).exists()`), which narrows the handle as a native condition (`TableShell::script_condition`). A backend without native conditions refuses: "`where_expr` needs a backend that takes native conditions", naming the table. A handle from `table(name)` is resolved for it.
 - `RuleTarget::native_table` / `RuleHandle::native_table`: the table a rule narrows, for a backend's own rule verbs.

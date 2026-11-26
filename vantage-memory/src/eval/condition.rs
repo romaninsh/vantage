@@ -189,7 +189,10 @@ fn cmp_matches(cell: Option<&CborValue>, op: FilterOp, value: &CborValue) -> boo
     let null = matches!(cell, CborValue::Null);
     match op {
         FilterOp::Eq => values_eq(cell, value),
-        FilterOp::Ne => !values_eq(cell, value),
+        // SQL's `!=`: neither side NULL. `IsNot` is the NULL-safe one.
+        FilterOp::Ne => !null && !value.is_null() && !values_eq(cell, value),
+        FilterOp::Is => values_eq(cell, value),
+        FilterOp::IsNot => !values_eq(cell, value),
         FilterOp::InSet => in_set(cell, value),
         FilterOp::NotInSet => !in_set(cell, value),
         FilterOp::Like => !null && text_of(cell).is_some_and(|t| like(&operand_text(value), &t)),

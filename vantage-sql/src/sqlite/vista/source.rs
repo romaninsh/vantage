@@ -21,10 +21,11 @@ use crate::rhai_engine::RhaiExpr;
 #[cfg(feature = "rhai")]
 use crate::sqlite::vista::rhai_source::register_sqlite_onto;
 
-use crate::condition::{SqliteCondition, build_sql_binary};
+use crate::condition::{SqliteCondition, build_sql_binary, null_safe};
 use crate::primitives::identifier::ident;
 use crate::sql_vista::{Shell, SqlShellDialect, SqlTableShell};
 use crate::sqlite::SqliteDB;
+use crate::sqlite::impls::table_source::IS_TEMPLATES;
 use crate::sqlite::operation::SqliteOperation;
 use crate::sqlite::types::AnySqliteType;
 use crate::sqlite::vista::factory::SqliteVistaFactory;
@@ -63,6 +64,14 @@ impl SqlShellDialect for SqliteDB {
         value: AnySqliteType,
     ) -> SqliteCondition {
         build_sql_binary::<AnySqliteType, AnySqliteType, _>(&subject, value, template)
+    }
+
+    fn is(
+        subject: Expression<AnySqliteType>,
+        value: Option<AnySqliteType>,
+        negate: bool,
+    ) -> SqliteCondition {
+        null_safe(subject, value, IS_TEMPLATES, negate)
     }
 
     fn in_list(
