@@ -124,6 +124,8 @@ impl MongoVistaFactory {
     /// the traversal an error.
     pub fn table_from_spec(&self, spec: &MongoVistaSpec) -> Result<Table<MongoDB, EmptyEntity>> {
         let resolver = self.resolver_with_fallback();
+        let spec = build::with_common_nested_paths(spec)?;
+        let spec = spec.as_ref();
         ref_keys::check_spec(spec, Some(&resolver))?;
         let env = BuildEnv::root(&spec.name, Some(resolver), self.injector.clone());
         build_mongo_table(spec, self.mongo.clone(), &env)

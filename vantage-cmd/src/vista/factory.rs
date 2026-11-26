@@ -50,6 +50,15 @@ impl CmdVistaFactory {
         &self,
         spec: &CmdVistaSpec,
     ) -> Result<Table<Cmd, EmptyEntity>> {
+        if let Some(name) = spec
+            .columns
+            .iter()
+            .find_map(|(name, c)| c.nested_path.as_ref().map(|_| name))
+        {
+            return Err(error!(format!(
+                "column {name}: nested_path isn't supported by vantage-cmd"
+            )));
+        }
         let cmd_spec = {
             let mut cs = CmdSpec::new(spec.driver.cmd.rhai.clone());
             cs.command = spec.driver.cmd.command.clone();

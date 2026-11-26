@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.1 — 2026-11-26
+
+- A spec column with `nested_path` (vantage-vista 3.2.0) fails the build: "column <name>: nested_path isn't supported by CSV". It used to be read as a plain column.
+
 ## 0.9.0 — 2026-11-22
 
 - **Breaking:** `insert_table_value` returns `Inserted<…>` (vantage-table 5). CSV still refuses

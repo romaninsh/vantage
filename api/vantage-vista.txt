@@ -243,6 +243,8 @@ pub vantage_vista::prelude::FilterOp::Eq
 pub vantage_vista::prelude::FilterOp::Gt
 pub vantage_vista::prelude::FilterOp::Gte
 pub vantage_vista::prelude::FilterOp::InSet
+pub vantage_vista::prelude::FilterOp::Is
+pub vantage_vista::prelude::FilterOp::IsNot
 pub vantage_vista::prelude::FilterOp::Like
 pub vantage_vista::prelude::FilterOp::Lt
 pub vantage_vista::prelude::FilterOp::Lte
@@ -654,6 +656,23 @@ impl core::marker::Unpin for vantage_vista::rhai::Handle
 impl core::marker::UnsafeUnpin for vantage_vista::rhai::Handle
 impl !core::panic::unwind_safe::RefUnwindSafe for vantage_vista::rhai::Handle
 impl !core::panic::unwind_safe::UnwindSafe for vantage_vista::rhai::Handle
+pub struct vantage_vista::rhai::Null
+impl core::clone::Clone for vantage_vista::rhai::Null
+pub fn vantage_vista::rhai::Null::clone(&self) -> Self
+impl core::cmp::Eq for vantage_vista::rhai::Null
+impl core::cmp::PartialEq for vantage_vista::rhai::Null
+pub fn vantage_vista::rhai::Null::eq(&self, &Self) -> bool
+impl core::fmt::Debug for vantage_vista::rhai::Null
+pub fn vantage_vista::rhai::Null::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for vantage_vista::rhai::Null
+impl core::marker::StructuralPartialEq for vantage_vista::rhai::Null
+impl core::marker::Freeze for vantage_vista::rhai::Null
+impl core::marker::Send for vantage_vista::rhai::Null
+impl core::marker::Sync for vantage_vista::rhai::Null
+impl core::marker::Unpin for vantage_vista::rhai::Null
+impl core::marker::UnsafeUnpin for vantage_vista::rhai::Null
+impl core::panic::unwind_safe::RefUnwindSafe for vantage_vista::rhai::Null
+impl core::panic::unwind_safe::UnwindSafe for vantage_vista::rhai::Null
 pub struct vantage_vista::rhai::RecordDraft
 impl vantage_vista::rhai::RecordDraft
 pub fn vantage_vista::rhai::RecordDraft::changes(&self) -> indexmap::map::IndexMap<alloc::string::String, ciborium::value::Value>
@@ -720,6 +739,7 @@ pub fn vantage_vista::rhai::RuleTarget::remove_column(&mut self, &str) -> vantag
 pub fn vantage_vista::rhai::RuleTarget::where_value(&mut self, &str, vantage_vista::FilterOp, ciborium::value::Value) -> vantage_core::util::error::Result<alloc::string::String>
 pub fn vantage_vista::rhai::block_on<F: core::future::future::Future>(F) -> vantage_core::util::error::Result<<F as core::future::future::Future>::Output>
 pub fn vantage_vista::rhai::cbor_to_dynamic(&ciborium::value::Value) -> rhai::types::dynamic::Dynamic
+pub fn vantage_vista::rhai::condition_arg(&str, vantage_vista::FilterOp, rhai::types::dynamic::Dynamic) -> core::result::Result<ciborium::value::Value, alloc::boxed::Box<rhai::types::error::EvalAltResult>>
 pub fn vantage_vista::rhai::dynamic_to_cbor(rhai::types::dynamic::Dynamic) -> core::result::Result<ciborium::value::Value, alloc::boxed::Box<rhai::types::error::EvalAltResult>>
 pub fn vantage_vista::rhai::eval_modify_script(&vantage_rhai::host::Host, &str, vantage_vista::Vista) -> vantage_core::util::error::Result<vantage_vista::Vista>
 pub fn vantage_vista::rhai::eval_ref_script(&vantage_rhai::host::Host, &str, vantage_rhai::compiled::Env, &vantage_types::record::Record<ciborium::value::Value>) -> vantage_core::util::error::Result<vantage_vista::Vista>
@@ -728,6 +748,7 @@ pub fn vantage_vista::rhai::map_to_record(rhai::Map) -> core::result::Result<van
 pub fn vantage_vista::rhai::preview_script(alloc::string::String, alloc::rcs::arc::Arc<dyn vantage_vista::VistaResolver>) -> core::result::Result<serde_json::value::Value, alloc::string::String>
 pub fn vantage_vista::rhai::record_to_dynamic(&vantage_types::record::Record<ciborium::value::Value>) -> rhai::types::dynamic::Dynamic
 pub fn vantage_vista::rhai::record_to_map(&vantage_types::record::Record<ciborium::value::Value>) -> rhai::Map
+pub fn vantage_vista::rhai::register_null(&mut rhai::engine::Engine)
 pub fn vantage_vista::rhai::register_rule_vocab(&mut rhai::engine::Engine)
 pub fn vantage_vista::rhai::reject_dropped_narrowing(&rhai::ast::ast::AST, &'static str, bool) -> vantage_core::util::error::Result<()>
 pub async fn vantage_vista::rhai::run_script(alloc::string::String, alloc::rcs::arc::Arc<dyn vantage_vista::VistaResolver>, usize, vantage_vista::rhai::Writes) -> core::result::Result<serde_json::value::Value, alloc::string::String>
@@ -855,6 +876,8 @@ pub vantage_vista::FilterOp::Eq
 pub vantage_vista::FilterOp::Gt
 pub vantage_vista::FilterOp::Gte
 pub vantage_vista::FilterOp::InSet
+pub vantage_vista::FilterOp::Is
+pub vantage_vista::FilterOp::IsNot
 pub vantage_vista::FilterOp::Like
 pub vantage_vista::FilterOp::Lt
 pub vantage_vista::FilterOp::Lte
@@ -1059,6 +1082,7 @@ pub vantage_vista::ColumnSpec::driver: C
 pub vantage_vista::ColumnSpec::expr: core::option::Option<alloc::string::String>
 pub vantage_vista::ColumnSpec::flags: alloc::vec::Vec<vantage_vista::ColumnFlag>
 pub vantage_vista::ColumnSpec::lazy: core::option::Option<alloc::string::String>
+pub vantage_vista::ColumnSpec::nested_path: core::option::Option<alloc::string::String>
 pub vantage_vista::ColumnSpec::references: core::option::Option<vantage_vista::ReferenceSugar>
 impl<C: core::default::Default> vantage_vista::ColumnSpec<C>
 pub fn vantage_vista::ColumnSpec<C>::new() -> Self
@@ -1126,8 +1150,6 @@ pub vantage_vista::ContainedYaml::columns: indexmap::map::IndexMap<alloc::string
 pub vantage_vista::ContainedYaml::host_column: alloc::string::String
 pub vantage_vista::ContainedYaml::id_column: core::option::Option<alloc::string::String>
 pub vantage_vista::ContainedYaml::kind: vantage_vista::ReferenceKind
-impl<C> vantage_vista::ContainedYaml<C>
-pub fn vantage_vista::ContainedYaml<C>::contains_one(impl core::convert::Into<alloc::string::String>) -> Self
 impl<'de, C> serde_core::de::Deserialize<'de> for vantage_vista::ContainedYaml<C> where C: serde_core::de::DeserializeOwned + core::default::Default
 pub fn vantage_vista::ContainedYaml<C>::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
 impl<C: core::clone::Clone> core::clone::Clone for vantage_vista::ContainedYaml<C>
@@ -1627,6 +1649,8 @@ pub vantage_vista::VistaSpec::name: alloc::string::String
 pub vantage_vista::VistaSpec::references: indexmap::map::IndexMap<alloc::string::String, vantage_vista::ReferenceSpec<R>>
 impl<T, C, R> vantage_vista::VistaSpec<T, C, R>
 pub fn vantage_vista::VistaSpec<T, C, R>::resolve_id_column(&self, &str) -> alloc::string::String
+impl<T, C: core::clone::Clone + core::default::Default, R> vantage_vista::VistaSpec<T, C, R>
+pub fn vantage_vista::VistaSpec<T, C, R>::contained_relations(&self) -> vantage_core::util::error::Result<indexmap::map::IndexMap<alloc::string::String, vantage_vista::ContainedYaml<C>>>
 impl<T: core::default::Default, C, R> vantage_vista::VistaSpec<T, C, R>
 pub fn vantage_vista::VistaSpec<T, C, R>::new(impl core::convert::Into<alloc::string::String>) -> Self
 impl<'de, T, C, R> serde_core::de::Deserialize<'de> for vantage_vista::VistaSpec<T, C, R> where T: serde_core::de::DeserializeOwned + core::default::Default, C: serde_core::de::DeserializeOwned + core::default::Default, R: serde_core::de::DeserializeOwned + core::default::Default

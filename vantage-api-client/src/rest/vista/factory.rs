@@ -198,6 +198,15 @@ impl RestApiVistaFactory {
     /// EmptyEntity>`. Endpoint defaults to `spec.name` when the
     /// `api.endpoint` block is absent.
     fn table_from_spec(&self, spec: &RestApiVistaSpec) -> Result<Table<RestApi, EmptyEntity>> {
+        if let Some(name) = spec
+            .columns
+            .iter()
+            .find_map(|(name, c)| c.nested_path.as_ref().map(|_| name))
+        {
+            return Err(error!(format!(
+                "column {name}: nested_path isn't supported by REST"
+            )));
+        }
         let block = spec.driver.api.as_ref();
         let endpoint = block
             .and_then(|b| b.endpoint.clone())

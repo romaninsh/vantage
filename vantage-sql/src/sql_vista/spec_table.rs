@@ -8,9 +8,7 @@ use ciborium::Value as CborValue;
 use vantage_core::Result;
 #[cfg(not(feature = "rhai"))]
 use vantage_core::error;
-#[cfg(feature = "rhai")]
-use vantage_expressions::Expression;
-use vantage_expressions::{Expressive, SelectableDataSource};
+use vantage_expressions::{Expression, Expressive, SelectableDataSource};
 use vantage_table::source::SelectSource;
 use vantage_table::table::spec::spec_references;
 use vantage_table::table::{BuildEnv, BuildKind, Table};
@@ -19,6 +17,8 @@ use vantage_types::EmptyEntity;
 use vantage_vista::{ColumnSpec, ReferenceSpec, VistaMetadata, VistaSpec, resolve_base_spec};
 
 use super::{SqlShellDialect, metadata_options};
+
+mod nested;
 
 /// The spec a dialect's factory builds from.
 pub(crate) type SpecOf<T> = VistaSpec<
@@ -54,7 +54,7 @@ pub(crate) trait SqlSpecDialect:
     >
 {
     type TableExtras: 'static;
-    type ColumnExtras: 'static;
+    type ColumnExtras: Clone + Default + 'static;
     type ReferenceExtras: 'static;
     /// The dialect's SELECT.
     type Query: Expressive<<Self as TableSource>::Value> + Clone;
@@ -67,6 +67,10 @@ pub(crate) trait SqlSpecDialect:
         name: &str,
         spec: &ColumnSpec<Self::ColumnExtras>,
     ) -> Result<Self::Column<Self::AnyType>>;
+
+    /// Key `key` of JSON column `host`, as text: a `nested_path` column's
+    /// read.
+    fn nested_read(host: &str, key: &str) -> Expression<<Self as TableSource>::Value>;
 
     /// The Rhai script a reference builds its target with, for a dialect
     /// whose reference blocks declare one.
@@ -170,6 +174,7 @@ where
     if let Some(base) = block.base {
         return build_derived_table(spec, &block, base, db, env);
     }
+    let contained = spec.contained_relations()?;
 
     let mut table = match block.rhai {
         Some(code) => {
@@ -194,21 +199,26 @@ where
             table = with_expr_column::<T>(table, name, code)?;
         }
     }
+    let mut table = nested::with_nested_columns(table, spec)?;
 
     if spec.columns.keys().any(|n| n.contains('.')) {
         // Every non-lazy spec column is listed, so the plain set keeps
         // projecting while each dotted name becomes a read-only correlated
-        // import aliased under the literal dotted name.
+        // import aliased under the literal dotted name. So is each host a
+        // `nested_path` added.
+        let hosts = contained.values().map(|c| c.host_column.as_str());
         let names: Vec<&str> = spec
             .columns
             .iter()
             .filter(|(_, c)| c.lazy.is_none())
             .map(|(n, _)| n.as_str())
+            .chain(hosts.filter(|h| !spec.columns.contains_key(*h)))
             .collect();
         table = table.with_active_columns(&names)?;
     }
 
-    let mut table = table.with_contained_specs(&spec.contained, T::spec_column)?;
+    let table = table.with_contained_specs(&spec.contained, T::spec_column)?;
+    let mut table = nested::with_nested_relations(table, spec, &contained)?;
     env.inject(&spec.name, &mut table, build_spec_table::<T>)?;
     Ok(table)
 }

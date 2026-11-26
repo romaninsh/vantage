@@ -60,6 +60,17 @@ pub(crate) fn build_table(
         )
         .mark_unsupported());
     }
+    if let Some(name) = spec
+        .columns
+        .iter()
+        .find_map(|(name, c)| c.nested_path.as_ref().map(|_| name))
+    {
+        return Err(error!(
+            format!("column {name}: nested_path isn't supported by GraphQL"),
+            table = spec.name.as_str()
+        )
+        .mark_unsupported());
+    }
 
     let mut api = api.clone();
     if let Some(block) = spec.driver.graphql.as_ref() {

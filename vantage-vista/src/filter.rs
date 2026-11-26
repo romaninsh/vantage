@@ -169,7 +169,8 @@ impl FilterOp {
     }
 
     /// Whether this operator orders its operand (`gt`, `gte`, `lt`, `lte`).
-    pub fn is_ordering(&self) -> bool {
+    #[cfg_attr(not(feature = "rhai"), allow(dead_code))]
+    pub(crate) fn is_ordering(&self) -> bool {
         matches!(
             self,
             FilterOp::Gt | FilterOp::Gte | FilterOp::Lt | FilterOp::Lte

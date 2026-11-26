@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.2 — 2026-11-26
+
+- A spec column with `nested_path` (vantage-vista 3.2.0) fails the build: "column <name>: nested_path isn't supported by vantage-cmd".
+
 ## 0.8.1 — 2026-11-22
 
 - Cargo.lock refreshed: it still named the 1.x vantage crates. No code change.

@@ -111,28 +111,32 @@ pub fn value_arg(method: &str, d: Dynamic) -> Result<CborValue, Box<EvalAltResul
 }
 
 /// The refusal of `()` as the value of `where(column, …)`.
-pub fn empty_condition_value(column: &str) -> String {
+fn empty_condition_value(column: &str) -> String {
     format!("where({column}): the value is empty (()); use null() to match NULL")
 }
 
 /// The refusal of `null()` with `eq` or `ne`, which SQL can't match.
-pub fn null_needs_is(column: &str) -> String {
+fn null_needs_is(column: &str) -> String {
     format!(r#"where({column}): null() needs "is" or "is_not""#)
 }
 
 /// The value of `where(column, op, value)`. `()` is refused: matching a
 /// missing value as NULL would widen a rule (`where("user_id", session.uid)`
 /// with no `uid` would show every unowned row). `null()` can't be ordered.
-pub fn condition_arg(column: &str, op: FilterOp, d: Dynamic) -> Result<CborValue, Box<EvalAltResult>> {
+pub fn condition_arg(
+    column: &str,
+    op: FilterOp,
+    d: Dynamic,
+) -> Result<CborValue, Box<EvalAltResult>> {
     if d.is_unit() {
         return Err(empty_condition_value(column).into());
     }
     if d.is::<Null>() {
         if op.is_ordering() {
-            return Err(
-                format!(r#"where({column}): null() can't be ordered; use "is" or "is_not""#)
-                    .into(),
-            );
+            return Err(format!(
+                r#"where({column}): null() can't be ordered; use "is" or "is_not""#
+            )
+            .into());
         }
         if matches!(op, FilterOp::Eq | FilterOp::Ne) {
             return Err(null_needs_is(column).into());

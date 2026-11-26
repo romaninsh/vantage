@@ -46,6 +46,15 @@ impl LogWriterVistaFactory {
 
         let id_column = spec.resolve_id_column("id");
         let log_writer = self.log_writer.clone().with_id_column(&id_column);
+        if let Some(name) = spec
+            .columns
+            .iter()
+            .find_map(|(name, c)| c.nested_path.as_ref().map(|_| name))
+        {
+            return Err(error!(format!(
+                "column {name}: nested_path isn't supported by log-writer"
+            )));
+        }
         let mut table = Table::<LogWriter, EmptyEntity>::new(table_name, log_writer);
         table.add_spec_columns(&spec.columns, build_column)?;
         table.set_spec_id_field(&id_column)?;

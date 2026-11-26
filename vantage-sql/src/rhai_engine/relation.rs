@@ -20,7 +20,7 @@ use vantage_table::table::{Aggregate, RelationQuery, Table};
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::EmptyEntity;
 use vantage_vista::FilterOp;
-use vantage_vista::rhai::{Null, empty_condition_value, null_needs_is, register_null};
+use vantage_vista::rhai::{Null, condition_arg, register_null};
 
 use super::RhaiExpr;
 use super::convert::rhai_err;
@@ -59,11 +59,12 @@ impl<T: TableSource> Clone for RhaiRelation<T> {
 
 type Rhai<R> = Result<R, Box<rhai::EvalAltResult>>;
 
-/// `value` as a condition's: `()` (an unset `session.uid`) is refused, so
-/// it can't widen the set; `null()` asks for NULL.
-fn refuse_unit(column: &str, value: Dynamic) -> Rhai<Dynamic> {
-    if value.is_unit() {
-        return Err(rhai_err(empty_condition_value(column)));
+/// `value` as `op`'s, by vista's rule: `()` (an unset `session.uid`) is
+/// refused, so it can't widen the set; `null()` asks for NULL and takes
+/// `is` / `is_not`. Other values keep the relation's own checks.
+fn condition_value(column: &str, op: FilterOp, value: Dynamic) -> Rhai<Dynamic> {
+    if value.is_unit() || value.is::<Null>() {
+        condition_arg(column, op, value.clone())?;
     }
     Ok(value)
 }
@@ -145,7 +146,12 @@ where
     /// `where(column, "is" | "is_not", value)`: NULL-safe, `null()` being
     /// NULL.
     fn where_is(mut self, column: &str, value: Dynamic, negate: bool) -> Rhai<Self> {
-        let value = refuse_unit(column, value)?;
+        let op = if negate {
+            FilterOp::IsNot
+        } else {
+            FilterOp::Is
+        };
+        let value = condition_value(column, op, value)?;
         let (computed, _) = self.child_column(column)?;
         if computed {
             return Err(rhai_err(format!(
@@ -168,10 +174,7 @@ where
     }
 
     fn where_eq(mut self, column: &str, value: Dynamic) -> Rhai<Self> {
-        let value = refuse_unit(column, value)?;
-        if value.is::<Null>() {
-            return Err(rhai_err(null_needs_is(column)));
-        }
+        let value = condition_value(column, FilterOp::Eq, value)?;
         let (computed, target) = self.child_column(column)?;
         let condition = match (value.clone().try_cast::<RhaiExpr<T::Value>>(), computed) {
             (Some(e), false) => self.condition(expr_any!("{} = ({})", (ident(column)), (e.0)))?,

@@ -4,6 +4,7 @@
 use std::sync::Arc;
 
 use vantage_core::Result;
+use vantage_expressions::{Expression, Expressive as _};
 use vantage_table::column::core::Column as TableColumn;
 use vantage_table::table::{BuildEnv, Table, TableInjector};
 use vantage_types::{EmptyEntity, Entity};
@@ -16,6 +17,8 @@ use crate::postgres::statements::PostgresSelect;
 use crate::postgres::types::AnyPostgresType;
 use crate::postgres::vista::source::{PostgresChannels, PostgresTableShell};
 use crate::postgres::vista::spec::{PostgresColumnExtras, PostgresTableExtras, PostgresVistaSpec};
+use crate::primitives::identifier::ident;
+use crate::primitives::json_extract::json_extract;
 use crate::sql_vista::{
     SourceBlock, SqlSpecDialect, build_spec_table, column_for_type, is_query_sourced, lower_spec,
     metadata_options, source_block, sql_capabilities,
@@ -177,8 +180,17 @@ impl SqlSpecDialect for PostgresDB {
         name: &str,
         spec: &ColumnSpec<PostgresColumnExtras>,
     ) -> Result<TableColumn<AnyPostgresType>> {
-        let physical = spec.driver.postgres.as_ref().and_then(|b| b.column.clone());
+        let physical = spec
+            .driver
+            .postgres
+            .as_ref()
+            .and_then(|b| b.column.clone())
+            .or_else(|| spec.nested_path.clone());
         TableColumn::from_spec(name, spec, physical, column_for_type)
+    }
+
+    fn nested_read(host: &str, key: &str) -> Expression<AnyPostgresType> {
+        json_extract(ident(host), vec![key.to_string()]).expr()
     }
 
     #[cfg(feature = "rhai")]

@@ -7,6 +7,7 @@ use vantage_types::EmptyEntity;
 use vantage_vista::{ColumnFlag, resolve_base_spec};
 
 use super::columns::build_column;
+use super::nested::{with_nested_columns, with_nested_relations};
 use crate::statements::SurrealSelect;
 use crate::surrealdb::SurrealDB;
 use crate::vista::spec::{DriverBlockArgs as _, SurrealVistaSpec};
@@ -29,6 +30,7 @@ pub(super) fn build_surreal_table(
         return Ok(table);
     }
 
+    let contained = spec.contained_relations()?;
     let mut table = match block.and_then(|m| m.rhai.clone()) {
         Some(code) => table_from_rhai(spec, &code, db.clone())?,
         None => {
@@ -49,10 +51,12 @@ pub(super) fn build_surreal_table(
     let id = spec.resolve_id_column("id");
     check_auto_id(spec, &id)?;
     table.set_spec_id(&id, &spec.columns)?;
+    let table = with_nested_columns(table, spec)?;
 
     let table = table
         .with_spec_references(spec, env, build_surreal_table)?
         .with_contained_specs(&spec.contained, build_column)?;
+    let table = with_nested_relations(table, spec, &contained)?;
 
     let mut table = import_dotted_columns(spec, table)?;
     env.inject(&spec.name, &mut table, build_surreal_table)?;

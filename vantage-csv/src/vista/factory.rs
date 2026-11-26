@@ -86,6 +86,15 @@ fn build_csv_table(
 
     let id_column = spec.resolve_id_column("id");
     let csv = Csv::new(parent).with_id_column(&id_column);
+    if let Some(name) = spec
+        .columns
+        .iter()
+        .find_map(|(name, c)| c.nested_path.as_ref().map(|_| name))
+    {
+        return Err(error!(format!(
+            "column {name}: nested_path isn't supported by CSV"
+        )));
+    }
     let mut table = Table::<Csv, EmptyEntity>::new(stem, csv);
     table.add_spec_columns(&spec.columns, build_column)?;
     table.set_spec_id_field(&id_column)?;

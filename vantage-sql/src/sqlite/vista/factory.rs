@@ -4,11 +4,14 @@
 use std::sync::Arc;
 
 use vantage_core::Result;
+use vantage_expressions::{Expression, Expressive as _};
 use vantage_table::column::core::Column as TableColumn;
 use vantage_table::table::{BuildEnv, Table, TableInjector};
 use vantage_types::{EmptyEntity, Entity};
 use vantage_vista::{ColumnSpec, NoExtras, SpecResolver, Vista, VistaFactory, VistaMetadata};
 
+use crate::primitives::identifier::ident;
+use crate::primitives::json_extract::json_extract;
 use crate::sql_vista::{
     SourceBlock, SqlSpecDialect, build_spec_table, column_for_type, is_query_sourced, lower_spec,
     metadata_options, source_block, sql_capabilities,
@@ -135,8 +138,17 @@ impl SqlSpecDialect for SqliteDB {
         name: &str,
         spec: &ColumnSpec<SqliteColumnExtras>,
     ) -> Result<TableColumn<AnySqliteType>> {
-        let physical = spec.driver.sqlite.as_ref().and_then(|b| b.column.clone());
+        let physical = spec
+            .driver
+            .sqlite
+            .as_ref()
+            .and_then(|b| b.column.clone())
+            .or_else(|| spec.nested_path.clone());
         TableColumn::from_spec(name, spec, physical, column_for_type)
+    }
+
+    fn nested_read(host: &str, key: &str) -> Expression<AnySqliteType> {
+        json_extract(ident(host), vec![key.to_string()]).expr()
     }
 
     #[cfg(feature = "rhai")]

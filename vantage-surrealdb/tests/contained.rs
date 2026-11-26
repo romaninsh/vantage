@@ -8,11 +8,14 @@
 
 use ciborium::Value as CborValue;
 use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet, WritableValueSet};
+use vantage_expressions::ExprDataSource as _;
+use vantage_surrealdb::surreal_expr;
 use vantage_surrealdb::surrealdb::SurrealDB;
 use vantage_surrealdb::types::AnySurrealType;
 use vantage_surrealdb::vista::factory::SurrealVistaFactory;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
+use vantage_vista::VistaFactory as _;
 
 /// Both tests write `contained_test` rows. SurrealDB answers concurrent
 /// writes to one table with a transaction conflict, so they take turns.
@@ -160,6 +163,47 @@ async fn a_whole_host_patch_replaces_the_contained_record() {
         .unwrap();
     let row = vista.get_value(&id).await.unwrap().unwrap();
     assert_eq!(row["address"], lmap(&[("city", text("Paris"))]));
+
+    vista.delete(&id).await.unwrap();
+}
+
+/// A `nested_path` column reads one field of its host's object, and a patch
+/// through it changes that field and keeps the others.
+#[tokio::test]
+async fn a_nested_path_patch_keeps_the_hosts_other_fields() {
+    let _turn = TABLE_LOCK.lock().await;
+    let db = v2_db().await;
+    let vista = SurrealVistaFactory::new(db.clone())
+        .from_yaml(
+            r#"
+name: contained_test
+columns:
+  id: { type: thing, flags: [id] }
+  name: { type: json, flags: [hidden] }
+  label: { type: string, nested_path: name.en_US }
+"#,
+        )
+        .unwrap();
+    let id = "contained_test:t5".to_string();
+    db.execute(&surreal_expr!(
+        r#"UPSERT contained_test:t5 CONTENT { name: { en_US: "Bug", de_DE: "Fehler" } }"#
+    ))
+    .await
+    .unwrap();
+    let row = vista.get_value(&id).await.unwrap().unwrap();
+    assert_eq!(row["label"], text("Bug"));
+
+    vista
+        .patch_value(&id, &rec(&[("label", text("Design"))]))
+        .await
+        .unwrap();
+    let row = vista.get_value(&id).await.unwrap().unwrap();
+    assert_eq!(row["label"], text("Design"));
+    let CborValue::Map(name) = &row["name"] else {
+        panic!("name should be an object: {row:?}");
+    };
+    assert!(name.contains(&(text("de_DE"), text("Fehler"))), "{row:?}");
+    assert!(name.contains(&(text("en_US"), text("Design"))), "{row:?}");
 
     vista.delete(&id).await.unwrap();
 }

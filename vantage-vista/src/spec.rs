@@ -94,18 +94,6 @@ pub struct ContainedYaml<C = NoExtras> {
     pub columns: IndexMap<String, ColumnSpec<C>>,
 }
 
-impl<C> ContainedYaml<C> {
-    /// A `contains_one` record in `host_column`, with no columns yet.
-    pub fn contains_one(host_column: impl Into<String>) -> Self {
-        Self {
-            host_column: host_column.into(),
-            kind: ReferenceKind::ContainsOne,
-            id_column: None,
-            columns: IndexMap::new(),
-        }
-    }
-}
-
 fn contains_one() -> ReferenceKind {
     ReferenceKind::ContainsOne
 }
@@ -153,6 +141,13 @@ pub struct ColumnSpec<C = NoExtras> {
     /// backend functions. Computed columns are read-only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expr: Option<String>,
+    /// One key inside a host column, as `host.key` (`name.en_US`). The
+    /// column reads that key, and a write changes only that key, keeping
+    /// the rest of the host's value. The host gets a `contains_one` of its
+    /// keys ([`VistaSpec::contained_relations`]); how the key is read is the
+    /// driver's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nested_path: Option<String>,
     #[serde(flatten, default)]
     pub driver: C,
 }
@@ -165,6 +160,7 @@ impl<C: Default> ColumnSpec<C> {
             references: None,
             lazy: None,
             expr: None,
+            nested_path: None,
             driver: C::default(),
         }
     }

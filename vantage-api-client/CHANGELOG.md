@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.0.1 — 2026-11-26
+
+- A spec column with `nested_path` (vantage-vista 3.2.0) fails the build: "column <name>: nested_path isn't supported by REST" (or "by GraphQL").
+
 ## 3.0.0 — 2026-11-22
 
 - **Breaking:** `insert_table_value` returns `Inserted<CborValue>` and the REST vista shell's

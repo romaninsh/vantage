@@ -1,10 +1,11 @@
 # Changelog
 
-## 3.1.1 — 2026-11-26
+## 3.2.0 — 2026-11-26
 - `where(col, ())` used to match nothing silently; it is now refused with a message naming the column: "where(col): the value is empty (()); use null() to match NULL". An unset `session.uid` in a rule's `where("user_id", session.uid)` fails the rule instead of widening it. `null()` with `"is"` / `"is_not"` matches NULL.
 - `FilterOp::Is` / `FilterOp::IsNot`, parsed from `"is"` / `"is_not"`: NULL-safe equality and its negation. `null()` is a Rhai `Null` value distinct from `()`; it stores NULL on a write. Ordering operators refuse it: `where(col): null() can't be ordered; use "is" or "is_not"`; so do `eq` (`where(col, null())`) and `ne` / `"!"`, which SQL can't match against NULL: `where(col): null() needs "is" or "is_not"`.
+- `rhai::condition_arg(column, op, value)`: the one rule for a condition's value (`()` refused, `null()` only with `"is"` / `"is_not"`), with its messages; a driver's own `where` (vantage-sql's relation vocabulary) checks through it. `rhai::Null` and `rhai::register_null` give scripts `null()`.
 - The in-memory evaluator (`Condition::matches`, the live cache) reads `Ne` as SQL's `!=`: a NULL or absent cell no longer matches it. `IsNot` is the NULL-safe negation.
-- `ContainedYaml::contains_one(host_column)`: a contained relation built in code (the struct is `#[non_exhaustive]`).
+- `nested_path: name.en_US` on a spec column (`ColumnSpec::nested_path`): the column is one key inside a host column. `VistaSpec::contained_relations()` gives the spec's `contained:` entries plus one `contains_one` per host, declaring the keys its nested columns name, typed as those columns; a deeper path keeps its rest as the key (`geo.lat`), and a one-segment path makes none. It refuses an empty segment, a nested column that is also `expr:` or `lazy:`, and a host that is the column itself, a computed or nested column, or a `contained:` relation or host. A host may also be a declared column. How the key is read is the driver's.
 
 ## 3.1.0 — 2026-11-23
 - `where_expr(|t| …)` on data handles: the closure gets the backend's table (`TableShell::script_table`) and returns a query expression (`t.ref("tags").where("tag_id", 5).exists()`), which narrows the handle as a native condition (`TableShell::script_condition`). A backend without native conditions refuses: "`where_expr` needs a backend that takes native conditions", naming the table. A handle from `table(name)` is resolved for it.

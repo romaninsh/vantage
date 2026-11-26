@@ -2,9 +2,10 @@
 
 use std::sync::Arc;
 
+use indexmap::IndexMap;
 use vantage_core::{Result, error};
 
-use super::{ColumnSpec, ReferenceSpec, VistaSpec};
+use super::{ColumnSpec, ContainedYaml, ReferenceSpec, VistaSpec};
 use crate::column::ColumnFlag;
 use crate::reference::{JoinKey, Reference, ReferenceKind};
 
@@ -33,6 +34,67 @@ impl<T, C, R> VistaSpec<T, C, R> {
             .iter()
             .find(|(_, col)| col.has_flag(ColumnFlag::Id))
             .map_or_else(|| default.to_string(), |(name, _)| name.clone())
+    }
+}
+
+impl<T, C: Clone + Default, R> VistaSpec<T, C, R> {
+    /// The contained relations the spec declares: its `contained:` entries,
+    /// then one `contains_one` per `nested_path` host, named after the host
+    /// and declaring each key a nested column reads (`label` at
+    /// `name.en_US` makes `name` with an `en_US` column, typed as `label`).
+    /// A deeper path keeps its rest as the key (`geo.lat` in `address`);
+    /// a one-segment path names no host and makes none.
+    ///
+    /// Errors when a path has an empty segment, when a nested column is
+    /// also `expr:` or `lazy:`, when its host is the column itself, a
+    /// computed or nested column, or a `contained:` relation or host.
+    pub fn contained_relations(&self) -> Result<IndexMap<String, ContainedYaml<C>>> {
+        let mut relations = self.contained.clone();
+        for (name, column) in &self.columns {
+            let Some(path) = &column.nested_path else {
+                continue;
+            };
+            let refuse =
+                |reason: &str| error!(reason.to_string(), column = name, nested_path = path);
+            if path.split('.').any(str::is_empty) {
+                return Err(refuse("nested_path has an empty segment"));
+            }
+            if column.expr.is_some() || column.lazy.is_some() {
+                return Err(refuse(
+                    "nested_path can't be combined with `expr:` or `lazy:`",
+                ));
+            }
+            let Some((host, key)) = path.split_once('.') else {
+                continue;
+            };
+            let computed = self
+                .columns
+                .get(host)
+                .is_some_and(|h| h.expr.is_some() || h.lazy.is_some() || h.nested_path.is_some());
+            if host == name || computed {
+                return Err(refuse("nested_path's host must be a stored column"));
+            }
+            let declared = self.contained.contains_key(host)
+                || self.contained.values().any(|c| c.host_column == host);
+            if declared {
+                return Err(refuse(
+                    "nested_path's host is already a `contained:` relation or host",
+                ));
+            }
+            let mut key_column = ColumnSpec::new();
+            key_column.col_type = column.col_type.clone();
+            relations
+                .entry(host.to_string())
+                .or_insert_with(|| ContainedYaml {
+                    host_column: host.to_string(),
+                    kind: ReferenceKind::ContainsOne,
+                    id_column: None,
+                    columns: IndexMap::new(),
+                })
+                .columns
+                .insert(key.to_string(), key_column);
+        }
+        Ok(relations)
     }
 }
 

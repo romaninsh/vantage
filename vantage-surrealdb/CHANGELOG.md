@@ -3,6 +3,7 @@
 ## 3.2.1 — 2026-11-26
 
 - Vista and rule conditions `"is"` / `"is_not"`: `null()` matches a missing field and a stored NULL (`(t = NONE OR t = NULL)`, negated `(t != NONE AND t != NULL)`); `"is_not"` with a value also counts rows without the field (`(t != $v OR t = NONE)`).
+- `nested_path: name.en_US` on a spec column (vantage-vista 3.2.0): the column reads field `en_US` of the object in `name`, and a patch or insert through it writes only that field, keeping the others. The host's `contains_one` is unlisted; a host the spec doesn't declare is added as a hidden `json` column. A path is one field below its host.
 
 ## 3.2.0 — 2026-11-23
 

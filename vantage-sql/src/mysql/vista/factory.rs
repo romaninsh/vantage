@@ -14,6 +14,7 @@ mod scripting;
 use std::sync::Arc;
 
 use vantage_core::Result;
+use vantage_expressions::{Expression, Expressive as _, ExpressiveEnum};
 use vantage_table::column::core::Column as TableColumn;
 use vantage_table::table::{BuildEnv, Table, TableInjector};
 use vantage_types::{EmptyEntity, Entity};
@@ -25,6 +26,8 @@ use crate::mysql::types::AnyMysqlType;
 use crate::mysql::vista::spec::{
     MysqlColumnExtras, MysqlReferenceExtras, MysqlTableExtras, MysqlVistaSpec,
 };
+use crate::primitives::identifier::ident;
+use crate::primitives::json_extract::json_extract;
 use crate::sql_vista::{
     SourceBlock, SqlSpecDialect, build_spec_table, column_for_type, is_query_sourced,
     metadata_options, source_block,
@@ -104,8 +107,20 @@ impl SqlSpecDialect for MysqlDB {
         name: &str,
         spec: &ColumnSpec<MysqlColumnExtras>,
     ) -> Result<TableColumn<AnyMysqlType>> {
-        let physical = spec.driver.mysql.as_ref().and_then(|b| b.column.clone());
+        let physical = spec
+            .driver
+            .mysql
+            .as_ref()
+            .and_then(|b| b.column.clone())
+            .or_else(|| spec.nested_path.clone());
         TableColumn::from_spec(name, spec, physical, column_for_type)
+    }
+
+    /// MySQL's JSON functions answer in a binary collation, which reads back
+    /// as bytes and matches case-sensitively; the cast makes it text.
+    fn nested_read(host: &str, key: &str) -> Expression<AnyMysqlType> {
+        let read = json_extract(ident(host), vec![key.to_string()]).expr();
+        Expression::new("CAST({} AS CHAR)", vec![ExpressiveEnum::Nested(read)])
     }
 
     fn reference_script(reference: &ReferenceSpec<MysqlReferenceExtras>) -> Option<String> {

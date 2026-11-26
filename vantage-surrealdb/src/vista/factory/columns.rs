@@ -10,7 +10,8 @@ use crate::surrealdb::declared::column_for_type;
 use crate::types::AnySurrealType;
 use crate::vista::spec::SurrealColumnExtras;
 
-/// The `surreal.field` block names the stored field.
+/// The `surreal.field` block names the stored field; a `nested_path`
+/// column is stored at its path.
 pub(super) fn build_column(
     name: &str,
     col_spec: &ColumnSpec<SurrealColumnExtras>,
@@ -19,6 +20,7 @@ pub(super) fn build_column(
         .driver
         .surreal
         .as_ref()
-        .and_then(|b| b.field.clone());
+        .and_then(|b| b.field.clone())
+        .or_else(|| col_spec.nested_path.clone());
     TableColumn::from_spec(name, col_spec, field, column_for_type)
 }

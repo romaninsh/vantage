@@ -3,6 +3,7 @@
 ## 5.0.1 — 2026-11-26
 
 - Conditions `Is` / `IsNot` (`"is"` / `"is_not"`): NULL-safe equality and its negation, a missing cell being NULL. `Ne` is SQL's `!=`: a NULL or missing cell no longer matches it, so memory (and scenario tests) agree with the SQL backends. Use `IsNot` for the NULL-safe negation.
+- A spec column with `nested_path` (vantage-vista 3.2.0) fails the build: "column <name>: nested_path isn't supported by vantage-memory". A loader that wants the column stored as written clears `nested_path` first.
 
 ## 5.0.0 — 2026-11-22
 

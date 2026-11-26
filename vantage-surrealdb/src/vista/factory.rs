@@ -8,6 +8,7 @@
 
 mod build;
 mod columns;
+mod nested;
 mod references;
 #[cfg(feature = "rhai")]
 mod scripting;

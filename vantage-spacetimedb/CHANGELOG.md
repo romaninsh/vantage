@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.2 — 2026-11-26
+
+- A spec column with `nested_path` (vantage-vista 3.2.0) fails the build as unsupported: "column <name>: nested_path isn't supported by SpacetimeDB".
+
 ## 0.8.1 — 2026-11-22
 
 - Cargo.lock refreshed for vantage-core 1.5.0 and vantage-api-pool 1.4.1. No code change.
