@@ -7,13 +7,16 @@ use vantage_types::Entity;
 
 use crate::condition::SqliteCondition;
 use crate::primitives::identifier::ident;
-use crate::set_writes::SetWrites;
+use crate::set_writes::{SetWrites, integer_expression_id};
 use crate::sqlite::SqliteDB;
 use crate::sqlite::types::AnySqliteType;
 
 impl SetWrites for SqliteDB {
-    fn id_param<E: Entity<AnySqliteType>>(_table: &Table<Self, E>, id: &str) -> AnySqliteType {
-        AnySqliteType::from(id.to_string())
+    fn id_param<E: Entity<AnySqliteType>>(table: &Table<Self, E>, id: &str) -> AnySqliteType {
+        match integer_expression_id(table, id) {
+            Some(n) => AnySqliteType::new(n),
+            None => AnySqliteType::from(id.to_string()),
+        }
     }
 
     /// An integer for a numeric id on a table not flagged `with_text_id`.

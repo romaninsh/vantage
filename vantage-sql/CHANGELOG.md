@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.18.4 — 2026-11-26
+
+- A table whose id is an expression declared an integer type (`type: int`, `expr: '"a" * 1000000 + "b"'`) binds the id as an integer on PostgreSQL and SQLite, so a row reads, patches and deletes by the id its insert returned. Before, PostgreSQL failed with `operator does not exist: integer = text` and SQLite found no row.
+
 ## 0.18.3 — 2026-11-23
 
 - Rhai: `sql::concat([parts])` and `sql::concat_ws(sep, [parts])` join text per dialect (`||` or `CONCAT`). A part is an `sql::ident`, an expression, or a string bound as a value, or a number or bool bound as its text (`5` → `"5"`, `true` → `"true"`), so Postgres joins it, never SQL text; anything else is an error naming its type and position. A NULL part makes `concat` NULL; `concat_ws` skips it.

@@ -9,8 +9,10 @@ use vantage_expressions::traits::datasource::ExprDataSource;
 use vantage_expressions::{Expression, expr_any};
 use vantage_table::pagination::Pagination;
 use vantage_table::table::Table;
+use vantage_table::traits::column_like::ColumnLike as _;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
+use vantage_vista::{Column as VistaColumn, ColumnFamily};
 
 /// The dialect-specific pieces of the set-confined write paths.
 pub(crate) trait SetWrites:
@@ -79,6 +81,23 @@ where
         Some(expr) => expr_any!("({})", (expr)),
         None => T::quoted(&table.id_field_name()),
     })
+}
+
+/// `id` as the integer an id expression declared an integer type computes:
+/// bound as text it is a type error on Postgres and never equal on SQLite,
+/// where an expression has no column affinity to convert it.
+pub(crate) fn integer_expression_id<T, E>(table: &Table<T, E>, id: &str) -> Option<i64>
+where
+    T: TableSource,
+    E: Entity<T::Value>,
+{
+    let column = table.id_field().filter(|_| table.id_is_expression())?;
+    let family = VistaColumn::new(column.name(), column.get_type()).family();
+    if family == Some(ColumnFamily::Integer) {
+        id.parse().ok()
+    } else {
+        None
+    }
 }
 
 /// The one row of the set matching every stored column `record` sets (a

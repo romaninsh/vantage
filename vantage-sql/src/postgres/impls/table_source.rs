@@ -21,7 +21,7 @@ use crate::postgres::PostgresDB;
 use crate::postgres::statements::PostgresSelect;
 use crate::postgres::types::{AnyPostgresType, PostgresType};
 use crate::primitives::identifier::ident;
-use crate::set_writes::{find_by_record, id_target};
+use crate::set_writes::{find_by_record, id_target, integer_expression_id};
 use crate::table_writes::{
     guard_insert, guard_new_row, guard_patch, guard_replace, null_derived_id,
     settle_failed_derived_insert, settle_failed_insert, upsert_on_id,
@@ -43,12 +43,16 @@ fn id_value(id: &str) -> AnyPostgresType {
 /// Bind an id for a given table. Honors [`Table::with_text_id`]: a text-keyed
 /// table always binds its id as text, even when it looks numeric, so an
 /// all-digit id like `"121"` is not coerced to `bigint` against a `TEXT` id
-/// column. Other tables keep the integer-coercing default ([`id_value`]).
+/// column. An id expression binds as text unless it is declared an integer
+/// ([`integer_expression_id`]). Other tables keep the integer-coercing
+/// default ([`id_value`]).
 pub(super) fn id_param<E>(table: &Table<PostgresDB, E>, id: &str) -> AnyPostgresType
 where
     E: Entity<AnyPostgresType>,
 {
-    if table.id_is_text() || table.id_is_expression() {
+    if let Some(n) = integer_expression_id(table, id) {
+        AnyPostgresType::new(n)
+    } else if table.id_is_text() || table.id_is_expression() {
         AnyPostgresType::from(id.to_string())
     } else {
         id_value(id)

@@ -21,7 +21,7 @@ use vantage_vista::Transaction;
 
 use crate::declared::{sql_coerce_fn, sql_declared_types, without_option};
 use crate::primitives::identifier::ident;
-use crate::set_writes::id_target;
+use crate::set_writes::{SetWrites as _, id_target};
 use crate::sqlite::SqliteDB;
 use crate::sqlite::types::{AnySqliteType, SqliteType};
 use crate::table_writes::{
@@ -367,7 +367,7 @@ impl TableSource for SqliteDB {
     {
         let id_field_name = table.id_field_name();
 
-        let id_val = id.clone();
+        let id_val = Self::id_param(table, id);
         let condition = sqlite_expr!("{} = {}", (id_target(table)?), id_val);
         let select = table.try_select()?.with_condition(condition);
         let result = self.execute(&select.expr()).await?;
@@ -510,7 +510,7 @@ impl TableSource for SqliteDB {
     {
         guard_patch(self, table, id, partial).await?;
 
-        let id_val = id.clone();
+        let id_val = Self::id_param(table, id);
         let id_condition = sqlite_expr!("{} = {}", (id_target(table)?), id_val);
         let mut update = crate::sqlite::statements::SqliteUpdate::new(table.table_name())
             .with_record(partial)
@@ -527,7 +527,7 @@ impl TableSource for SqliteDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_val = id.clone();
+        let id_val = Self::id_param(table, id);
         let id_condition = sqlite_expr!("{} = {}", (id_target(table)?), id_val);
         // A missing row, or one outside the conditions, matches nothing: Ok.
         let mut delete = crate::sqlite::statements::SqliteDelete::new(table.table_name())
