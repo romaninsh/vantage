@@ -1126,6 +1126,8 @@ pub vantage_vista::ContainedYaml::columns: indexmap::map::IndexMap<alloc::string
 pub vantage_vista::ContainedYaml::host_column: alloc::string::String
 pub vantage_vista::ContainedYaml::id_column: core::option::Option<alloc::string::String>
 pub vantage_vista::ContainedYaml::kind: vantage_vista::ReferenceKind
+impl<C> vantage_vista::ContainedYaml<C>
+pub fn vantage_vista::ContainedYaml<C>::contains_one(impl core::convert::Into<alloc::string::String>) -> Self
 impl<'de, C> serde_core::de::Deserialize<'de> for vantage_vista::ContainedYaml<C> where C: serde_core::de::DeserializeOwned + core::default::Default
 pub fn vantage_vista::ContainedYaml<C>::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
 impl<C: core::clone::Clone> core::clone::Clone for vantage_vista::ContainedYaml<C>

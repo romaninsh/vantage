@@ -110,11 +110,26 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     pub(crate) fn merges_contained(&self, record: &Record<T::Value>) -> bool {
         self.contained.iter().any(|rel| {
             let host = rel.host_column();
-            record.keys().any(|key| {
-                key.strip_prefix(host)
-                    .is_some_and(|rest| rest.starts_with('.'))
-            })
+            record
+                .keys()
+                .any(|key| dotted_under(self.write_path(key), host))
         })
+    }
+
+    /// The stored name of a nested column: one whose stored name (its alias)
+    /// is dotted under a contained host, as `label` stored at `name.en_US`.
+    /// A write to it is a write to that key of the contained record.
+    pub(crate) fn nested_column_path(&self, key: &str) -> Option<&str> {
+        let path = self.columns().get(key)?.alias()?;
+        self.contained
+            .iter()
+            .any(|rel| dotted_under(path, rel.host_column()))
+            .then_some(path)
+    }
+
+    /// Where a write key lands: a nested column's stored name, else the key.
+    fn write_path<'k>(&'k self, key: &'k str) -> &'k str {
+        self.nested_column_path(key).unwrap_or(key)
     }
 
     /// Put each contained record the write touches through its contained
@@ -136,13 +151,14 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
             let host = rel.host_column();
             let many = rel.kind() == vantage_vista::ReferenceKind::ContainsMany;
             let whole = record.shift_remove(host);
-            let dotted_keys: Vec<String> = record
+            // Each key, with its field in the contained record.
+            let dotted_keys: Vec<(String, String)> = record
                 .keys()
-                .filter(|key| {
-                    key.strip_prefix(host)
-                        .is_some_and(|rest| rest.starts_with('.'))
+                .filter_map(|key| {
+                    let path = self.write_path(key);
+                    dotted_under(path, host)
+                        .then(|| (key.clone(), path[host.len() + 1..].to_string()))
                 })
-                .cloned()
                 .collect();
             if whole.is_none() && dotted_keys.is_empty() {
                 continue;
@@ -159,7 +175,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
                     "a contains_many relation is written as its whole array, not by dotted keys",
                     table = self.table_name(),
                     relation = rel.name(),
-                    column = dotted_keys[0].as_str()
+                    column = dotted_keys[0].0.as_str()
                 )
                 .mark_forbidden());
             }
@@ -184,9 +200,9 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
                 }
                 None => {
                     let mut change: Record<T::Value> = Record::new();
-                    for key in &dotted_keys {
+                    for (key, field) in &dotted_keys {
                         if let Some(value) = record.shift_remove(key) {
-                            change.insert(key[host.len() + 1..].to_string(), value);
+                            change.insert(field.clone(), value);
                         }
                     }
                     let stored = match stored.and_then(|row| row.get(host)) {
@@ -243,23 +259,22 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// itself, each column whose stored name the key is (`city` for
     /// `address.city`), and each contained host it is a dotted key under
     /// (`address` for `address.city`). A key can be several at once, and the
-    /// write reaches all of them, so a rule on any one covers it.
+    /// write reaches all of them, so a rule on any one covers it. A nested
+    /// column (`label` stored at `name.en_US`) stands for its host too.
     pub(crate) fn columns_of_key<'k>(&'k self, key: &'k str) -> Vec<&'k str> {
+        let path = self.write_path(key);
         let mut columns = vec![key];
         columns.extend(
             self.columns()
                 .iter()
-                .filter(|(_, c)| c.alias() == Some(key))
+                .filter(|(name, c)| c.alias() == Some(path) && name.as_str() != key)
                 .map(|(name, _)| name.as_str()),
         );
         columns.extend(
             self.contained
                 .iter()
                 .map(|rel| rel.host_column())
-                .filter(|host| {
-                    key.strip_prefix(host)
-                        .is_some_and(|rest| rest.starts_with('.'))
-                }),
+                .filter(|host| dotted_under(path, host)),
         );
         columns
     }
@@ -416,6 +431,12 @@ pub(crate) async fn run_after_delete_all<T: TableSource>(
         run_delete_all(&hooks, &table).await
     });
     Ok(())
+}
+
+/// Whether `key` is dotted under `host` (`address.city` under `address`).
+fn dotted_under(key: &str, host: &str) -> bool {
+    key.strip_prefix(host)
+        .is_some_and(|rest| rest.starts_with('.'))
 }
 
 /// Hold `work` until `tx` commits; a rollback drops it. It runs on a copy of

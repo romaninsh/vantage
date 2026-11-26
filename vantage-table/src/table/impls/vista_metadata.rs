@@ -91,7 +91,22 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         }
         let mut denials = self.denials().clone();
         for name in self.expressions.keys().chain(self.lazy_expressions.keys()) {
-            denials.deny_column(name.as_str(), "expression column");
+            if self.nested_column_path(name).is_none() {
+                denials.deny_column(name.as_str(), "expression column");
+            }
+        }
+        // A rule on a nested column's host or stored name covers the column.
+        for name in self.columns().keys() {
+            if self.nested_column_path(name).is_none() || denials.column_rule(name).is_some() {
+                continue;
+            }
+            let rule = self
+                .columns_of_key(name)
+                .into_iter()
+                .find_map(|column| self.denials().column_rule(column).map(str::to_string));
+            if let Some(rule) = rule {
+                denials.deny_column(name.as_str(), rule);
+            }
         }
         metadata.with_denials(denials)
     }
@@ -114,7 +129,10 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         if orderable {
             vc = vc.with_flag(ColumnFlag::Orderable);
         }
-        if options.calculated && self.is_calculated_column(name) {
+        if options.calculated
+            && self.is_calculated_column(name)
+            && self.nested_column_path(name).is_none()
+        {
             vc = vc.with_flag(ColumnFlag::Calculated);
         }
         // A column's flags are a set; listing them by name keeps the Vista

@@ -171,7 +171,8 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
                     return forbidden_column(column, rule, self.table_name());
                 }
             }
-            if self.is_expression_column(name) {
+            // A nested column reads through its expression and writes its key.
+            if self.is_expression_column(name) && self.nested_column_path(name).is_none() {
                 return forbidden_column(name, "expression column", self.table_name());
             }
         }

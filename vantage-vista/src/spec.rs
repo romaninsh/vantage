@@ -94,6 +94,18 @@ pub struct ContainedYaml<C = NoExtras> {
     pub columns: IndexMap<String, ColumnSpec<C>>,
 }
 
+impl<C> ContainedYaml<C> {
+    /// A `contains_one` record in `host_column`, with no columns yet.
+    pub fn contains_one(host_column: impl Into<String>) -> Self {
+        Self {
+            host_column: host_column.into(),
+            kind: ReferenceKind::ContainsOne,
+            id_column: None,
+            columns: IndexMap::new(),
+        }
+    }
+}
+
 fn contains_one() -> ReferenceKind {
     ReferenceKind::ContainsOne
 }
