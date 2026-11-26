@@ -7,6 +7,7 @@ use indexmap::IndexMap;
 use vantage_core::{Result, error};
 use vantage_table::references::ContainedRelation;
 use vantage_table::table::Table;
+use vantage_table::traits::column_like::ColumnLike as _;
 use vantage_types::EmptyEntity;
 use vantage_vista::{ColumnFlag, ColumnSpec, ContainedYaml};
 
@@ -42,8 +43,23 @@ fn nested_keys<T: SqlSpecDialect>(spec: &SpecOf<T>) -> Result<Vec<(&str, &str, &
     Ok(keys)
 }
 
+/// A `base:` spec reads the base's select and is read-only, so a nested
+/// column belongs on the base.
+pub(super) fn refuse_on_derived<T: SqlSpecDialect>(spec: &SpecOf<T>) -> Result<()> {
+    match spec.columns.iter().find(|(_, c)| c.nested_path.is_some()) {
+        Some((name, _)) => Err(error!(
+            "nested_path isn't supported on a `base:` vista; declare the column on its base",
+            vista = spec.name.as_str(),
+            column = name
+        )),
+        None => Ok(()),
+    }
+}
+
 /// `table` with the spec's nested columns: each host the spec doesn't
 /// declare is a hidden `json` column, and each nested column reads its key.
+/// A nested column is read and written at its path, and its host at its own
+/// name, so a column stored elsewhere (`sqlite: { column: … }`) is refused.
 pub(super) fn with_nested_columns<T>(
     mut table: Table<T, EmptyEntity>,
     spec: &SpecOf<T>,
@@ -53,6 +69,22 @@ where
     T::ColumnExtras: Default,
 {
     for (name, host, key) in nested_keys::<T>(spec)? {
+        let path = format!("{host}.{key}");
+        let stored = |column: &str| table.columns().get(column).and_then(|c| c.alias());
+        if stored(name).is_some_and(|at| at != path) {
+            return Err(error!(
+                "a nested_path column is stored at its path, not under another column name",
+                column = name,
+                nested_path = path
+            ));
+        }
+        if stored(host).is_some_and(|at| at != host) {
+            return Err(error!(
+                "a nested_path host is read at its own name, not under another column name",
+                column = name,
+                host = host
+            ));
+        }
         if !table.columns().contains_key(host) {
             let hidden = ColumnSpec::<T::ColumnExtras>::new()
                 .with_type("json")

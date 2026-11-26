@@ -18,9 +18,9 @@ use vantage_vista::Transaction;
 use super::set_writes;
 use crate::identifier::Identifier;
 use crate::statements::delete::SurrealDelete;
-use crate::surreal_expr;
 use crate::statements::insert::SurrealInsert;
 use crate::statements::update::SurrealUpdate;
+use crate::surreal_expr;
 
 use crate::surrealdb::SurrealDB;
 use crate::surrealdb::declared::coerce_column;

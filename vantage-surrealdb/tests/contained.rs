@@ -208,6 +208,60 @@ columns:
     vista.delete(&id).await.unwrap();
 }
 
+/// A `nested_path` column reads and writes one place: a column or host
+/// stored under another field is refused when the table loads, and so is a
+/// nested column on a `base:` vista.
+#[tokio::test]
+async fn a_nested_path_with_a_second_location_is_refused() {
+    use std::sync::Arc;
+    use vantage_surrealdb::vista::SurrealVistaSpec;
+    use vantage_vista::SpecResolver;
+
+    let db = v2_db().await;
+    let tag = |label: &str, name: &str| {
+        format!(
+            "name: contained_test\ncolumns:\n  id: {{ type: thing, flags: [id] }}\n  name: {name}\n  label: {label}\n"
+        )
+    };
+    let nested = "{ type: string, nested_path: name.en_US }";
+    let json = "{ type: json }";
+    for (yaml, refusal) in [
+        (
+            tag(
+                "{ type: string, nested_path: name.en_US, surreal: { field: name.fr_FR } }",
+                json,
+            ),
+            "a nested_path column is stored at its path",
+        ),
+        (
+            tag(nested, "{ type: json, surreal: { field: translations } }"),
+            "a nested_path host is read at its own name",
+        ),
+    ] {
+        let err = SurrealVistaFactory::new(db.clone())
+            .from_yaml(&yaml)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains(refusal), "{err}");
+    }
+
+    let base: SurrealVistaSpec = serde_yaml_ng::from_str(&tag(nested, json)).unwrap();
+    let resolver: Arc<dyn SpecResolver<SurrealVistaSpec>> =
+        Arc::new(move |name: &str| (name == "contained_test").then(|| base.clone()));
+    let derived = format!(
+        "name: tag_view\ncolumns:\n  title: {nested}\nsurreal:\n  base: contained_test\n  inherit:\n    columns: [id]\n"
+    );
+    let err = SurrealVistaFactory::new(db)
+        .with_resolver(resolver)
+        .build_from_spec(serde_yaml_ng::from_str(&derived).unwrap())
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("nested_path isn't supported on a `base:` vista"),
+        "{err}"
+    );
+}
+
 /// Without a parent row a contained relation is its bare target: the
 /// embedded table with the columns its builder declares.
 #[tokio::test]

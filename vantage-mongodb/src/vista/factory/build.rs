@@ -195,10 +195,17 @@ fn add_nested_relations(
             .vista_contained()
             .iter()
             .any(|r| r.host_column.as_deref() == Some(root.as_str()));
-        // The root may also be a column of its own, read whole.
-        if table.contained_relation(&root).is_some() || hosted {
+        // The root may also be a column of its own, read whole at its own
+        // name: the nested columns read and write under that name.
+        let stored_elsewhere = table
+            .columns()
+            .get(&root)
+            .and_then(|col| col.alias())
+            .is_some_and(|alias| alias != root);
+        if table.contained_relation(&root).is_some() || hosted || stored_elsewhere {
             return Err(error!(
-                "a nested_path root is also a contained relation of the table",
+                "a nested_path root is also a contained relation of the table, or a column \
+                 stored under another name",
                 table = table.table_name(),
                 root = root.as_str()
             ));

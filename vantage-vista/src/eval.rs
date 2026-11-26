@@ -66,9 +66,9 @@ impl Condition {
         let operand = &self.value;
         match self.op {
             FilterOp::Eq => cell.is_some_and(|c| same(c, operand)),
-            FilterOp::Ne => cell.is_some_and(|c| {
-                !c.is_null() && !operand.is_null() && !same(c, operand)
-            }),
+            FilterOp::Ne => {
+                cell.is_some_and(|c| !c.is_null() && !operand.is_null() && !same(c, operand))
+            }
             FilterOp::Is => is(cell, operand),
             FilterOp::IsNot => !is(cell, operand),
             FilterOp::InSet => in_set(cell, operand),

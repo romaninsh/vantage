@@ -85,13 +85,16 @@ where
 
 /// `id` as the integer an id expression declared an integer type computes:
 /// bound as text it is a type error on Postgres and never equal on SQLite,
-/// where an expression has no column affinity to convert it.
+/// where an expression has no column affinity to convert it. A table flagged
+/// [`Table::with_text_id`] binds text whatever the declared type.
 pub(crate) fn integer_expression_id<T, E>(table: &Table<T, E>, id: &str) -> Option<i64>
 where
     T: TableSource,
     E: Entity<T::Value>,
 {
-    let column = table.id_field().filter(|_| table.id_is_expression())?;
+    let column = table
+        .id_field()
+        .filter(|_| table.id_is_expression() && !table.id_is_text())?;
     let family = VistaColumn::new(column.name(), column.get_type()).family();
     if family == Some(ColumnFamily::Integer) {
         id.parse().ok()

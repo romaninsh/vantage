@@ -142,7 +142,11 @@ impl TableSource for MemoryDB {
         value: Option<Self::Value>,
         negate: bool,
     ) -> Result<Self::Condition> {
-        let op = if negate { FilterOp::IsNot } else { FilterOp::Is };
+        let op = if negate {
+            FilterOp::IsNot
+        } else {
+            FilterOp::Is
+        };
         let value = value.map_or(ciborium::Value::Null, |v| v.into_value());
         Ok(MemoryCondition::cmp(field, op, value))
     }

@@ -7,7 +7,7 @@ use vantage_types::EmptyEntity;
 use vantage_vista::{ColumnFlag, resolve_base_spec};
 
 use super::columns::build_column;
-use super::nested::{with_nested_columns, with_nested_relations};
+use super::nested::{refuse_on_derived, with_nested_columns, with_nested_relations};
 use crate::statements::SurrealSelect;
 use crate::surrealdb::SurrealDB;
 use crate::vista::spec::{DriverBlockArgs as _, SurrealVistaSpec};
@@ -25,6 +25,7 @@ pub(super) fn build_surreal_table(
     let block = spec.driver.surreal.as_ref();
 
     if let Some(base_name) = block.and_then(|m| m.base.clone()) {
+        refuse_on_derived(spec)?;
         let mut table = build_derived_table(spec, &base_name, db, env)?;
         env.inject(&spec.name, &mut table, build_surreal_table)?;
         return Ok(table);

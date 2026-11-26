@@ -99,7 +99,11 @@ fn ordering_null_is_refused() {
 #[test]
 fn null_value_writes_null() {
     let store = store();
-    let _ = run(&read_write(&store), r#"table("t").patch("r1", #{ a: null() })"#).unwrap();
+    let _ = run(
+        &read_write(&store),
+        r#"table("t").patch("r1", #{ a: null() })"#,
+    )
+    .unwrap();
     let row = store.table("t").get("r1").unwrap();
     assert_eq!(row.get("a"), Some(&CborValue::Null));
 }

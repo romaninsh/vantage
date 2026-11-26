@@ -172,6 +172,7 @@ where
 {
     let block = T::source_block(spec);
     if let Some(base) = block.base {
+        nested::refuse_on_derived::<T>(spec)?;
         return build_derived_table(spec, &block, base, db, env);
     }
     let contained = spec.contained_relations()?;

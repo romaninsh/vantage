@@ -380,12 +380,25 @@ where
     }
 
     /// The stored columns a rule made read-only: a replace keeps their
-    /// stored values.
+    /// stored values. So is a contained host with a rule on something under
+    /// it (a nested column or its stored path).
     fn kept_columns(&self) -> impl Iterator<Item = &str> {
+        let ruled_hosts = self
+            .contained
+            .iter()
+            .map(|rel| rel.host_column())
+            .filter(|host| {
+                self.denials().column_rule(host).is_none()
+                    && self
+                        .columns_of_key(host)
+                        .into_iter()
+                        .any(|column| self.denials().column_rule(column).is_some())
+            });
         self.denials()
             .columns()
             .map(|(name, _)| name)
             .filter(|name| !self.is_calculated_column(name))
+            .chain(ruled_hosts)
     }
 
     /// The row as it stands before an update, read once through the set, when
@@ -404,10 +417,20 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// The row as the set stores it, for the write path: read through the
     /// set's conditions and read check, but without the `AfterLoad` hooks
     /// and lazy expressions, which rewrite rows for callers reading them.
-    /// Hooks see this as `stored`, and kept columns write it back.
+    /// Hooks see this as `stored`, and kept columns write it back. Each
+    /// contained host is read even when the projection leaves it out: a
+    /// dotted write merges into the host as stored.
     async fn stored_value(&self, id: &T::Id) -> Result<Option<Record<T::Value>>> {
         self.check_read().await?;
-        self.data_source().get_table_value(self, id).await
+        let hosts = self.contained.iter().map(|rel| rel.host_column());
+        if hosts.clone().all(|host| self.is_active_column(host)) {
+            return self.data_source().get_table_value(self, id).await;
+        }
+        let mut whole = self.clone();
+        if let Some(active) = &mut whole.active_columns {
+            active.extend(hosts.map(str::to_string));
+        }
+        self.data_source().get_table_value(&whole, id).await
     }
 
     /// Every row of the set as stored; see [`Self::stored_value`].

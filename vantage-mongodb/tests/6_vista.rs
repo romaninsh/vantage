@@ -928,6 +928,32 @@ mongo:
     Ok(())
 }
 
+/// A nested_path root declared as a column is read at its own name, as its
+/// nested columns are; one stored under another field is refused.
+#[tokio::test]
+async fn a_nested_path_root_stored_elsewhere_is_refused() -> TestResult {
+    let (db, name) = setup().await;
+    let err = db
+        .vista_factory()
+        .from_yaml(
+            r#"
+name: client
+columns:
+  _id: { type: string, flags: [id] }
+  address: { type: json, mongo: { field: shipping } }
+  city: { type: string, nested_path: address.city }
+mongo:
+  collection: clients
+"#,
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("a column stored under another name"), "{err}");
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
 #[tokio::test]
 async fn vista_set_order_filters_results_with_replace_semantics() -> TestResult {
     let (db, name) = setup().await;

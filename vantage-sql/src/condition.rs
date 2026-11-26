@@ -467,7 +467,11 @@ where
 {
     match value {
         None => Cond::from(Expression::new(
-            if negate { "{} IS NOT NULL" } else { "{} IS NULL" },
+            if negate {
+                "{} IS NOT NULL"
+            } else {
+                "{} IS NULL"
+            },
             vec![ExpressiveEnum::Nested(subject)],
         )),
         Some(value) => build_sql_binary::<T, T, Cond>(&subject, value, templates[negate as usize]),

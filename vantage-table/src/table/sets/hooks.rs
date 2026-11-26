@@ -260,10 +260,14 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// `address.city`), and each contained host it is a dotted key under
     /// (`address` for `address.city`). A key can be several at once, and the
     /// write reaches all of them, so a rule on any one covers it. A nested
-    /// column (`label` stored at `name.en_US`) stands for its host too.
+    /// column (`label` stored at `name.en_US`) stands for its stored name and
+    /// its host too.
     pub(crate) fn columns_of_key<'k>(&'k self, key: &'k str) -> Vec<&'k str> {
         let path = self.write_path(key);
         let mut columns = vec![key];
+        if path != key {
+            columns.push(path);
+        }
         columns.extend(
             self.columns()
                 .iter()
@@ -276,6 +280,21 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
                 .map(|rel| rel.host_column())
                 .filter(|host| dotted_under(path, host)),
         );
+        // A host written whole replaces everything under it: each nested
+        // column and stored path there, and each rule named for one.
+        if self.contained.iter().any(|rel| rel.host_column() == key) {
+            for (name, column) in self.columns() {
+                if let Some(at) = column.alias().filter(|at| dotted_under(at, key)) {
+                    columns.extend([name.as_str(), at]);
+                }
+            }
+            columns.extend(
+                self.denials()
+                    .columns()
+                    .map(|(name, _)| name)
+                    .filter(|name| dotted_under(name, key)),
+            );
+        }
         columns
     }
 

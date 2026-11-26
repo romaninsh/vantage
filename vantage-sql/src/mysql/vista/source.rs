@@ -21,8 +21,8 @@ use vantage_vista::{NativeCondition, Reference, Transaction, Vista};
 
 use crate::condition::{MysqlCondition, build_sql_binary, null_safe};
 use crate::mysql::MysqlDB;
-use crate::mysql::table_source::IS_TEMPLATES;
 use crate::mysql::operation::MysqlOperation;
+use crate::mysql::table_source::IS_TEMPLATES;
 use crate::mysql::types::AnyMysqlType;
 use crate::mysql::vista::factory::MysqlVistaFactory;
 use crate::primitives::identifier::ident;

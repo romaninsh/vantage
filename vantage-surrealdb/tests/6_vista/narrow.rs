@@ -415,7 +415,11 @@ async fn null_safe_operators() -> TestResult {
     }
     let yaml = "name: tri\ncolumns:\n  id: { type: thing, flags: [id] }\n  t: { type: bool }\n";
     let cases = [
-        (FilterOp::Is, CborValue::Null, vec!["tri:missing", "tri:none"]),
+        (
+            FilterOp::Is,
+            CborValue::Null,
+            vec!["tri:missing", "tri:none"],
+        ),
         (FilterOp::IsNot, CborValue::Null, vec!["tri:no", "tri:yes"]),
         (
             FilterOp::IsNot,

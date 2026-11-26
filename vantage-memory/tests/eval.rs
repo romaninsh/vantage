@@ -142,7 +142,10 @@ fn null_safe_operators() {
     ]);
     let truth = CborValue::Bool(true);
     let null = CborValue::Null;
-    assert_eq!(found(&t, cmp("t", FilterOp::Is, null.clone())), ["none", "missing"]);
+    assert_eq!(
+        found(&t, cmp("t", FilterOp::Is, null.clone())),
+        ["none", "missing"]
+    );
     assert_eq!(found(&t, cmp("t", FilterOp::IsNot, null)), ["yes", "no"]);
     assert_eq!(
         found(&t, cmp("t", FilterOp::IsNot, truth.clone())),

@@ -3,7 +3,7 @@
 ## 5.0.1 — 2026-11-26
 
 - A spec column's own `nested_path` (vantage-vista 3.2.0) works as `mongo: { nested_path }` does; set both and they must agree. The `contains_one` relations the paths make come from `VistaSpec::contained_relations`, which also checks them; deeper paths (`address.geo.lat`) still nest, and the relations stay unlisted.
-- A `nested_path` root may also be a column of its own, read whole. It used to be refused ("a nested_path root is also a column or a contained relation of the table"); a root that is a contained relation still is.
+- A `nested_path` root may also be a column of its own, read whole. It used to be refused ("a nested_path root is also a column or a contained relation of the table"); a root that is a contained relation, or a column stored under another field (`mongo: { field: shipping }`), still is.
 
 ## 5.0.0 — 2026-11-22
 
