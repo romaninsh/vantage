@@ -88,21 +88,16 @@ references:
                 CborValue::Text(s.into())
             }
 
-            /// `name_local` reads the German name, else the English one.
+            /// `name_local` reads the German name, else the English one, and a
+            /// relation's `join_concat` over the related `name_local` inlines
+            /// its expression and orders by it.
             #[tokio::test]
-            async fn name_local_falls_back() -> TestResult {
-                let (tags, _) = tags_todos("falls_back").await;
+            async fn name_local_falls_back_through_a_relation() -> TestResult {
+                let (tags, todos) = tags_todos("falls_back").await;
                 let rows = tags.list_values().await?;
                 assert_eq!(rows["t1"]["name_local"], text("Fehler"));
                 assert_eq!(rows["t2"]["name_local"], text("Bug"));
-                Ok(())
-            }
 
-            /// A relation's `join_concat` over the related `name_local`
-            /// inlines its expression, and orders by it.
-            #[tokio::test]
-            async fn join_concat_related_name_local() -> TestResult {
-                let (_, todos) = tags_todos("join_local").await;
                 let rows = todos.list_values().await?;
                 assert_eq!(rows["d1"]["tag_names"], text("Bug, Fehler"));
                 assert_eq!(rows["d2"]["tag_names"], text(""));

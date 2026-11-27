@@ -58,10 +58,12 @@ columns:
                 vista.get_value(id).await.unwrap().expect("row")[column].clone()
             }
 
-            /// A key with `@` (`sr@latin`) reads and writes like any other.
+            /// Each nested column writes its own key of `doc`. A key with `@`
+            /// (`sr@latin`) works like any other, a key the host lacks is added,
+            /// `""` is a value, and a saved null removes only its own key.
             #[tokio::test]
-            async fn nested_column_with_at_key() -> TestResult {
-                let vista = tags("nested_at").await;
+            async fn nested_columns_write_one_key_each() -> TestResult {
+                let vista = tags("nested_keys").await;
                 vista
                     .insert_value(
                         "t1",
@@ -69,103 +71,65 @@ columns:
                     )
                     .await?;
                 assert_eq!(read(&vista, "t1", "name_sr").await, text("Greška"));
-                vista
-                    .patch_value("t1", &row(&[("name_sr", text("Bag"))]))
-                    .await?;
-                assert_eq!(read(&vista, "t1", "name_sr").await, text("Bag"));
-                assert_eq!(
-                    doc(&vista, "t1").await,
-                    serde_json::json!({ "en_US": "Bug", "sr@latin": "Bag" })
-                );
-                Ok(())
-            }
+                assert_eq!(read(&vista, "t1", "name_de").await, CborValue::Null);
 
-            /// A saved null removes the key; the other keys stay.
-            #[tokio::test]
-            async fn null_removes_key() -> TestResult {
-                let vista = tags("nested_null").await;
                 vista
-                    .insert_value(
+                    .patch_value(
                         "t1",
-                        &row(&[("name_en", text("Bug")), ("name_de", text("Fehler"))]),
+                        &row(&[("name_sr", text("Bag")), ("name_de", text("Fehler"))]),
                     )
                     .await?;
+                assert_eq!(
+                    doc(&vista, "t1").await,
+                    serde_json::json!({ "en_US": "Bug", "sr@latin": "Bag", "de_DE": "Fehler" })
+                );
+
+                vista
+                    .patch_value("t1", &row(&[("name_de", text(""))]))
+                    .await?;
+                assert_eq!(read(&vista, "t1", "name_de").await, text(""));
+
                 vista
                     .patch_value("t1", &row(&[("name_de", CborValue::Null)]))
                     .await?;
                 assert_eq!(
                     doc(&vista, "t1").await,
-                    serde_json::json!({ "en_US": "Bug" })
+                    serde_json::json!({ "en_US": "Bug", "sr@latin": "Bag" })
                 );
-                assert_eq!(read(&vista, "t1", "name_en").await, text("Bug"));
                 assert_eq!(read(&vista, "t1", "name_de").await, CborValue::Null);
                 Ok(())
             }
 
-            /// A patch of a key the host doesn't hold yet adds it.
+            /// The host itself: written whole, it keeps a key no nested column
+            /// reads (it is a free-form map); stored NULL, the first nested
+            /// write creates the JSON object.
             #[tokio::test]
-            async fn patch_creates_missing_key() -> TestResult {
-                let vista = tags("nested_missing").await;
-                vista
-                    .insert_value("t1", &row(&[("name_en", text("Bug"))]))
-                    .await?;
-                assert_eq!(read(&vista, "t1", "name_de").await, CborValue::Null);
-                vista
-                    .patch_value("t1", &row(&[("name_de", text("Fehler"))]))
-                    .await?;
-                assert_eq!(read(&vista, "t1", "name_de").await, text("Fehler"));
-                assert_eq!(read(&vista, "t1", "name_en").await, text("Bug"));
-
-                // What if the host is written whole with a key no nested
-                // column reads: the host is a free-form map, so it's kept.
+            async fn the_host_is_a_free_form_map() -> TestResult {
+                let vista = tags("nested_host").await;
                 let whole = CborValue::Map(vec![
                     (text("en_US"), text("X")),
                     (text("fr_FR"), text("Y")),
                 ]);
+                vista.insert_value("t1", &row(&[("doc", whole.clone())])).await?;
+                assert_eq!(read(&vista, "t1", "name_en").await, text("X"));
                 vista
-                    .patch_value("t1", &row(&[("doc", whole.clone())]))
+                    .insert_value("t3", &row(&[("name_en", text("Bug"))]))
                     .await?;
+                vista.patch_value("t3", &row(&[("doc", whole)])).await?;
                 assert_eq!(
-                    doc(&vista, "t1").await,
+                    doc(&vista, "t3").await,
                     serde_json::json!({ "en_US": "X", "fr_FR": "Y" })
                 );
-                vista.insert_value("t2", &row(&[("doc", whole)])).await?;
-                assert_eq!(read(&vista, "t2", "name_en").await, text("X"));
-                Ok(())
-            }
 
-            /// A patch on a NULL host creates the JSON object.
-            #[tokio::test]
-            async fn patch_on_null_host_creates_json() -> TestResult {
-                let vista = tags("nested_nullhost").await;
                 vista
-                    .insert_value("t1", &row(&[("doc", CborValue::Null)]))
+                    .insert_value("t2", &row(&[("doc", CborValue::Null)]))
                     .await?;
                 vista
-                    .patch_value("t1", &row(&[("name_de", text("Fehler"))]))
+                    .patch_value("t2", &row(&[("name_de", text("Fehler"))]))
                     .await?;
                 assert_eq!(
-                    doc(&vista, "t1").await,
+                    doc(&vista, "t2").await,
                     serde_json::json!({ "de_DE": "Fehler" })
-                );
-                assert_eq!(read(&vista, "t1", "name_en").await, CborValue::Null);
-                Ok(())
-            }
-
-            /// An empty string is a value: stored and read as `""`.
-            #[tokio::test]
-            async fn empty_string_kept() -> TestResult {
-                let vista = tags("nested_empty").await;
-                vista
-                    .insert_value("t1", &row(&[("name_en", text("Bug"))]))
-                    .await?;
-                vista
-                    .patch_value("t1", &row(&[("name_de", text(""))]))
-                    .await?;
-                assert_eq!(read(&vista, "t1", "name_de").await, text(""));
-                assert_eq!(
-                    doc(&vista, "t1").await,
-                    serde_json::json!({ "en_US": "Bug", "de_DE": "" })
                 );
                 Ok(())
             }
