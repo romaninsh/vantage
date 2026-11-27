@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.0.1 — 2026-11-26
+
+- `build_from_spec_in(spec, cx)` on REST and GraphQL: `lazy:` columns compile on the context's script host, on the root table and the reference targets it traverses to. Requires vantage-table 6.0.0.
+- A spec column with `nested_path` (vantage-vista 3.2.0) fails the build: "column <name>: nested_path isn't supported by REST" (or "by GraphQL").
+
 ## 3.0.0 — 2026-11-22
 
 - **Breaking:** `insert_table_value` returns `Inserted<CborValue>` and the REST vista shell's

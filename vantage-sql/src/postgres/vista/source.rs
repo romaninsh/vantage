@@ -7,6 +7,7 @@ mod watch;
 
 use ciborium::Value as CborValue;
 use vantage_core::Result;
+use vantage_expressions::{Expression, Expressive};
 #[cfg(feature = "rhai")]
 use vantage_rhai::rhai::{Engine, EvalAltResult};
 use vantage_table::column::core::Column;
@@ -22,8 +23,9 @@ use crate::postgres::vista::rhai_source::register_postgres_onto;
 #[cfg(feature = "rhai")]
 use crate::rhai_engine::RhaiExpr;
 
-use crate::condition::{PostgresCondition, build_sql_binary};
+use crate::condition::{PostgresCondition, build_sql_binary, null_safe};
 use crate::postgres::PostgresDB;
+use crate::postgres::impls::table_source::IS_TEMPLATES;
 use crate::postgres::operation::PostgresOperation;
 use crate::postgres::types::AnyPostgresType;
 use crate::postgres::vista::factory::PostgresVistaFactory;
@@ -84,30 +86,42 @@ impl SqlShellDialect for PostgresDB {
         Ok(table.try_select()?.preview())
     }
 
+    fn column_expr(column: &Column<AnyPostgresType>) -> Expression<AnyPostgresType> {
+        column.expr()
+    }
+
     fn compare(
-        column: &Column<AnyPostgresType>,
+        subject: Expression<AnyPostgresType>,
         template: &str,
         value: AnyPostgresType,
     ) -> PostgresCondition {
-        build_sql_binary::<AnyPostgresType, AnyPostgresType, _>(column, value, template)
+        build_sql_binary::<AnyPostgresType, AnyPostgresType, _>(&subject, value, template)
+    }
+
+    fn is(
+        subject: Expression<AnyPostgresType>,
+        value: Option<AnyPostgresType>,
+        negate: bool,
+    ) -> PostgresCondition {
+        null_safe(subject, value, IS_TEMPLATES, negate)
     }
 
     fn in_list(
-        column: &Column<AnyPostgresType>,
+        subject: Expression<AnyPostgresType>,
         values: &[AnyPostgresType],
         negate: bool,
     ) -> PostgresCondition {
         if negate {
-            column.not_in_list(values)
+            subject.not_in_list(values)
         } else {
-            column.in_list(values)
+            subject.in_list(values)
         }
     }
 
     /// `ILIKE`, as quicksearch does here: case-insensitive everywhere else,
     /// so it is case-insensitive on Postgres too.
-    fn like(field: &str, pattern: String) -> PostgresCondition {
-        crate::postgres_expr!("{}::text ILIKE {} ESCAPE '$'", (ident(field)), pattern).into()
+    fn like(subject: Expression<AnyPostgresType>, pattern: String) -> PostgresCondition {
+        crate::postgres_expr!("{}::text ILIKE {} ESCAPE '$'", (subject), pattern).into()
     }
 
     fn order_term(field: &str) -> PostgresCondition {

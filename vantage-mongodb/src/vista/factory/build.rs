@@ -1,6 +1,8 @@
 //! Spec → `Table<MongoDB, EmptyEntity>`: the collection, its pipeline view,
 //! columns, references, joined (dotted) columns and contained relations.
 
+use std::borrow::Cow;
+
 use bson::Document;
 use indexmap::IndexMap;
 use vantage_core::{Context, Result, error};
@@ -8,13 +10,13 @@ use vantage_table::column::core::Column as TableColumn;
 use vantage_table::references::ContainedRelation;
 use vantage_table::table::{BuildEnv, Table};
 use vantage_types::EmptyEntity;
-use vantage_vista::{ColumnFlag, ColumnSpec};
+use vantage_vista::ColumnFlag;
 
 use super::build_column;
 use crate::mongodb::impls::joins::table_joins;
 use crate::mongodb::{MongoDB, MongoView};
 use crate::types::AnyMongoType;
-use crate::vista::spec::{MongoBlock, MongoColumnExtras, MongoVistaSpec};
+use crate::vista::spec::{MongoBlock, MongoColumnBlock, MongoVistaSpec};
 
 /// Build a `Table<MongoDB, EmptyEntity>` from a spec. A spec without columns
 /// still gets an `_id` column, so the table knows its key. Each reference the
@@ -26,6 +28,8 @@ pub(crate) fn build_mongo_table(
     db: MongoDB,
     env: &BuildEnv<MongoVistaSpec, MongoDB>,
 ) -> Result<Table<MongoDB, EmptyEntity>> {
+    let spec = with_common_nested_paths(spec)?;
+    let spec = spec.as_ref();
     let block = spec.driver.mongo.as_ref();
     let collection = block
         .and_then(|m| m.collection.clone())
@@ -56,7 +60,7 @@ pub(crate) fn build_mongo_table(
         table.add_column(TableColumn::<AnyMongoType>::new("_id"));
         table.set_spec_id_field("_id")?;
     } else {
-        table.add_spec_columns(&spec.columns, build_column)?;
+        table.add_spec_columns(&spec.columns, env.context(), build_column)?;
         let id = spec.resolve_id_column("_id");
         check_auto_id(spec, &id)?;
         table.set_spec_id(&id, &spec.columns)?;
@@ -75,33 +79,72 @@ pub(crate) fn build_mongo_table(
     Ok(table)
 }
 
+/// `spec` with each column's `nested_path` and `mongo: { nested_path }`
+/// the same, so the BSON path code reads the block and the shared
+/// resolution (`VistaSpec::contained_relations`) the column. Two different
+/// paths are an error.
+pub(crate) fn with_common_nested_paths(spec: &MongoVistaSpec) -> Result<Cow<'_, MongoVistaSpec>> {
+    let mut spec = Cow::Borrowed(spec);
+    let names: Vec<String> = spec.columns.keys().cloned().collect();
+    for name in names {
+        let col = &spec.columns[&name];
+        let block = col
+            .driver
+            .mongo
+            .as_ref()
+            .and_then(|m| m.nested_path.as_ref());
+        match (&col.nested_path, block) {
+            (Some(own), Some(mongo)) if own != mongo => {
+                return Err(error!(
+                    "nested_path is set twice, differently",
+                    table = spec.name.as_str(),
+                    column = name.as_str()
+                ));
+            }
+            (Some(own), None) => {
+                let own = own.clone();
+                let col = spec.to_mut().columns.get_mut(&name).expect("listed");
+                col.driver
+                    .mongo
+                    .get_or_insert_with(MongoColumnBlock::default)
+                    .nested_path = Some(own);
+            }
+            (None, Some(mongo)) => {
+                let mongo = mongo.clone();
+                spec.to_mut().columns[&name].nested_path = Some(mongo);
+            }
+            _ => {}
+        }
+    }
+    Ok(spec)
+}
+
 /// A nested column's path below the table, and its leaf column, named for
 /// the path's last segment.
 type NestedColumn = (Vec<String>, TableColumn<AnyMongoType>);
 
-/// `nested_path` columns are sugar for contained relations: the columns
-/// under one root (`address.city`, `address.zip`) make a `contains_one`
-/// `address` whose table declares `city` and `zip`, and a deeper path
-/// (`address.geo.lat`) nests another `contains_one` (`geo`) in it. A write
-/// to them so goes through that table, and merges into the stored
-/// sub-document. Reads still walk each column's path.
+/// `nested_path` columns are sugar for contained relations
+/// (`VistaSpec::contained_relations`): the columns under one root
+/// (`address.city`, `address.zip`) make a `contains_one` `address` whose
+/// table declares `city` and `zip`, and a deeper path (`address.geo.lat`)
+/// nests another `contains_one` (`geo`) in it. A write to them so goes
+/// through that table, and merges into the stored sub-document. Reads
+/// still walk each column's path.
 fn with_nested_path_relations(
     table: Table<MongoDB, EmptyEntity>,
     spec: &MongoVistaSpec,
 ) -> Result<Table<MongoDB, EmptyEntity>> {
     let mut nested = Vec::new();
-    for (name, col) in &spec.columns {
-        let Some(block) = col.driver.mongo.as_ref() else {
+    for (root, relation) in spec.contained_relations()? {
+        if spec.contained.contains_key(&root) {
             continue;
-        };
-        let Some(path) = block.resolved_path(name)? else {
-            continue;
-        };
-        if path.len() > 1 {
-            let mut leaf: ColumnSpec<MongoColumnExtras> = col.clone();
-            leaf.driver.mongo = None;
-            let column = build_column(&path[path.len() - 1], &leaf)?;
-            nested.push((path, column));
+        }
+        for (rest, column) in &relation.columns {
+            let path: Vec<String> = std::iter::once(root.clone())
+                .chain(rest.split('.').map(str::to_string))
+                .collect();
+            let leaf = build_column(&path[path.len() - 1], column)?;
+            nested.push((path, leaf));
         }
     }
     add_nested_relations(table, nested)
@@ -152,12 +195,17 @@ fn add_nested_relations(
             .vista_contained()
             .iter()
             .any(|r| r.host_column.as_deref() == Some(root.as_str()));
-        if table.columns().contains_key(&root)
-            || table.contained_relation(&root).is_some()
-            || hosted
-        {
+        // The root may also be a column of its own, read whole at its own
+        // name: the nested columns read and write under that name.
+        let stored_elsewhere = table
+            .columns()
+            .get(&root)
+            .and_then(|col| col.alias())
+            .is_some_and(|alias| alias != root);
+        if table.contained_relation(&root).is_some() || hosted || stored_elsewhere {
             return Err(error!(
-                "a nested_path root is also a column or a contained relation of the table",
+                "a nested_path root is also a contained relation of the table, or a column \
+                 stored under another name",
                 table = table.table_name(),
                 root = root.as_str()
             ));

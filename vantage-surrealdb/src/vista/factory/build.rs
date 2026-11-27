@@ -7,6 +7,7 @@ use vantage_types::EmptyEntity;
 use vantage_vista::{ColumnFlag, resolve_base_spec};
 
 use super::columns::build_column;
+use super::nested::{refuse_on_derived, with_nested_columns, with_nested_relations};
 use crate::statements::SurrealSelect;
 use crate::surrealdb::SurrealDB;
 use crate::vista::spec::{DriverBlockArgs as _, SurrealVistaSpec};
@@ -24,11 +25,13 @@ pub(super) fn build_surreal_table(
     let block = spec.driver.surreal.as_ref();
 
     if let Some(base_name) = block.and_then(|m| m.base.clone()) {
+        refuse_on_derived(spec)?;
         let mut table = build_derived_table(spec, &base_name, db, env)?;
         env.inject(&spec.name, &mut table, build_surreal_table)?;
         return Ok(table);
     }
 
+    let contained = spec.contained_relations()?;
     let mut table = match block.and_then(|m| m.rhai.clone()) {
         Some(code) => table_from_rhai(spec, &code, db.clone())?,
         None => {
@@ -40,7 +43,7 @@ pub(super) fn build_surreal_table(
     };
 
     for (name, col_spec) in &spec.columns {
-        if table.add_spec_column(name, col_spec, build_column)?
+        if table.add_spec_column(name, col_spec, env.context(), build_column)?
             && let Some(code) = &col_spec.expr
         {
             table = add_expr_column(table, name, code)?;
@@ -49,10 +52,12 @@ pub(super) fn build_surreal_table(
     let id = spec.resolve_id_column("id");
     check_auto_id(spec, &id)?;
     table.set_spec_id(&id, &spec.columns)?;
+    let table = with_nested_columns(table, spec, env.context())?;
 
     let table = table
         .with_spec_references(spec, env, build_surreal_table)?
         .with_contained_specs(&spec.contained, build_column)?;
+    let table = with_nested_relations(table, spec, &contained)?;
 
     let mut table = import_dotted_columns(spec, table)?;
     env.inject(&spec.name, &mut table, build_surreal_table)?;
@@ -202,6 +207,7 @@ fn build_derived_table(
         select,
         &inherit.columns,
         &inherit.relations,
+        env.context(),
         build_column,
     )?
     .with_spec_references(spec, env, build_surreal_table)?;

@@ -58,6 +58,8 @@ fn rhai_sql_json_renders_per_dialect() {
     let text = r#"sql::json(sql::ident("name"), "en_US")"#;
     let sqlite = |code| eval_column_expr(code, None, Env::new()).unwrap().preview();
     assert_eq!(sqlite(text), "JSON_EXTRACT(\"name\", '$.en_US')");
+    let serbian = r#"sql::json(sql::ident("name"), "sr@latin")"#;
+    assert_eq!(sqlite(serbian), "JSON_EXTRACT(\"name\", '$.\"sr@latin\"')");
     #[cfg(feature = "postgres")]
     {
         let raw = r#"sql::json_raw(sql::ident("name"), "en_US")"#;
@@ -70,6 +72,7 @@ fn rhai_sql_json_renders_per_dialect() {
         assert_eq!(postgres(raw), "\"name\" -> 'en_US'");
         let path = r#"sql::json(sql::ident("meta"), ["specs", "volts"])"#;
         assert_eq!(postgres(path), "\"meta\" -> 'specs' ->> 'volts'");
+        assert_eq!(postgres(serbian), "\"name\" ->> 'sr@latin'");
     }
     #[cfg(feature = "mysql")]
     {
@@ -85,13 +88,22 @@ fn rhai_sql_json_renders_per_dialect() {
             mysql(dashed),
             "JSON_UNQUOTE(JSON_EXTRACT(`name`, '$.\"en-US\".\"1st\"'))"
         );
+        assert_eq!(
+            mysql(serbian),
+            "JSON_UNQUOTE(JSON_EXTRACT(`name`, '$.\"sr@latin\"'))"
+        );
     }
     // A key is written into the SQL, so anything but a plain name is refused.
-    let quoted = r#"sql::json(sql::ident("meta"), "a' OR 1=1 --")"#;
-    let err = eval_column_expr(quoted, None, Env::new())
-        .unwrap_err()
-        .to_string();
-    assert!(err.contains("path keys are letters"), "{err}");
+    for key in ["a' OR 1=1 --", "a'b", "a.b", "a\\\\b", "{a}", ""] {
+        let quoted = format!(r#"sql::json(sql::ident("meta"), "{key}")"#);
+        let err = eval_column_expr(&quoted, None, Env::new())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("path keys are letters, digits, `_`, `-` and `@`"),
+            "{key}: {err}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -135,7 +147,8 @@ async fn rhai_relation_unknown_relation_errors() {
 }
 
 /// A `where` column the child doesn't have is an error naming it, not a
-/// reference SQL would resolve to the outer table's column of that name.
+/// reference SQL would resolve to the outer table's column of that name. An
+/// empty value (an unset `session.uid`) is refused rather than widening.
 #[tokio::test]
 async fn rhai_relation_unknown_where_column_errors() {
     let err = eval_column_expr(
@@ -149,6 +162,17 @@ async fn rhai_relation_unknown_where_column_errors() {
     assert!(
         err.contains("rx_project_tag"),
         "names the child table: {err}"
+    );
+    let empty = eval_column_expr(
+        r#"table.ref("tags").where("b", ()).count()"#,
+        Some(project(db().await)),
+        Env::new(),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(
+        empty.contains("where(b): the value is empty (()); use null() to match NULL"),
+        "{empty}"
     );
 }
 

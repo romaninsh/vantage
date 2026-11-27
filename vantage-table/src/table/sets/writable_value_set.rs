@@ -360,7 +360,11 @@ where
         };
         self.before_write(self.before_update_hooks(), &mut record, Some(update))
             .await?;
-        for (name, value) in kept_hosts {
+        for (name, stored) in kept_hosts {
+            let value = match record.get(&name) {
+                Some(written) => self.restore_ruled_fields(&name, written, &stored)?,
+                None => stored,
+            };
             let value = self.data_source().coerce_column_value(self, &name, value)?;
             record.insert(name, value);
         }
@@ -379,13 +383,85 @@ where
         Ok(result)
     }
 
+    /// A ruled contained host the replace wrote (`written`, after the
+    /// contained merge): the fields under it that a rule covers take their
+    /// stored values back, and the rest of the write stands. A contains_many
+    /// host has no fields to pick from, so it keeps its stored value whole.
+    fn restore_ruled_fields(
+        &self,
+        host: &str,
+        written: &T::Value,
+        stored: &T::Value,
+    ) -> Result<T::Value> {
+        let many = self
+            .contained
+            .iter()
+            .find(|rel| rel.host_column() == host)
+            .is_some_and(|rel| rel.kind() == vantage_vista::ReferenceKind::ContainsMany);
+        let prefix = format!("{host}.");
+        // A rule on the host under another name (a column read as `name`)
+        // covers all of it: the stored value stays whole.
+        let whole_ruled = self.columns_of_key(host).into_iter().any(|column| {
+            self.denials().column_rule(column).is_some()
+                && !self
+                    .nested_column_path(column)
+                    .unwrap_or(column)
+                    .starts_with(&prefix)
+        });
+        let source = self.data_source();
+        let (Some(mut written), false, false) =
+            (source.contained_records(written)?, many, whole_ruled)
+        else {
+            return Ok(stored.clone());
+        };
+        let stored = source
+            .contained_records(stored)?
+            .and_then(|records| records.into_iter().next())
+            .unwrap_or_default();
+        written.truncate(1);
+        if written.is_empty() {
+            written.push(Record::new());
+        }
+        let record = &mut written[0];
+        let ruled = self
+            .denials()
+            .columns()
+            .filter_map(|(name, _)| {
+                let path = self.nested_column_path(name).unwrap_or(name);
+                let field = path.strip_prefix(&prefix)?;
+                // A rule deeper down (`a.b.c`) keeps the whole first-level field.
+                Some(field.split('.').next().unwrap_or(field).to_string())
+            })
+            .collect::<Vec<_>>();
+        for field in ruled {
+            match stored.get(&field) {
+                Some(value) => record.insert(field, value.clone()),
+                None => record.shift_remove(&field),
+            };
+        }
+        source.contained_host(written, false)
+    }
+
     /// The stored columns a rule made read-only: a replace keeps their
-    /// stored values.
+    /// stored values. So is a contained host with a rule on something under
+    /// it (a nested column or its stored path).
     fn kept_columns(&self) -> impl Iterator<Item = &str> {
+        let ruled_hosts = self
+            .contained
+            .iter()
+            .map(|rel| rel.host_column())
+            .filter(|host| {
+                self.denials().column_rule(host).is_none()
+                    && self
+                        .columns_of_key(host)
+                        .into_iter()
+                        .any(|column| self.denials().column_rule(column).is_some())
+            });
         self.denials()
             .columns()
             .map(|(name, _)| name)
             .filter(|name| !self.is_calculated_column(name))
+            .chain(ruled_hosts)
     }
 
     /// The row as it stands before an update, read once through the set, when
@@ -404,10 +480,20 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// The row as the set stores it, for the write path: read through the
     /// set's conditions and read check, but without the `AfterLoad` hooks
     /// and lazy expressions, which rewrite rows for callers reading them.
-    /// Hooks see this as `stored`, and kept columns write it back.
+    /// Hooks see this as `stored`, and kept columns write it back. Each
+    /// contained host is read even when the projection leaves it out: a
+    /// dotted write merges into the host as stored.
     async fn stored_value(&self, id: &T::Id) -> Result<Option<Record<T::Value>>> {
         self.check_read().await?;
-        self.data_source().get_table_value(self, id).await
+        let hosts = self.contained.iter().map(|rel| rel.host_column());
+        if hosts.clone().all(|host| self.is_active_column(host)) {
+            return self.data_source().get_table_value(self, id).await;
+        }
+        let mut whole = self.clone();
+        if let Some(active) = &mut whole.active_columns {
+            active.extend(hosts.map(str::to_string));
+        }
+        self.data_source().get_table_value(&whole, id).await
     }
 
     /// Every row of the set as stored; see [`Self::stored_value`].

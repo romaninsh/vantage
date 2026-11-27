@@ -14,7 +14,9 @@ use vantage_core::{Result, error};
 use vantage_table::column::core::Column as TableColumn;
 use vantage_table::table::{Table, VistaMetadataOptions};
 use vantage_types::{EmptyEntity, Entity};
-use vantage_vista::{Capability, NoExtras, Vista, VistaCapabilities, VistaFactory, VistaMetadata};
+use vantage_vista::{
+    BuildContext, Capability, NoExtras, Vista, VistaCapabilities, VistaFactory, VistaMetadata,
+};
 
 use crate::cmd::{Cmd, CmdSpec};
 use crate::vista::source::CmdTableShell;
@@ -49,7 +51,17 @@ impl CmdVistaFactory {
     pub(crate) fn build_columns_table(
         &self,
         spec: &CmdVistaSpec,
+        cx: &BuildContext,
     ) -> Result<Table<Cmd, EmptyEntity>> {
+        if let Some(name) = spec
+            .columns
+            .iter()
+            .find_map(|(name, c)| c.nested_path.as_ref().map(|_| name))
+        {
+            return Err(error!(format!(
+                "column {name}: nested_path isn't supported by vantage-cmd"
+            )));
+        }
         let cmd_spec = {
             let mut cs = CmdSpec::new(spec.driver.cmd.rhai.clone());
             cs.command = spec.driver.cmd.command.clone();
@@ -59,7 +71,7 @@ impl CmdVistaFactory {
         };
         let cmd = self.cmd.clone().with_table(&spec.name, cmd_spec);
         let mut table = Table::<Cmd, EmptyEntity>::new(&spec.name, cmd);
-        table.add_spec_columns(&spec.columns, build_column)?;
+        table.add_spec_columns(&spec.columns, cx, build_column)?;
 
         // A command's output may have no id column; the id is then optional.
         let id_column = spec.resolve_id_column("id");
@@ -89,8 +101,12 @@ impl VistaFactory for CmdVistaFactory {
     /// graph lives in [`crate::models::CmdModelFactory`]; a vista built
     /// straight from a lone spec has no traversable relations.
     fn build_from_spec(&self, spec: CmdVistaSpec) -> Result<Vista> {
+        self.build_from_spec_in(spec, &BuildContext::default())
+    }
+
+    fn build_from_spec_in(&self, spec: CmdVistaSpec, cx: &BuildContext) -> Result<Vista> {
         let name = spec.name.clone();
-        let table = self.build_columns_table(&spec)?;
+        let table = self.build_columns_table(&spec, cx)?;
         let metadata = metadata_from_table(&table);
         Ok(wrap(table, name, metadata))
     }

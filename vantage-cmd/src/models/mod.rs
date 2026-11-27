@@ -152,7 +152,10 @@ impl CmdModelFactory {
     fn build_table(cmd: Cmd, name: &str) -> Option<Table<Cmd, EmptyEntity>> {
         let yaml = Self::yaml_for(name)?;
         let spec: CmdVistaSpec = serde_yaml_ng::from_str(yaml).ok()?;
-        let mut table = cmd.vista_factory().build_columns_table(&spec).ok()?;
+        let mut table = cmd
+            .vista_factory()
+            .build_columns_table(&spec, &vantage_vista::BuildContext::default())
+            .ok()?;
 
         for (rel_name, ref_spec) in &spec.references {
             let target = ref_spec.table.clone();

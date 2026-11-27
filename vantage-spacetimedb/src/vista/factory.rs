@@ -161,6 +161,13 @@ impl VistaFactory for SpacetimeVistaFactory {
                 )
                 .mark_unsupported());
             }
+            if column.nested_path.is_some() {
+                return Err(error!(
+                    format!("column {name}: nested_path isn't supported by SpacetimeDB"),
+                    relation = relation.to_string()
+                )
+                .mark_unsupported());
+            }
             if column.references.is_some() {
                 return Err(error!(
                     "a column cannot declare a reference: the module has no foreign keys",

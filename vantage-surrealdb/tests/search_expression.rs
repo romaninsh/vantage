@@ -1,11 +1,16 @@
+use ciborium::Value as CborValue;
 use surreal_client::{MockSurrealEngine, SurrealClient};
 use vantage_expressions::Expressive;
 use vantage_surrealdb::identifier::Identifier;
 use vantage_surrealdb::operation::SurrealOperation;
 use vantage_surrealdb::select::SurrealSelect;
+use vantage_surrealdb::surreal_expr;
 use vantage_surrealdb::surrealdb::SurrealDB;
+use vantage_surrealdb::vista::factory::SurrealVistaFactory;
 use vantage_table::prelude::*;
+use vantage_table::table::{Aggregate, RelationQuery};
 use vantage_types::EmptyEntity;
+use vantage_vista::FilterOp;
 
 fn make_db() -> SurrealDB {
     let client = SurrealClient::new(
@@ -98,4 +103,68 @@ fn test_search_across_columns() {
     // A table with no columns to search matches no rows.
     let empty = Table::<SurrealDB, EmptyEntity>::new("empty", db.clone());
     assert_eq!(db.search_table_condition(&empty, "x").preview(), "false");
+}
+
+fn line_table(db: SurrealDB) -> Table<SurrealDB, EmptyEntity> {
+    Table::new("line", db)
+        .with_id_column("id")
+        .with_column_of::<bool>("void")
+}
+
+/// A condition on an `exists()`, a `count()` and a computed boolean
+/// column filters by the column's expression, as a search does.
+#[test]
+fn condition_on_expression_columns() {
+    let db = make_db();
+    let invoices = Table::<SurrealDB, EmptyEntity>::new("invoice", db.clone())
+        .with_id_column("id")
+        .with_column_of::<i64>("net")
+        .with_many("lines", "invoice", line_table)
+        .with_column_of::<bool>("voided")
+        .with_relation_column(
+            "voided",
+            RelationQuery::new("lines").with_condition(surreal_expr!("void = {}", true)),
+            Aggregate::Exists,
+        )
+        .unwrap()
+        .with_column_of::<i64>("n_lines")
+        .with_relation_column("n_lines", RelationQuery::new("lines"), Aggregate::Count)
+        .unwrap()
+        .with_column_of::<bool>("large")
+        .with_expression("large", |_| surreal_expr!("net > 100"));
+    let vista = SurrealVistaFactory::new(db).from_table(invoices).unwrap();
+    let lines = "SELECT VALUE id FROM line WHERE invoice = $parent.id";
+    let cases = [
+        (
+            "voided",
+            FilterOp::Eq,
+            CborValue::Bool(true),
+            format!("((count(({lines} AND void = true)) > 0)) = true"),
+        ),
+        (
+            "n_lines",
+            FilterOp::Gt,
+            CborValue::Integer(1.into()),
+            format!("(count(({lines}))) > 1"),
+        ),
+        (
+            "large",
+            FilterOp::Eq,
+            CborValue::Bool(true),
+            "(net > 100) = true".to_string(),
+        ),
+    ];
+    for (column, op, value, filter) in cases {
+        let query = vista
+            .clone()
+            .with_condition(column, op, value)
+            .unwrap()
+            .preview()
+            .query
+            .unwrap();
+        let (_, rendered) = query
+            .rsplit_once(" FROM invoice WHERE ")
+            .unwrap_or_else(|| panic!("{query}"));
+        assert_eq!(rendered, filter, "{column}");
+    }
 }

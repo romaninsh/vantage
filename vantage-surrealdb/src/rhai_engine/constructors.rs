@@ -412,6 +412,28 @@ pub fn fn_coalesce(
     Ok(RhaiExpr(primitives::coalesce(to_expr(a)?, to_expr(b)?)))
 }
 
+/// `json(expr, key)` → `expr["key"]`: field `key` of the object `expr`
+/// holds. The key is written into the query, so it is letters, digits,
+/// `_`, `-` and `@` (`de_DE`, `sr@latin`).
+pub(crate) fn fn_json(
+    expr: rhai::Dynamic,
+    key: &str,
+) -> Result<RhaiExpr, Box<rhai::EvalAltResult>> {
+    let plain = !key.is_empty()
+        && key
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '@'));
+    if !plain {
+        return Err(super::convert::rhai_err(format!(
+            "surreal::json keys are letters, digits, `_`, `-` and `@`; got {key:?}"
+        )));
+    }
+    Ok(RhaiExpr(Expression::new(
+        format!("{{}}[\"{key}\"]"),
+        vec![ExpressiveEnum::Nested(unwrap_expr(expr)?)],
+    )))
+}
+
 /// `nullif(a, b)` → `IF a = b THEN NONE ELSE a END`.
 pub fn fn_nullif(a: rhai::Dynamic, b: rhai::Dynamic) -> Result<RhaiExpr, Box<rhai::EvalAltResult>> {
     Ok(RhaiExpr(primitives::nullif(to_expr(a)?, to_expr(b)?)))

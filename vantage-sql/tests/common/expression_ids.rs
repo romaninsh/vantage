@@ -132,6 +132,35 @@ macro_rules! expression_ids_tests {
                 assert_eq!(all.get_count().await.unwrap(), 0);
             }
 
+            /// An id declared `int` binds as an integer against its
+            /// expression, so the row reads back by the id insert returned.
+            #[tokio::test]
+            async fn integer_expression_id_reads_back() {
+                let link = link("integer_expression_id_reads_back").await;
+                let int_id = Expression::new(
+                    format!("({} * 1000000 + {})", quote("a"), quote("b")),
+                    vec![],
+                );
+                let mut all: Link = Table::new(link.table_name(), link.data_source().clone())
+                    .with_column_of::<i64>("id")
+                    .with_expression("id", move |_| int_id.clone())
+                    .with_column_of::<i64>("a")
+                    .with_column_of::<i64>("b")
+                    .with_column_of::<i64>("stage");
+                all.set_id_field("id");
+                let id = all
+                    .insert_return_id_value(&rec(&[("a", 68), ("b", 1)]))
+                    .await
+                    .unwrap();
+                assert_eq!(id, "68000001");
+                assert!(all.get_value("68000001").await.unwrap().is_some());
+                all.patch_value("68000001", &rec(&[("stage", 4)]))
+                    .await
+                    .unwrap();
+                all.delete("68000001").await.unwrap();
+                assert_eq!(all.get_count().await.unwrap(), 0);
+            }
+
             #[tokio::test]
             async fn expression_id_null_part_is_an_error() {
                 let all = link("expression_id_null_part_is_an_error").await;

@@ -16,12 +16,13 @@ use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 use vantage_vista::Transaction;
 
+use crate::condition::null_safe;
 use crate::declared::{sql_coerce_fn, sql_declared_types};
 use crate::postgres::PostgresDB;
 use crate::postgres::statements::PostgresSelect;
 use crate::postgres::types::{AnyPostgresType, PostgresType};
 use crate::primitives::identifier::ident;
-use crate::set_writes::{find_by_record, id_target};
+use crate::set_writes::{find_by_record, id_target, integer_expression_id};
 use crate::table_writes::{
     guard_insert, guard_new_row, guard_patch, guard_replace, null_derived_id,
     settle_failed_derived_insert, settle_failed_insert, upsert_on_id,
@@ -43,12 +44,16 @@ fn id_value(id: &str) -> AnyPostgresType {
 /// Bind an id for a given table. Honors [`Table::with_text_id`]: a text-keyed
 /// table always binds its id as text, even when it looks numeric, so an
 /// all-digit id like `"121"` is not coerced to `bigint` against a `TEXT` id
-/// column. Other tables keep the integer-coercing default ([`id_value`]).
+/// column. An id expression binds as text unless it is declared an integer
+/// ([`integer_expression_id`]). Other tables keep the integer-coercing
+/// default ([`id_value`]).
 pub(super) fn id_param<E>(table: &Table<PostgresDB, E>, id: &str) -> AnyPostgresType
 where
     E: Entity<AnyPostgresType>,
 {
-    if table.id_is_text() || table.id_is_expression() {
+    if let Some(n) = integer_expression_id(table, id) {
+        AnyPostgresType::new(n)
+    } else if table.id_is_text() || table.id_is_expression() {
         AnyPostgresType::from(id.to_string())
     } else {
         id_value(id)
@@ -161,6 +166,9 @@ fn parse_rows<E: Entity<AnyPostgresType>>(
     Ok(records)
 }
 
+/// The NULL-safe `is` / `is_not` against a value.
+pub(crate) const IS_TEMPLATES: [&str; 2] = ["{} IS NOT DISTINCT FROM {}", "{} IS DISTINCT FROM {}"];
+
 #[async_trait]
 impl TableSource for PostgresDB {
     type Column<Type>
@@ -176,6 +184,16 @@ impl TableSource for PostgresDB {
     fn eq_value_condition(&self, field: &str, value: Self::Value) -> Result<Self::Condition> {
         let column: Column<AnyPostgresType> = Column::new(field);
         Ok(PostgresOperation::eq(&column, value))
+    }
+
+    fn is_value_condition(
+        &self,
+        field: &str,
+        value: Option<Self::Value>,
+        negate: bool,
+    ) -> Result<Self::Condition> {
+        let column: Column<AnyPostgresType> = Column::new(field);
+        Ok(null_safe(column.expr(), value, IS_TEMPLATES, negate))
     }
 
     fn in_values_condition(
@@ -317,10 +335,11 @@ impl TableSource for PostgresDB {
             .filter(|col| !table.is_imported_column(col.name()))
             .map(|col| {
                 let p = pattern.clone();
+                let subject = crate::search_subject(table, col.name());
                 // ILIKE: quicksearch is case-insensitive everywhere else
                 // (SQLite LIKE folds case by default) — matching that here
                 // is parity, not a liberty.
-                postgres_expr!("{}::text ILIKE {} ESCAPE '$'", (ident(col.name())), p)
+                postgres_expr!("{}::text ILIKE {} ESCAPE '$'", (subject), p)
             })
             .collect();
 

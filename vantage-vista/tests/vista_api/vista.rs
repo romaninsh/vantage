@@ -151,6 +151,63 @@ async fn a_computed_column_that_fails_fails_the_read_it_belongs_to() {
     assert_eq!(row.get("double"), Some(&i(40)));
 }
 
+#[cfg(feature = "rhai")]
+#[tokio::test]
+async fn lazy_column_uses_given_host() {
+    use std::sync::Arc;
+    use vantage_vista::{BuildContext, ColumnSpec, NoExtras, VistaFactory, VistaSpec};
+
+    let host = vantage_rhai::Host::builder(vantage_rhai::Limits::background())
+        .vocab_fn(|engine| {
+            engine.register_fn("twice", |x: i64| x * 2);
+        })
+        .build();
+    let cx = BuildContext::default().with_script_host(Arc::new(host));
+    let spec = ColumnSpec::<NoExtras>::new()
+        .with_type("i64")
+        .with_lazy("twice(row.age)");
+    let column = spec.lazy_column_in("double", &cx).unwrap().unwrap();
+    let vista = Vista::new(
+        "people",
+        shell().with_metadata(metadata().with_column(column)),
+    );
+    let row = vista.get_value("p2").await.unwrap().unwrap();
+    assert_eq!(row.get("double"), Some(&i(40)));
+
+    // The fixed host has no `twice`.
+    let fixed = spec.lazy_column("double").unwrap().unwrap();
+    let vista = Vista::new(
+        "people",
+        shell().with_metadata(metadata().with_column(fixed)),
+    );
+    let err = vista.get_value("p2").await.unwrap_err();
+    assert!(format!("{err:?}").contains("twice"), "{err:?}");
+
+    // A factory that doesn't take the context refuses a `lazy:` column
+    // rather than compiling it on the fixed host.
+    struct Plain;
+    impl VistaFactory for Plain {
+        type TableExtras = NoExtras;
+        type ColumnExtras = NoExtras;
+        type ReferenceExtras = NoExtras;
+        fn build_from_spec(&self, _: VistaSpec) -> vantage_core::Result<Vista> {
+            Ok(people())
+        }
+    }
+    let mut table = VistaSpec::<NoExtras, NoExtras, NoExtras>::new("people");
+    table.columns.insert("double".into(), spec);
+    let err = Plain.build_from_spec_in(table.clone(), &cx).unwrap_err();
+    assert!(
+        err.to_string().contains("ignores the build context"),
+        "{err}"
+    );
+    assert!(
+        Plain
+            .build_from_spec_in(table, &BuildContext::default())
+            .is_ok()
+    );
+}
+
 #[tokio::test]
 async fn with_id_narrows_to_the_row_whose_id_column_equals_it() {
     let vista = people().with_id("p2").unwrap();

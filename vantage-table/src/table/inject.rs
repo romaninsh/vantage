@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use vantage_core::{Result, error};
 use vantage_types::EmptyEntity;
-use vantage_vista::SpecResolver;
+use vantage_vista::{BuildContext, SpecResolver};
 
 use crate::table::Table;
 use crate::traits::table_source::TableSource;
@@ -111,12 +111,15 @@ pub type SpecTableBuilder<S, T> = fn(&S, T, &BuildEnv<S, T>) -> Result<Table<T, 
 
 /// What a spec build carries besides the spec and the data source: the
 /// resolver for references and `base:`, the injector, the trail of keys
-/// being built, and the kind of this build.
+/// being built, the kind of this build, and the load's [`BuildContext`],
+/// which every nested build shares.
+#[non_exhaustive]
 pub struct BuildEnv<S, T: TableSource> {
     pub resolver: Option<Arc<dyn SpecResolver<S>>>,
     pub injector: Option<TableInjector<T>>,
     pub trail: BuildTrail,
     pub kind: BuildKind,
+    context: BuildContext,
 }
 
 impl<S, T: TableSource> Clone for BuildEnv<S, T> {
@@ -126,6 +129,7 @@ impl<S, T: TableSource> Clone for BuildEnv<S, T> {
             injector: self.injector.clone(),
             trail: self.trail.clone(),
             kind: self.kind.clone(),
+            context: self.context.clone(),
         }
     }
 }
@@ -155,7 +159,21 @@ impl<S: 'static, T: TableSource> BuildEnv<S, T> {
                 keys: vec![key.to_string()],
             },
             kind: BuildKind::Root,
+            context: BuildContext::default(),
         }
+    }
+
+    /// This environment with `context` for this build and every build
+    /// nested in it.
+    pub fn with_context(mut self, context: BuildContext) -> Self {
+        self.context = context;
+        self
+    }
+
+    /// The load's context; pass it to [`Table::add_spec_columns`] and the
+    /// other spec adders.
+    pub fn context(&self) -> &BuildContext {
+        &self.context
     }
 
     /// The environment for building `key` from inside this build, as `kind`.
@@ -166,6 +184,19 @@ impl<S: 'static, T: TableSource> BuildEnv<S, T> {
             injector: self.injector.clone(),
             trail: self.trail.enter(key)?,
             kind,
+            context: self.context.clone(),
+        })
+    }
+
+    /// The environment of a reference target's build: `key` on a fresh
+    /// trail, sharing this one's resolver, injector and context.
+    pub(crate) fn reference(&self, key: &str, kind: BuildKind) -> Result<Self> {
+        Ok(Self {
+            resolver: self.resolver.clone(),
+            injector: self.injector.clone(),
+            trail: BuildTrail::default().enter(key)?,
+            kind,
+            context: self.context.clone(),
         })
     }
 

@@ -18,6 +18,7 @@ use crate::Expr;
 use crate::identifier::Identifier;
 use crate::operation::SurrealOperation;
 use crate::surreal_expr;
+use crate::surrealdb::impls::table_source::null_safe;
 use crate::thing::Thing;
 use crate::types::{AnySurrealType, SurrealType};
 
@@ -118,6 +119,10 @@ where
             FilterOp::Lte => subject.lte(operand()),
             // `value` is a CBOR array → a SurrealDB array literal; `field IN [ … ]`.
             FilterOp::InSet => subject.in_(operand()),
+            FilterOp::Is | FilterOp::IsNot => {
+                let value = (!value.is_null()).then(operand);
+                null_safe(subject, value, condition.op == FilterOp::IsNot)
+            }
             // A lowercased `CONTAINS`: a case-insensitive substring match.
             //
             // Not the fuzzy `~`: SurrealDB 3.0 removed those operators (3.2.3

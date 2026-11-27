@@ -16,7 +16,8 @@ use vantage_table::table::spec::spec_references;
 use vantage_table::table::{Table, VistaMetadataOptions};
 use vantage_types::{EmptyEntity, Entity};
 use vantage_vista::{
-    Capability, ColumnFlag, SpecResolver, Vista, VistaCapabilities, VistaFactory, VistaMetadata,
+    BuildContext, Capability, ColumnFlag, SpecResolver, Vista, VistaCapabilities, VistaFactory,
+    VistaMetadata,
 };
 
 use crate::graphql::api::GraphqlApi;
@@ -93,7 +94,7 @@ impl GraphqlApiVistaFactory {
 
     /// The installed resolver, else one over the internal registry; either
     /// way paired with this factory's API (see `lowering`).
-    fn target_resolver(&self) -> TargetSpecResolver {
+    fn target_resolver(&self, cx: &BuildContext) -> TargetSpecResolver {
         let specs: Arc<dyn SpecResolver<GraphqlApiVistaSpec>> = match &self.resolver {
             Some(resolver) => resolver.clone(),
             None => {
@@ -101,7 +102,7 @@ impl GraphqlApiVistaFactory {
                 Arc::new(move |name: &str| registry_get(&registry, name))
             }
         };
-        target_resolver(self.api.clone(), specs)
+        target_resolver(self.api.clone(), specs, cx.clone())
     }
 
     /// Wrap a typed `Table<GraphqlApi, E>` as a `Vista`. Column metadata,
@@ -136,7 +137,8 @@ impl GraphqlApiVistaFactory {
         &self,
         spec: &GraphqlApiVistaSpec,
     ) -> Result<Table<GraphqlApi, EmptyEntity>> {
-        build_table(spec, &self.api, Some(self.target_resolver()))
+        let cx = BuildContext::default();
+        build_table(spec, &self.api, Some(self.target_resolver(&cx)), &cx)
     }
 }
 
@@ -146,8 +148,13 @@ impl VistaFactory for GraphqlApiVistaFactory {
     type ReferenceExtras = vantage_vista::NoExtras;
 
     fn build_from_spec(&self, spec: GraphqlApiVistaSpec) -> Result<Vista> {
-        let table = self.table_from_spec(&spec)?;
-        wrap_spec_table(table, &spec, self.target_resolver())
+        self.build_from_spec_in(spec, &BuildContext::default())
+    }
+
+    fn build_from_spec_in(&self, spec: GraphqlApiVistaSpec, cx: &BuildContext) -> Result<Vista> {
+        let resolver = self.target_resolver(cx);
+        let table = build_table(&spec, &self.api, Some(resolver.clone()), cx)?;
+        wrap_spec_table(table, &spec, resolver)
     }
 }
 

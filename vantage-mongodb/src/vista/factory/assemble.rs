@@ -8,7 +8,7 @@ use vantage_core::error;
 use vantage_table::table::spec::spec_references;
 use vantage_table::table::{Orderable, Table, VistaMetadataOptions};
 use vantage_types::EmptyEntity;
-use vantage_vista::{ReferenceSpec, Vista, VistaFactory, VistaMetadata};
+use vantage_vista::{BuildContext, ReferenceSpec, Vista, VistaFactory, VistaMetadata};
 
 #[cfg(not(feature = "rhai"))]
 use super::build::missing_rhai;
@@ -88,6 +88,10 @@ impl VistaFactory for MongoVistaFactory {
     type ReferenceExtras = MongoReferenceExtras;
 
     fn build_from_spec(&self, spec: MongoVistaSpec) -> Result<Vista> {
+        self.build_from_spec_in(spec, &BuildContext::default())
+    }
+
+    fn build_from_spec_in(&self, spec: MongoVistaSpec, cx: &BuildContext) -> Result<Vista> {
         let modify = spec.driver.mongo.as_ref().and_then(|b| b.modify.clone());
         #[cfg(not(feature = "rhai"))]
         if modify.is_some() {
@@ -105,7 +109,7 @@ impl VistaFactory for MongoVistaFactory {
                 relation = relation.as_str()
             ));
         }
-        let table = self.table_from_spec(&spec)?;
+        let table = self.table_from_spec_in(&spec, cx)?;
         // Only here, on the table the caller asked for: a reference target
         // or a `base:` table checking its own would build this one again.
         table.check_expressions()?;

@@ -9,8 +9,28 @@
 //! JSON goes through `vantage_rhai::{to_json, from_json}`.
 
 use ciborium::Value as CborValue;
-use vantage_rhai::rhai::{Array, Blob, Dynamic, EvalAltResult, Map as RhaiMap};
+use vantage_rhai::rhai::{Array, Blob, Dynamic, Engine, EvalAltResult, Map as RhaiMap, Token};
 use vantage_types::Record;
+
+use crate::FilterOp;
+
+/// `null()` in a script: an explicit NULL. `()` is a missing value (an unset
+/// `session.uid`, a JSON `null`) and a condition refuses it; `null()` asks
+/// for NULL. Both store NULL on a write.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Null;
+
+/// Register `null()` and its type `Null`. Rhai reserves `null` as a
+/// keyword, so the engine's token mapper reads it as a name.
+pub fn register_null(engine: &mut Engine) {
+    #[allow(deprecated)]
+    engine.on_parse_token(|token, _, _| match token {
+        Token::Reserved(name) if name.as_str() == "null" => Token::Identifier(name),
+        token => token,
+    });
+    engine.register_type_with_name::<Null>("Null");
+    engine.register_fn("null", || Null);
+}
 
 /// Convert a Rhai value into the universal CBOR carrier. Scalars, arrays and
 /// maps pass through (an array is what an `in` condition takes); a value with
@@ -26,7 +46,7 @@ pub fn dynamic_to_cbor(d: Dynamic) -> Result<CborValue, Box<EvalAltResult>> {
             Box::new(CborValue::Text(dt.to_rfc3339())),
         ));
     }
-    if d.is_unit() {
+    if d.is_unit() || d.is::<Null>() {
         Ok(CborValue::Null)
     } else if d.is::<bool>() {
         Ok(CborValue::Bool(d.cast::<bool>()))
@@ -88,6 +108,41 @@ pub fn value_arg(method: &str, d: Dynamic) -> Result<CborValue, Box<EvalAltResul
         return Err(format!("`{method}` takes a value; {QUERY_EXPRESSION}").into());
     }
     dynamic_to_cbor(d)
+}
+
+/// The refusal of `()` as the value of `where(column, …)`.
+fn empty_condition_value(column: &str) -> String {
+    format!("where({column}): the value is empty (()); use null() to match NULL")
+}
+
+/// The refusal of `null()` with `eq` or `ne`, which SQL can't match.
+fn null_needs_is(column: &str) -> String {
+    format!(r#"where({column}): null() needs "is" or "is_not""#)
+}
+
+/// The value of `where(column, op, value)`. `()` is refused: matching a
+/// missing value as NULL would widen a rule (`where("user_id", session.uid)`
+/// with no `uid` would show every unowned row). `null()` can't be ordered.
+pub fn condition_arg(
+    column: &str,
+    op: FilterOp,
+    d: Dynamic,
+) -> Result<CborValue, Box<EvalAltResult>> {
+    if d.is_unit() {
+        return Err(empty_condition_value(column).into());
+    }
+    if d.is::<Null>() {
+        if op.is_ordering() {
+            return Err(format!(
+                r#"where({column}): null() can't be ordered; use "is" or "is_not""#
+            )
+            .into());
+        }
+        if matches!(op, FilterOp::Eq | FilterOp::Ne) {
+            return Err(null_needs_is(column).into());
+        }
+    }
+    value_arg("where", d)
 }
 
 /// CBOR → Rhai `Dynamic`. Tagged values render their presentation form

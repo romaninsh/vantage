@@ -1,12 +1,14 @@
 //! `lazy:` columns: computed by the Vista on every read, never stored.
 #![cfg(feature = "rhai")]
 
+use std::sync::Arc;
+
 use ciborium::Value as CborValue;
 use vantage_core::VantageError;
 use vantage_dataset::{ReadableValueSet, WritableValueSet};
 use vantage_memory::{MemoryStore, MemoryVistaFactory};
 use vantage_types::Record;
-use vantage_vista::VistaFactory;
+use vantage_vista::{BuildContext, VistaFactory};
 
 /// `total` and `big` chain; `product_ref` keys the has-one `product`.
 const LINE: &str = r#"
@@ -48,6 +50,49 @@ async fn lazy_columns_are_computed_on_read_and_never_stored() {
     assert_eq!(read.get("total"), Some(&CborValue::Integer(6.into())));
     assert_eq!(read.get("big"), Some(&CborValue::Bool(true)));
     assert_eq!(read.get("product_ref"), Some(&CborValue::Text("p1".into())));
+}
+
+/// The build context reaches a reference target: its `lazy:` column calls
+/// `twice`, which only the given host has.
+#[tokio::test]
+async fn a_reference_target_compiles_its_lazy_columns_on_the_given_host() {
+    const PRODUCT: &str = r#"
+name: product
+columns:
+  id: { type: string, flags: [id] }
+  n: { type: int }
+  doubled: { type: int, lazy: "twice(row.n)" }
+"#;
+    let host = vantage_rhai::Host::builder(vantage_rhai::Limits::background())
+        .vocab_fn(|engine| {
+            engine.register_fn("twice", |x: i64| x * 2);
+        })
+        .build();
+    let cx = BuildContext::default().with_script_host(Arc::new(host));
+    let store = MemoryStore::new();
+    let factory = MemoryVistaFactory::new(store.clone());
+    let products = factory
+        .build_from_spec_in(serde_yaml_ng::from_str(PRODUCT).unwrap(), &cx)
+        .unwrap();
+    let rec: Record<CborValue> = [("n".to_string(), CborValue::Integer(2.into()))]
+        .into_iter()
+        .collect();
+    products.insert_value("p1", &rec).await.unwrap();
+    let lines = factory
+        .build_from_spec_in(serde_yaml_ng::from_str(LINE).unwrap(), &cx)
+        .unwrap();
+    let line: Record<CborValue> = [
+        ("pnum".to_string(), CborValue::Integer(1.into())),
+        ("qty".to_string(), CborValue::Integer(1.into())),
+    ]
+    .into_iter()
+    .collect();
+    lines.insert_value("l1", &line).await.unwrap();
+    let line = lines.get_value("l1").await.unwrap().unwrap();
+
+    let product = lines.get_ref("product", Some(&line)).unwrap();
+    let read = product.get_value("p1").await.unwrap().unwrap();
+    assert_eq!(read.get("doubled"), Some(&CborValue::Integer(4.into())));
 }
 
 #[tokio::test]

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.1 — 2026-11-26
+
+- `build_from_spec_in(spec, cx)`: `lazy:` columns compile on the context's script host. Requires vantage-table 6.0.0.
+- A spec column with `nested_path` (vantage-vista 3.2.0) fails the build: "column <name>: nested_path isn't supported by CSV". It used to be read as a plain column.
+
 ## 0.9.0 — 2026-11-22
 
 - **Breaking:** `insert_table_value` returns `Inserted<…>` (vantage-table 5). CSV still refuses

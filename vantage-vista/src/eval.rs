@@ -53,8 +53,9 @@ impl Condition {
     /// Whether `row` satisfies this condition, its cell read by
     /// [`cell_get`]. Equality and set membership take an integer and a float
     /// of the same number as equal (`3 == 3.0`); the ordered operators
-    /// compare by [`cbor_cmp`]. An absent cell matches only `Ne` and
-    /// `NotInSet`.
+    /// compare by [`cbor_cmp`]. An absent cell reads as NULL. As in SQL, a
+    /// NULL cell matches no `Eq`, `Ne` or ordering against a value; `Is` and
+    /// `IsNot` are the NULL-safe equality and its negation.
     pub fn matches(&self, row: &Rec, metadata: &VistaMetadata) -> bool {
         let cell = cell_get(row, &self.column, metadata);
         if cell.is_none()
@@ -65,7 +66,11 @@ impl Condition {
         let operand = &self.value;
         match self.op {
             FilterOp::Eq => cell.is_some_and(|c| same(c, operand)),
-            FilterOp::Ne => !cell.is_some_and(|c| same(c, operand)),
+            FilterOp::Ne => {
+                cell.is_some_and(|c| !c.is_null() && !operand.is_null() && !same(c, operand))
+            }
+            FilterOp::Is => is(cell, operand),
+            FilterOp::IsNot => !is(cell, operand),
             FilterOp::InSet => in_set(cell, operand),
             FilterOp::NotInSet => !in_set(cell, operand),
             FilterOp::Like => cell.is_some_and(|c| {
@@ -191,6 +196,15 @@ fn same(a: &CborValue, b: &CborValue) -> bool {
         (CborValue::Integer(_), CborValue::Float(_)) | (CborValue::Float(_), CborValue::Integer(_))
     );
     a == b || (int_and_float && cbor_cmp(a, b) == Ordering::Equal)
+}
+
+/// NULL-safe equality: an absent or NULL cell is NULL, NULL is NULL, and
+/// NULL equals no value.
+fn is(cell: Option<&CborValue>, operand: &CborValue) -> bool {
+    match cell.filter(|c| !c.is_null()) {
+        None => operand.is_null(),
+        Some(c) => !operand.is_null() && same(c, operand),
+    }
 }
 
 fn in_set(cell: Option<&CborValue>, operand: &CborValue) -> bool {

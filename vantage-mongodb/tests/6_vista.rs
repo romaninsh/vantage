@@ -207,6 +207,32 @@ mongo:
     assert_eq!(row.get("name"), Some(&CborValue::Text("Marty".to_string())));
     assert_eq!(row.get("is_paying_client"), Some(&CborValue::Bool(true)));
 
+    // What if the load gives a script host: a `lazy:` column compiles on it.
+    #[cfg(feature = "rhai")]
+    {
+        let host = vantage_rhai::Host::builder(vantage_rhai::Limits::background())
+            .vocab_fn(|engine| {
+                engine.register_fn("twice", |s: &str| format!("{s}{s}"));
+            })
+            .build();
+        let cx = vantage_vista::BuildContext::default().with_script_host(std::sync::Arc::new(host));
+        let lazy = yaml.replace(
+            "mongo:\n",
+            "  shout: { type: string, lazy: 'twice(row.name)' }\nmongo:\n",
+        );
+        let spec = serde_yaml_ng::from_str(&lazy)?;
+        let rows = db
+            .vista_factory()
+            .build_from_spec_in(spec, &cx)?
+            .list_values()
+            .await?;
+        let (_, row) = rows.into_iter().next().unwrap();
+        assert_eq!(
+            row.get("shout"),
+            Some(&CborValue::Text("MartyMarty".into()))
+        );
+    }
+
     // MongoDB generates only `_id`: an auto id stored anywhere else would be
     // missing from every inserted row, so the build refuses it.
     let auto = |column: &str| format!("name: client\ncolumns:\n  id: {column}\n");
@@ -628,16 +654,10 @@ mongo:
         &bson::doc! { "city": "Hill Valley", "zip": "1986", "street": "Lyon Drive" }
     );
 
-    // The sub-document goes through the `contains_one` its columns make: it
-    // takes only declared fields, however they are spelled, and only a
-    // document.
-    for undeclared in [
-        (
-            "address",
-            CborValue::Map(vec![("secret".into(), "x".into())]),
-        ),
-        ("address.street", CborValue::Text("Elm Street".into())),
-    ] {
+    // The sub-document goes through the `contains_one` its columns make: a
+    // dotted key takes only declared fields, and the host only a document.
+    // The host written whole is a free-form map (see `null_removes_key`).
+    for undeclared in [("address.street", CborValue::Text("Elm Street".into()))] {
         let patch: Record<CborValue> = vec![(undeclared.0.to_string(), undeclared.1)]
             .into_iter()
             .collect();
@@ -888,6 +908,96 @@ mongo:
     Ok(())
 }
 
+/// A nested column saved as null removes its field from the host; the
+/// other fields stay.
+#[tokio::test]
+async fn null_removes_key() -> TestResult {
+    let (db, name) = setup().await;
+    db.collection::<bson::Document>("tags")
+        .insert_one(bson::doc! { "_id": "t1", "name": { "en_US": "Bug", "de_DE": "Fehler" } })
+        .await?;
+    let vista = db.vista_factory().from_yaml(
+        r#"
+name: tag
+columns:
+  _id: { type: string, flags: [id] }
+  name_en: { type: string, nested_path: name.en_US }
+  name_de: { type: string, nested_path: name.de_DE }
+mongo:
+  collection: tags
+"#,
+    )?;
+    let null: Record<CborValue> = [("name_de".to_string(), CborValue::Null)]
+        .into_iter()
+        .collect();
+    vista.patch_value("t1".to_string(), &null).await?;
+    let stored = db
+        .collection::<bson::Document>("tags")
+        .find_one(bson::doc! { "_id": "t1" })
+        .await?
+        .expect("tag");
+    assert_eq!(stored.get_document("name")?, &bson::doc! { "en_US": "Bug" });
+    assert_eq!(
+        vista.get_value("t1").await?.unwrap()["name_en"],
+        CborValue::Text("Bug".into())
+    );
+
+    // What if the table declares the host too: `name` and `name.en_US` are
+    // one path, projected once, and the nested column still reads its key.
+    let with_host = db.vista_factory().from_yaml(
+        r#"
+name: tag
+columns:
+  _id: { type: string, flags: [id] }
+  name: { type: json }
+  label: { type: string, nested_path: name.en_US }
+mongo:
+  collection: tags
+"#,
+    )?;
+    let row = with_host.get_value("t1").await?.expect("tag");
+    assert_eq!(row["label"], CborValue::Text("Bug".into()), "{row:?}");
+    assert_eq!(with_host.list_values().await?.len(), 1);
+
+    // What if the host is written whole with a key no nested column reads:
+    // the host is a free-form document, so the key is kept.
+    let whole: Record<CborValue> = [(
+        "name".to_string(),
+        CborValue::Map(vec![
+            ("en_US".into(), "X".into()),
+            ("fr_FR".into(), "Y".into()),
+        ]),
+    )]
+    .into_iter()
+    .collect();
+    with_host.patch_value("t1".to_string(), &whole).await?;
+    let stored = db
+        .collection::<bson::Document>("tags")
+        .find_one(bson::doc! { "_id": "t1" })
+        .await?
+        .expect("tag");
+    assert_eq!(
+        stored.get_document("name")?,
+        &bson::doc! { "en_US": "X", "fr_FR": "Y" }
+    );
+
+    // The table's select lists both, and MongoDB refuses a projection of a
+    // path and its parent.
+    {
+        use vantage_expressions::traits::datasource::SelectableDataSource;
+        use vantage_table::column::core::Column;
+        let table = Table::<MongoDB, EmptyEntity>::new("tags", db.clone())
+            .with_id_column("_id")
+            .with_column_of::<AnyMongoType>("name")
+            .with_column(Column::<AnyMongoType>::new("label").with_alias("name.en_US"));
+        let rows = db.execute_select(&table.try_select()?).await?;
+        assert_eq!(rows.len(), 1, "{rows:?}");
+    }
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
 #[tokio::test]
 async fn a_nested_path_with_nothing_behind_it_reads_as_no_value() -> TestResult {
     let (db, name) = setup().await;
@@ -923,6 +1033,32 @@ mongo:
             rows[id]
         );
     }
+
+    teardown(&db, &name).await;
+    Ok(())
+}
+
+/// A nested_path root declared as a column is read at its own name, as its
+/// nested columns are; one stored under another field is refused.
+#[tokio::test]
+async fn a_nested_path_root_stored_elsewhere_is_refused() -> TestResult {
+    let (db, name) = setup().await;
+    let err = db
+        .vista_factory()
+        .from_yaml(
+            r#"
+name: client
+columns:
+  _id: { type: string, flags: [id] }
+  address: { type: json, mongo: { field: shipping } }
+  city: { type: string, nested_path: address.city }
+mongo:
+  collection: clients
+"#,
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("a column stored under another name"), "{err}");
 
     teardown(&db, &name).await;
     Ok(())

@@ -12,16 +12,17 @@ use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::{Result, error};
-use vantage_expressions::Expression;
+use vantage_expressions::{Expression, Expressive};
 use vantage_table::column::core::Column;
 use vantage_table::sorting::{OrderBy, SortDirection};
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Entity, Record};
 use vantage_vista::{NativeCondition, Reference, Transaction, Vista};
 
-use crate::condition::{MysqlCondition, build_sql_binary};
+use crate::condition::{MysqlCondition, build_sql_binary, null_safe};
 use crate::mysql::MysqlDB;
 use crate::mysql::operation::MysqlOperation;
+use crate::mysql::table_source::IS_TEMPLATES;
 use crate::mysql::types::AnyMysqlType;
 use crate::mysql::vista::factory::MysqlVistaFactory;
 use crate::primitives::identifier::ident;
@@ -68,28 +69,40 @@ impl SqlShellDialect for MysqlDB {
         Ok(table.try_select()?.preview())
     }
 
+    fn column_expr(column: &Column<AnyMysqlType>) -> Expression<AnyMysqlType> {
+        column.expr()
+    }
+
     fn compare(
-        column: &Column<AnyMysqlType>,
+        subject: Expression<AnyMysqlType>,
         template: &str,
         value: AnyMysqlType,
     ) -> MysqlCondition {
-        build_sql_binary::<AnyMysqlType, AnyMysqlType, _>(column, value, template)
+        build_sql_binary::<AnyMysqlType, AnyMysqlType, _>(&subject, value, template)
+    }
+
+    fn is(
+        subject: Expression<AnyMysqlType>,
+        value: Option<AnyMysqlType>,
+        negate: bool,
+    ) -> MysqlCondition {
+        null_safe(subject, value, IS_TEMPLATES, negate)
     }
 
     fn in_list(
-        column: &Column<AnyMysqlType>,
+        subject: Expression<AnyMysqlType>,
         values: &[AnyMysqlType],
         negate: bool,
     ) -> MysqlCondition {
         if negate {
-            column.not_in_list(values)
+            subject.not_in_list(values)
         } else {
-            column.in_list(values)
+            subject.in_list(values)
         }
     }
 
-    fn like(field: &str, pattern: String) -> MysqlCondition {
-        crate::mysql_expr!("{} LIKE {} ESCAPE '$'", (ident(field)), pattern).into()
+    fn like(subject: Expression<AnyMysqlType>, pattern: String) -> MysqlCondition {
+        crate::mysql_expr!("{} LIKE {} ESCAPE '$'", (subject), pattern).into()
     }
 
     fn order_term(field: &str) -> MysqlCondition {

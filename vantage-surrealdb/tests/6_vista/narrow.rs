@@ -403,6 +403,39 @@ columns:
     Ok(())
 }
 
+/// `is` and `is_not` with NULL test for `NONE`; `is_not` with a value counts
+/// a row holding NULL and a row without the field.
+#[tokio::test]
+async fn null_safe_operators() -> TestResult {
+    let (db, _) = setup().await;
+    let sql = "CREATE tri:yes SET t = true; CREATE tri:no SET t = false; \
+               CREATE tri:none SET t = NULL; CREATE tri:missing";
+    for statement in sql.split("; ") {
+        db.execute(&surreal_expr!(statement)).await?;
+    }
+    let yaml = "name: tri\ncolumns:\n  id: { type: thing, flags: [id] }\n  t: { type: bool }\n";
+    let cases = [
+        (
+            FilterOp::Is,
+            CborValue::Null,
+            vec!["tri:missing", "tri:none"],
+        ),
+        (FilterOp::IsNot, CborValue::Null, vec!["tri:no", "tri:yes"]),
+        (
+            FilterOp::IsNot,
+            CborValue::Bool(true),
+            vec!["tri:missing", "tri:no", "tri:none"],
+        ),
+        (FilterOp::Is, CborValue::Bool(true), vec!["tri:yes"]),
+    ];
+    for (op, value, expected) in cases {
+        let mut vista = db.vista_factory().from_yaml(yaml)?;
+        vista.add_condition("t", op, value.clone())?;
+        assert_eq!(sorted_ids(&vista).await?, expected, "{op:?} {value:?}");
+    }
+    Ok(())
+}
+
 /// SurrealDB has no `NOT IN` combinator here, so the clause is refused as
 /// unsupported and handed back for the caller to evaluate locally.
 #[tokio::test]

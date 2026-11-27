@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.2 — 2026-11-26
+
+- Requires vantage-table 6.0.0. No code change.
+
 ## 0.8.1 — 2026-11-22
 
 - Cargo.lock refreshed: it lacked vantage-api-pool's dependencies. url 2.5.9, rustls 0.23.46

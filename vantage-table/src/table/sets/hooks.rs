@@ -77,7 +77,10 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         hooks: &[(Phase, BeforeFn<T>)],
         record: &mut Record<T::Value>,
         update: Option<UpdateOf<'_, T>>,
-    ) -> Result<()> {
+    ) -> Result<()>
+    where
+        T::Value: InvariantValue,
+    {
         self.write_steps(hooks, record, update, false).await
     }
 
@@ -90,7 +93,10 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         record: &mut Record<T::Value>,
         update: Option<UpdateOf<'_, T>>,
         contained: bool,
-    ) -> Result<()> {
+    ) -> Result<()>
+    where
+        T::Value: InvariantValue,
+    {
         let (shaping, validating) =
             hooks.split_at(hooks.partition_point(|(phase, _)| *phase < Phase::Validate));
         let erased = self.as_entity_erased();
@@ -101,7 +107,64 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         self.strip_imported_columns(record);
         self.strip_expression_columns(record);
         self.coerce_record(record)?;
-        run_before(validating, record, update, erased).await
+        // The Validate hooks see each nested column of a host being written
+        // as the merged host holds it; the host alone is stored.
+        let nested = self.nested_values(record);
+        let names: Vec<String> = nested.iter().map(|(name, _)| name.clone()).collect();
+        record.extend(nested);
+        let checked = run_before(validating, record, update, erased).await;
+        for name in &names {
+            record.shift_remove(name);
+        }
+        checked
+    }
+
+    /// Each nested column under a host `record` holds, with its value read
+    /// out of that host; null where the host lacks the key.
+    fn nested_values(&self, record: &Record<T::Value>) -> Vec<(String, T::Value)>
+    where
+        T::Value: InvariantValue,
+    {
+        let source = self.data_source();
+        let read = |host: &T::Value, rest: &str| {
+            let mut value = host.clone();
+            for key in rest.split('.') {
+                let mut field = source
+                    .contained_records(&value)
+                    .ok()
+                    .flatten()
+                    .and_then(|records| records.into_iter().next())
+                    .and_then(|mut record| record.shift_remove(key))?;
+                std::mem::swap(&mut value, &mut field);
+            }
+            Some(value)
+        };
+        let null = || {
+            source
+                .contained_host(Vec::new(), false)
+                .ok()
+                .filter(|v| v.is_null())
+        };
+        let mut values = Vec::new();
+        for name in self.columns().keys() {
+            let Some(path) = self.nested_column_path(name) else {
+                continue;
+            };
+            let host = self.contained.iter().find_map(|rel| {
+                let host = rel.host_column();
+                (dotted_under(path, host)
+                    && rel.kind() == vantage_vista::ReferenceKind::ContainsOne)
+                    .then(|| record.get(host).map(|value| (host, value)))
+                    .flatten()
+            });
+            let Some((host, value)) = host else {
+                continue;
+            };
+            if let Some(value) = read(value, &path[host.len() + 1..]).or_else(null) {
+                values.push((name.clone(), value));
+            }
+        }
+        values
     }
 
     /// Whether `record` has a dotted key under a contained host
@@ -110,11 +173,26 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     pub(crate) fn merges_contained(&self, record: &Record<T::Value>) -> bool {
         self.contained.iter().any(|rel| {
             let host = rel.host_column();
-            record.keys().any(|key| {
-                key.strip_prefix(host)
-                    .is_some_and(|rest| rest.starts_with('.'))
-            })
+            record
+                .keys()
+                .any(|key| dotted_under(self.write_path(key), host))
         })
+    }
+
+    /// The stored name of a nested column: one whose stored name (its alias)
+    /// is dotted under a contained host, as `label` stored at `name.en_US`.
+    /// A write to it is a write to that key of the contained record.
+    pub(crate) fn nested_column_path(&self, key: &str) -> Option<&str> {
+        let path = self.columns().get(key)?.alias()?;
+        self.contained
+            .iter()
+            .any(|rel| dotted_under(path, rel.host_column()))
+            .then_some(path)
+    }
+
+    /// Where a write key lands: a nested column's stored name, else the key.
+    fn write_path<'k>(&'k self, key: &'k str) -> &'k str {
+        self.nested_column_path(key).unwrap_or(key)
     }
 
     /// Put each contained record the write touches through its contained
@@ -124,25 +202,30 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// and nothing is read or written. A partial record is merged into the
     /// stored one (`update`'s row as it stands), so fields stored there
     /// before stay as they are; a dotted key two levels down (`a.b.c`)
-    /// merges into the stored `a.b` the same way. The contained table's
-    /// update hooks get the stored record, under the host row's id.
+    /// merges into the stored `a.b` the same way. A dotted key saved as null
+    /// removes its field, so the host holds no `"key": null`. The contained
+    /// table's update hooks get the stored record, under the host row's id.
     async fn write_contained(
         &self,
         record: &mut Record<T::Value>,
         update: Option<UpdateOf<'_, T>>,
-    ) -> Result<()> {
+    ) -> Result<()>
+    where
+        T::Value: InvariantValue,
+    {
         let stored = update.and_then(|u| u.stored);
         for rel in &self.contained {
             let host = rel.host_column();
             let many = rel.kind() == vantage_vista::ReferenceKind::ContainsMany;
             let whole = record.shift_remove(host);
-            let dotted_keys: Vec<String> = record
+            // Each key, with its field in the contained record.
+            let dotted_keys: Vec<(String, String)> = record
                 .keys()
-                .filter(|key| {
-                    key.strip_prefix(host)
-                        .is_some_and(|rest| rest.starts_with('.'))
+                .filter_map(|key| {
+                    let path = self.write_path(key);
+                    dotted_under(path, host)
+                        .then(|| (key.clone(), path[host.len() + 1..].to_string()))
                 })
-                .cloned()
                 .collect();
             if whole.is_none() && dotted_keys.is_empty() {
                 continue;
@@ -159,7 +242,7 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
                     "a contains_many relation is written as its whole array, not by dotted keys",
                     table = self.table_name(),
                     relation = rel.name(),
-                    column = dotted_keys[0].as_str()
+                    column = dotted_keys[0].0.as_str()
                 )
                 .mark_forbidden());
             }
@@ -178,15 +261,31 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
                         ));
                     }
                     for change in records.iter_mut() {
+                        // An unlisted relation is a driver's `nested_path`
+                        // sugar over a free-form map: a key no nested column
+                        // reads is kept as given, the others are checked.
+                        let free: Vec<(String, T::Value)> = if rel.is_listed() {
+                            Vec::new()
+                        } else {
+                            let keys: Vec<String> = change
+                                .keys()
+                                .filter(|key| !target.columns().contains_key(key.as_str()))
+                                .cloned()
+                                .collect();
+                            keys.into_iter()
+                                .filter_map(|key| change.shift_remove(&key).map(|v| (key, v)))
+                                .collect()
+                        };
                         Box::pin(target.check_contained(change, None)).await?;
+                        change.extend(free);
                     }
                     records
                 }
                 None => {
                     let mut change: Record<T::Value> = Record::new();
-                    for key in &dotted_keys {
+                    for (key, field) in &dotted_keys {
                         if let Some(value) = record.shift_remove(key) {
-                            change.insert(key[host.len() + 1..].to_string(), value);
+                            change.insert(field.clone(), value);
                         }
                     }
                     let stored = match stored.and_then(|row| row.get(host)) {
@@ -208,7 +307,11 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
                     Box::pin(target.check_contained(&mut change, child)).await?;
                     let merged = base.get_or_insert_with(Record::new);
                     for (key, value) in change {
-                        merged.insert(key, value);
+                        if value.is_null() {
+                            merged.shift_remove(&key);
+                        } else {
+                            merged.insert(key, value);
+                        }
                     }
                     base.into_iter().collect()
                 }
@@ -230,7 +333,10 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         &self,
         record: &mut Record<T::Value>,
         update: Option<UpdateOf<'_, T>>,
-    ) -> Result<()> {
+    ) -> Result<()>
+    where
+        T::Value: InvariantValue,
+    {
         let hooks = if update.is_some() {
             self.before_update_hooks()
         } else {
@@ -243,24 +349,42 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// itself, each column whose stored name the key is (`city` for
     /// `address.city`), and each contained host it is a dotted key under
     /// (`address` for `address.city`). A key can be several at once, and the
-    /// write reaches all of them, so a rule on any one covers it.
+    /// write reaches all of them, so a rule on any one covers it. A nested
+    /// column (`label` stored at `name.en_US`) stands for its stored name and
+    /// its host too.
     pub(crate) fn columns_of_key<'k>(&'k self, key: &'k str) -> Vec<&'k str> {
+        let path = self.write_path(key);
         let mut columns = vec![key];
+        if path != key {
+            columns.push(path);
+        }
         columns.extend(
             self.columns()
                 .iter()
-                .filter(|(_, c)| c.alias() == Some(key))
+                .filter(|(name, c)| c.alias() == Some(path) && name.as_str() != key)
                 .map(|(name, _)| name.as_str()),
         );
         columns.extend(
             self.contained
                 .iter()
                 .map(|rel| rel.host_column())
-                .filter(|host| {
-                    key.strip_prefix(host)
-                        .is_some_and(|rest| rest.starts_with('.'))
-                }),
+                .filter(|host| dotted_under(path, host)),
         );
+        // A host written whole replaces everything under it: each nested
+        // column and stored path there, and each rule named for one.
+        if self.contained.iter().any(|rel| rel.host_column() == key) {
+            for (name, column) in self.columns() {
+                if let Some(at) = column.alias().filter(|at| dotted_under(at, key)) {
+                    columns.extend([name.as_str(), at]);
+                }
+            }
+            columns.extend(
+                self.denials()
+                    .columns()
+                    .map(|(name, _)| name)
+                    .filter(|name| dotted_under(name, key)),
+            );
+        }
         columns
     }
 
@@ -416,6 +540,12 @@ pub(crate) async fn run_after_delete_all<T: TableSource>(
         run_delete_all(&hooks, &table).await
     });
     Ok(())
+}
+
+/// Whether `key` is dotted under `host` (`address.city` under `address`).
+fn dotted_under(key: &str, host: &str) -> bool {
+    key.strip_prefix(host)
+        .is_some_and(|rest| rest.starts_with('.'))
 }
 
 /// Hold `work` until `tx` commits; a rollback drops it. It runs on a copy of

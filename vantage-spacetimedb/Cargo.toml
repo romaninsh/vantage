@@ -1,6 +1,6 @@
 [package]
 name = "vantage-spacetimedb"
-version = "0.8.1"
+version = "0.8.2"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -15,7 +15,7 @@ vantage-core = { path = "../vantage-core", version = "1.4.0" }
 vantage-api-pool = { path = "../vantage-api-pool", version = "1.4.0" }
 vantage-types = { path = "../vantage-types", version = "1.0.0", features = ["serde"] }
 vantage-dataset = { path = "../vantage-dataset", version = "2.0.0" }
-vantage-vista = { path = "../vantage-vista", version = "3.0.0" }
+vantage-vista = { path = "../vantage-vista", version = "3.2.0" }
 
 # Official SpacetimeDB crates, used for the *wire format only* — we own the
 # connection. The typed `spacetimedb-sdk` is deliberately not a dependency: it
@@ -54,6 +54,6 @@ ciborium = "0.2"
 
 [dev-dependencies]
 # `vantage_vista::contract`, run by tests/vista_contract.rs.
-vantage-vista = { path = "../vantage-vista", version = "3.0.0", features = ["contract"] }
+vantage-vista = { path = "../vantage-vista", version = "3.2.0", features = ["contract"] }
 pretty_assertions = "1"
 tokio = { version = "1", features = ["full"] }

@@ -15,13 +15,23 @@ impl MongoSelect {
     }
 
     /// Build the projection `Document`. Returns `None` if all fields requested.
+    /// A path under another projected one (`name.en_US` with `name`) is left
+    /// out: MongoDB refuses the pair as a path collision, and the parent
+    /// already carries it.
     pub fn build_projection(&self) -> Option<Document> {
         if self.fields.is_empty() {
             return None;
         }
+        let under = |field: &str, parent: &str| {
+            field
+                .strip_prefix(parent)
+                .is_some_and(|rest| rest.starts_with('.'))
+        };
         let mut proj = Document::new();
         for f in &self.fields {
-            proj.insert(f.as_str(), 1);
+            if !self.fields.iter().any(|parent| under(f, parent)) {
+                proj.insert(f.as_str(), 1);
+            }
         }
         Some(proj)
     }

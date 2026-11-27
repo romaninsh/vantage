@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use ciborium::Value as CborValue;
 use indexmap::IndexMap;
 use vantage_core::Result;
+use vantage_expressions::Expression;
 use vantage_table::table::Table;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::{EmptyEntity, Entity, InvariantValue, Record};
@@ -14,13 +15,14 @@ use vantage_vista::{
 };
 
 use super::shell::SqlTableShell;
+use crate::set_writes::SetWrites;
 
 /// The shell type a dialect's hooks receive.
 pub(crate) type Shell<T, E> = SqlTableShell<T, E, <T as SqlShellDialect>::Extra>;
 
 #[async_trait]
 pub(crate) trait SqlShellDialect:
-    TableSource<Id = String, Value: From<CborValue> + InvariantValue> + Send + Sync
+    TableSource<Id = String, Value: From<CborValue> + InvariantValue> + SetWrites + Send + Sync
 {
     /// State the shell carries beyond its table, capabilities and metadata.
     type Extra: Clone + Send + Sync + 'static;
@@ -41,23 +43,35 @@ pub(crate) trait SqlShellDialect:
     /// error of an expression column that can't be built.
     fn preview<E: Entity<Self::Value>>(table: &Table<Self, E>) -> Result<String>;
 
-    /// `column <op> value`, `template` being the binary operator's
-    /// `"{} = {}"`-style template.
+    /// A stored column as a condition's subject.
+    fn column_expr(column: &Self::Column<Self::AnyType>) -> Expression<Self::Value>;
+
+    /// `subject <op> value`, `template` being the binary operator's
+    /// `"{} = {}"`-style template. The subject is the column, or an
+    /// expression column's expression ([`where_subject`](crate::where_subject)).
     fn compare(
-        column: &Self::Column<Self::AnyType>,
+        subject: Expression<Self::Value>,
         template: &str,
         value: Self::Value,
     ) -> Self::Condition;
 
-    /// `column IN (values)`, or `NOT IN` when `negate`.
+    /// `subject` NULL-safely equal to `value` (`None` is NULL), or not when
+    /// `negate`.
+    fn is(
+        subject: Expression<Self::Value>,
+        value: Option<Self::Value>,
+        negate: bool,
+    ) -> Self::Condition;
+
+    /// `subject IN (values)`, or `NOT IN` when `negate`.
     fn in_list(
-        column: &Self::Column<Self::AnyType>,
+        subject: Expression<Self::Value>,
         values: &[Self::Value],
         negate: bool,
     ) -> Self::Condition;
 
-    /// `field` matched against a `LIKE` pattern that escapes with `$`.
-    fn like(field: &str, pattern: String) -> Self::Condition;
+    /// `subject` matched against a `LIKE` pattern that escapes with `$`.
+    fn like(subject: Expression<Self::Value>, pattern: String) -> Self::Condition;
 
     /// `field` as an ORDER BY term.
     fn order_term(field: &str) -> Self::Condition;

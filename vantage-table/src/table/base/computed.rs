@@ -171,7 +171,8 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
                     return forbidden_column(column, rule, self.table_name());
                 }
             }
-            if self.is_expression_column(name) {
+            // A nested column reads through its expression and writes its key.
+            if self.is_expression_column(name) && self.nested_column_path(name).is_none() {
                 return forbidden_column(name, "expression column", self.table_name());
             }
         }
@@ -227,14 +228,15 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     }
 
     /// Register `spec`'s column as computed when it declares a `lazy:` script
-    /// (see [`vantage_vista::ColumnSpec::lazy_column`]). Returns `false` for a
-    /// stored column, leaving the caller to add it.
-    pub fn add_lazy_spec_column<C>(
+    /// (see [`vantage_vista::ColumnSpec::lazy_column_in`]). Returns `false`
+    /// for a stored column, leaving the caller to add it.
+    pub(crate) fn add_lazy_spec_column<C>(
         &mut self,
         spec: &vantage_vista::ColumnSpec<C>,
         name: &str,
+        cx: &vantage_vista::BuildContext,
     ) -> vantage_core::Result<bool> {
-        let Some(column) = spec.lazy_column(name)? else {
+        let Some(column) = spec.lazy_column_in(name, cx)? else {
             return Ok(false);
         };
         self.add_computed_column(column);

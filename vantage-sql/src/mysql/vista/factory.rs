@@ -14,10 +14,11 @@ mod scripting;
 use std::sync::Arc;
 
 use vantage_core::Result;
+use vantage_expressions::{Expression, Expressive as _, ExpressiveEnum};
 use vantage_table::column::core::Column as TableColumn;
 use vantage_table::table::{BuildEnv, Table, TableInjector};
 use vantage_types::{EmptyEntity, Entity};
-use vantage_vista::{ColumnSpec, ReferenceSpec, SpecResolver, Vista};
+use vantage_vista::{BuildContext, ColumnSpec, ReferenceSpec, SpecResolver, Vista};
 
 use crate::mysql::MysqlDB;
 use crate::mysql::statements::MysqlSelect;
@@ -25,6 +26,8 @@ use crate::mysql::types::AnyMysqlType;
 use crate::mysql::vista::spec::{
     MysqlColumnExtras, MysqlReferenceExtras, MysqlTableExtras, MysqlVistaSpec,
 };
+use crate::primitives::identifier::ident;
+use crate::primitives::json_extract::json_extract;
 use crate::sql_vista::{
     SourceBlock, SqlSpecDialect, build_spec_table, column_for_type, is_query_sourced,
     metadata_options, source_block,
@@ -56,8 +59,8 @@ impl MysqlVistaFactory {
         self
     }
 
-    fn env(&self, key: &str) -> BuildEnv<MysqlVistaSpec, MysqlDB> {
-        BuildEnv::root(key, self.resolver.clone(), self.injector.clone())
+    fn env(&self, key: &str, cx: &BuildContext) -> BuildEnv<MysqlVistaSpec, MysqlDB> {
+        BuildEnv::root(key, self.resolver.clone(), self.injector.clone()).with_context(cx.clone())
     }
 
     /// Attach a spec resolver, which finds a YAML spec by table name so
@@ -82,7 +85,8 @@ impl MysqlVistaFactory {
     /// Build a `Table<MysqlDB, EmptyEntity>` from a spec, resolving any
     /// `references:` against the attached resolver.
     pub fn table_from_spec(&self, spec: &MysqlVistaSpec) -> Result<Table<MysqlDB, EmptyEntity>> {
-        build_spec_table(spec, self.db.clone(), &self.env(&spec.name))
+        let env = self.env(&spec.name, &BuildContext::default());
+        build_spec_table(spec, self.db.clone(), &env)
     }
 }
 
@@ -104,8 +108,20 @@ impl SqlSpecDialect for MysqlDB {
         name: &str,
         spec: &ColumnSpec<MysqlColumnExtras>,
     ) -> Result<TableColumn<AnyMysqlType>> {
-        let physical = spec.driver.mysql.as_ref().and_then(|b| b.column.clone());
+        let physical = spec
+            .driver
+            .mysql
+            .as_ref()
+            .and_then(|b| b.column.clone())
+            .or_else(|| spec.nested_path.clone());
         TableColumn::from_spec(name, spec, physical, column_for_type)
+    }
+
+    /// MySQL's JSON functions answer in a binary collation, which reads back
+    /// as bytes and matches case-sensitively; the cast makes it text.
+    fn nested_read(host: &str, key: &str) -> Expression<AnyMysqlType> {
+        let read = json_extract(ident(host), vec![key.to_string()]).expr();
+        Expression::new("CAST({} AS CHAR)", vec![ExpressiveEnum::Nested(read)])
     }
 
     fn reference_script(reference: &ReferenceSpec<MysqlReferenceExtras>) -> Option<String> {

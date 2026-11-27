@@ -5,6 +5,7 @@
 use ciborium::Value as CborValue;
 use vantage_core::{Result, error};
 use vantage_dataset::traits::ReadableValueSet;
+use vantage_expressions::expr_any;
 use vantage_table::sorting::{OrderBy, SortDirection as TableSortDirection};
 use vantage_table::traits::column_like::ColumnLike;
 use vantage_types::{Entity, Record};
@@ -15,6 +16,7 @@ use vantage_vista::{
 use super::dialect::{Shell, SqlShellDialect};
 use super::shell::cbor_record;
 use crate::declared::{is_absent, is_temporal};
+use crate::where_subject;
 
 /// The binary comparison template of `op`, `None` for the other operators.
 fn comparison(op: FilterOp) -> Option<&'static str> {
@@ -27,6 +29,10 @@ fn comparison(op: FilterOp) -> Option<&'static str> {
         FilterOp::Lte => "{} <= {}",
         _ => return None,
     })
+}
+
+fn is_op(op: FilterOp) -> bool {
+    matches!(op, FilterOp::Is | FilterOp::IsNot)
 }
 
 impl<T, E> Shell<T, E>
@@ -67,7 +73,9 @@ where
                 .map(|v| self.operand(field, v).map(T::cbor))
                 .collect::<Result<_>>()
                 .map(CborValue::Array),
-            (op, value) if comparison(*op).is_some() => self.operand(field, value).map(T::cbor),
+            (op, value) if comparison(*op).is_some() || is_op(*op) => {
+                self.operand(field, value).map(T::cbor)
+            }
             _ => return condition.clone(),
         };
         let mut condition = condition.clone();
@@ -95,13 +103,22 @@ where
             .ok_or_else(|| error!("Unknown column for condition", field = field))?
             .clone();
         let value = &condition.value;
+        let subject = where_subject(&self.table, field, T::column_expr(&column))?;
         if let Some(template) = comparison(condition.op) {
             let cell = self.operand(field, value)?;
             self.table
-                .add_condition(T::compare(&column, template, cell));
+                .add_condition(T::compare(subject, template, cell));
             return Ok(());
         }
         match condition.op {
+            op @ (FilterOp::Is | FilterOp::IsNot) => {
+                let cell = match value {
+                    CborValue::Null => None,
+                    value => Some(self.operand(field, value)?),
+                };
+                self.table
+                    .add_condition(T::is(subject, cell, op == FilterOp::IsNot));
+            }
             op @ (FilterOp::InSet | FilterOp::NotInSet) => {
                 let CborValue::Array(items) = value else {
                     return Err(error!(
@@ -115,13 +132,14 @@ where
                     .collect::<Result<Vec<T::Value>>>()?;
                 let negate = op == FilterOp::NotInSet;
                 self.table
-                    .add_condition(T::in_list(&column, &values, negate));
+                    .add_condition(T::in_list(subject, &values, negate));
             }
             // The same `LIKE '%…%' ESCAPE '$'` pattern quicksearch uses, on
             // one column.
             FilterOp::Like => {
                 let pattern = crate::like_pattern(value);
-                self.table.add_condition(T::like(field, pattern));
+                let subject = where_subject(&self.table, field, T::quoted(field))?;
+                self.table.add_condition(T::like(subject, pattern));
             }
             _ => return unsupported(Capability::FilterOps),
         }
@@ -166,15 +184,25 @@ where
         self.push_order(field, dir)
     }
 
-    /// A tie-breaker after the orders already set: `ORDER BY a, b`.
+    /// A tie-breaker after the orders already set: `ORDER BY a, b`. An
+    /// expression column orders by its expression, as a condition compares
+    /// it: the SELECT alias isn't there when the projection leaves the
+    /// column out.
     pub(super) fn push_order(&mut self, field: &str, dir: SortDirection) -> Result<()> {
         self.check_order_column(field)?;
         let direction = match dir {
             SortDirection::Ascending => TableSortDirection::Ascending,
             SortDirection::Descending => TableSortDirection::Descending,
         };
+        let expression = match self.table.try_expression_column(field)? {
+            Some(expr) => self
+                .table
+                .data_source()
+                .expression_condition(expr_any!("({})", (expr)))?,
+            None => T::order_term(field),
+        };
         self.table.add_order(OrderBy {
-            expression: T::order_term(field),
+            expression,
             direction,
         });
         Ok(())

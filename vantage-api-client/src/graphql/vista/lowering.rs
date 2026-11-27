@@ -16,7 +16,7 @@ use vantage_core::{Result, error};
 use vantage_table::column::core::Column as TableColumn;
 use vantage_table::table::{BuildEnv, Table};
 use vantage_types::EmptyEntity;
-use vantage_vista::{ColumnSpec, SpecResolver};
+use vantage_vista::{BuildContext, ColumnSpec, SpecResolver};
 
 use crate::graphql::api::{GraphqlApi, Supports, split_response_path};
 use crate::graphql::name::{validate, validate_path, validate_root_args};
@@ -24,24 +24,28 @@ use crate::graphql::types::AnyGraphqlType;
 use crate::graphql::vista::spec::{GraphqlApiVistaSpec, GraphqlBlock, GraphqlColumnExtras};
 
 /// A reference target's spec, with the API it is lowered onto: the
-/// factory's, before any table's `graphql:` block was applied.
+/// factory's, before any table's `graphql:` block was applied. `cx` is the
+/// build context of the load that built the root.
 #[derive(Clone)]
 pub(crate) struct TargetSpec {
     pub(crate) spec: GraphqlApiVistaSpec,
     pub(crate) api: GraphqlApi,
+    pub(crate) cx: BuildContext,
 }
 
 pub(crate) type TargetSpecResolver = Arc<dyn SpecResolver<TargetSpec>>;
 
-/// Pair every spec `specs` resolves with `api`.
+/// Pair every spec `specs` resolves with `api` and `cx`.
 pub(crate) fn target_resolver(
     api: GraphqlApi,
     specs: Arc<dyn SpecResolver<GraphqlApiVistaSpec>>,
+    cx: BuildContext,
 ) -> TargetSpecResolver {
     Arc::new(move |name: &str| {
         specs.resolve(name).map(|spec| TargetSpec {
             spec,
             api: api.clone(),
+            cx: cx.clone(),
         })
     })
 }
@@ -51,12 +55,24 @@ pub(crate) fn build_table(
     spec: &GraphqlApiVistaSpec,
     api: &GraphqlApi,
     resolver: Option<TargetSpecResolver>,
+    cx: &BuildContext,
 ) -> Result<Table<GraphqlApi, EmptyEntity>> {
     if let Some((relation, _)) = spec.references.iter().find(|(_, r)| !r.keys.is_empty()) {
         return Err(error!(
             "GraphQL references take a single foreign_key; multi-column `keys:` are not supported",
             table = spec.name.as_str(),
             relation = relation.as_str()
+        )
+        .mark_unsupported());
+    }
+    if let Some(name) = spec
+        .columns
+        .iter()
+        .find_map(|(name, c)| c.nested_path.as_ref().map(|_| name))
+    {
+        return Err(error!(
+            format!("column {name}: nested_path isn't supported by GraphQL"),
+            table = spec.name.as_str()
         )
         .mark_unsupported());
     }
@@ -75,9 +91,9 @@ pub(crate) fn build_table(
     validate("root field", &root_field)?;
 
     let mut table = Table::<GraphqlApi, EmptyEntity>::new(root_field, api);
-    table.add_spec_columns(&spec.columns, build_column)?;
+    table.add_spec_columns(&spec.columns, cx, build_column)?;
     table.set_spec_id_field(&spec.resolve_id_column("id"))?;
-    let env = BuildEnv::root(&spec.name, resolver, None);
+    let env = BuildEnv::root(&spec.name, resolver, None).with_context(cx.clone());
     table.with_spec_references(spec, &env, build_target_table)
 }
 
@@ -89,7 +105,12 @@ fn build_target_table(
     _parent_api: GraphqlApi,
     env: &BuildEnv<TargetSpec, GraphqlApi>,
 ) -> Result<Table<GraphqlApi, EmptyEntity>> {
-    build_table(&target.spec, &target.api, env.resolver.clone())
+    build_table(
+        &target.spec,
+        &target.api,
+        env.resolver.clone(),
+        env.context(),
+    )
 }
 
 /// Per-table dialect / filter-arg / root-field overrides from a `graphql:`

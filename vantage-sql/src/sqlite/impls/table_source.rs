@@ -19,9 +19,10 @@ use vantage_table::traits::table_source::TableSource;
 use vantage_types::{Entity, Record};
 use vantage_vista::Transaction;
 
+use crate::condition::null_safe;
 use crate::declared::{sql_coerce_fn, sql_declared_types, without_option};
 use crate::primitives::identifier::ident;
-use crate::set_writes::id_target;
+use crate::set_writes::{SetWrites as _, id_target};
 use crate::sqlite::SqliteDB;
 use crate::sqlite::types::{AnySqliteType, SqliteType};
 use crate::table_writes::{
@@ -162,6 +163,9 @@ fn or_abort(expr: Expression<AnySqliteType>) -> Expression<AnySqliteType> {
     Expression::new(template, expr.parameters)
 }
 
+/// The NULL-safe `is` / `is_not` against a value.
+pub(crate) const IS_TEMPLATES: [&str; 2] = ["{} IS {}", "{} IS NOT {}"];
+
 #[async_trait]
 impl TableSource for SqliteDB {
     type Column<Type>
@@ -177,6 +181,16 @@ impl TableSource for SqliteDB {
     fn eq_value_condition(&self, field: &str, value: Self::Value) -> Result<Self::Condition> {
         let column: Column<AnySqliteType> = Column::new(field);
         Ok(SqliteOperation::eq(&column, value))
+    }
+
+    fn is_value_condition(
+        &self,
+        field: &str,
+        value: Option<Self::Value>,
+        negate: bool,
+    ) -> Result<Self::Condition> {
+        let column: Column<AnySqliteType> = Column::new(field);
+        Ok(null_safe(column.expr(), value, IS_TEMPLATES, negate))
     }
 
     fn in_values_condition(
@@ -318,7 +332,8 @@ impl TableSource for SqliteDB {
             .filter(|col| !table.is_imported_column(col.name()))
             .map(|col| {
                 let p = pattern.clone();
-                sqlite_expr!("{} LIKE {} ESCAPE '$'", (ident(col.name())), p)
+                let subject = crate::search_subject(table, col.name());
+                sqlite_expr!("{} LIKE {} ESCAPE '$'", (subject), p)
             })
             .collect();
 
@@ -367,7 +382,7 @@ impl TableSource for SqliteDB {
     {
         let id_field_name = table.id_field_name();
 
-        let id_val = id.clone();
+        let id_val = Self::id_param(table, id);
         let condition = sqlite_expr!("{} = {}", (id_target(table)?), id_val);
         let select = table.try_select()?.with_condition(condition);
         let result = self.execute(&select.expr()).await?;
@@ -510,7 +525,7 @@ impl TableSource for SqliteDB {
     {
         guard_patch(self, table, id, partial).await?;
 
-        let id_val = id.clone();
+        let id_val = Self::id_param(table, id);
         let id_condition = sqlite_expr!("{} = {}", (id_target(table)?), id_val);
         let mut update = crate::sqlite::statements::SqliteUpdate::new(table.table_name())
             .with_record(partial)
@@ -527,7 +542,7 @@ impl TableSource for SqliteDB {
     where
         E: Entity<Self::Value>,
     {
-        let id_val = id.clone();
+        let id_val = Self::id_param(table, id);
         let id_condition = sqlite_expr!("{} = {}", (id_target(table)?), id_val);
         // A missing row, or one outside the conditions, matches nothing: Ok.
         let mut delete = crate::sqlite::statements::SqliteDelete::new(table.table_name())

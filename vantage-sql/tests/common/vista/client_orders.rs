@@ -63,6 +63,8 @@ columns:
 "#
             ))?;
 
+            #[cfg(feature = "rhai")]
+            let (lazy_client, mut lazy_orders) = (client_spec.clone(), orders_spec.clone());
             let factory = db
                 .vista_factory()
                 .with_resolver(spec_resolver(vec![("orders", orders_spec)]));
@@ -83,6 +85,34 @@ columns:
             assert!(rows.contains_key("o1"));
             assert!(rows.contains_key("o2"));
             assert!(!rows.contains_key("o3"));
+
+            // What if the load gives a script host: the traversed target's
+            // `lazy:` column compiles on it, so it can call `twice`.
+            #[cfg(feature = "rhai")]
+            {
+                let host = vantage_rhai::Host::builder(vantage_rhai::Limits::background())
+                    .vocab_fn(|engine| {
+                        engine.register_fn("twice", |x: i64| x * 2);
+                    })
+                    .build();
+                let cx = vantage_vista::BuildContext::default()
+                    .with_script_host(std::sync::Arc::new(host));
+                lazy_orders.columns.insert(
+                    "doubled".into(),
+                    vantage_vista::ColumnSpec::new()
+                        .with_type("int")
+                        .with_lazy("twice(row.total)"),
+                );
+                let clients = db
+                    .vista_factory()
+                    .with_resolver(spec_resolver(vec![("orders", lazy_orders)]))
+                    .build_from_spec_in(lazy_client, &cx)?;
+                let rows = clients.get_ref("orders", Some(&alice))?.list_values().await?;
+                assert_eq!(
+                    rows["o1"].get("doubled"),
+                    Some(&ciborium::Value::Integer(20.into()))
+                );
+            }
             Ok(())
         }
 
@@ -343,6 +373,141 @@ columns:
                 Some(30)
             );
             assert_eq!(numeric(rows.get("bob").unwrap().get("total_due")), Some(30));
+            Ok(())
+        }
+
+        /// `client` with `expr:` columns over its orders and its own name, and
+        /// a searchable stored `name` next to a searchable `expr:` `label`.
+        #[cfg(feature = "rhai")]
+        async fn computed_clients(
+            suffix: &str,
+        ) -> std::result::Result<vantage_vista::Vista, Box<dyn std::error::Error>> {
+            let (db, client_t, orders_t) = clients_orders(suffix).await;
+            let block = $block;
+            let client_spec: $spec = serde_yaml_ng::from_str(&format!(
+                r#"
+name: client
+columns:
+  id: {{ type: string, flags: [id] }}
+  name: {{ type: string, flags: [title, searchable] }}
+  big_order: {{ type: bool, expr: 'table.ref("orders").where("total", 30).exists()' }}
+  n_orders: {{ type: int, expr: 'table.ref("orders").count()' }}
+  early_name: {{ type: bool, expr: 'sql::expr("{{}} < {{}}", [sql::ident("name"), "B"])' }}
+  label: {{ type: string, flags: [searchable], expr: 'sql::concat(["vip-", sql::ident("id")])' }}
+{block}:
+  table: {client_t}
+references:
+  orders:
+    table: orders
+    kind: has_many
+    foreign_key: client_id
+"#
+            ))?;
+            let orders_spec: $spec = serde_yaml_ng::from_str(&format!(
+                r#"
+name: orders
+columns:
+  id: {{ type: string, flags: [id] }}
+  client_id: {{ type: string }}
+  total: {{ type: int }}
+{block}:
+  table: {orders_t}
+"#
+            ))?;
+            Ok(db
+                .vista_factory()
+                .with_resolver(spec_resolver(vec![("orders", orders_spec)]))
+                .build_from_spec(client_spec)?)
+        }
+
+        #[cfg(feature = "rhai")]
+        async fn ids_of(
+            vista: &vantage_vista::Vista,
+        ) -> std::result::Result<Vec<String>, Box<dyn std::error::Error>> {
+            let mut ids: Vec<String> = vista.list_values().await?.into_keys().collect();
+            ids.sort();
+            Ok(ids)
+        }
+
+        /// A condition on an `expr:` column compares its expression: SQL
+        /// has no SELECT alias in WHERE.
+        #[cfg(feature = "rhai")]
+        #[tokio::test]
+        async fn condition_on_expression_columns() -> TestResult {
+            use vantage_vista::FilterOp;
+            let clients = computed_clients("cond_expr").await?;
+            let cases = [
+                ("big_order", FilterOp::Eq, ciborium::Value::Bool(true), "EXISTS", "bob"),
+                (
+                    "n_orders",
+                    FilterOp::Gt,
+                    ciborium::Value::Integer(1.into()),
+                    "COUNT(*)",
+                    "alice",
+                ),
+                ("early_name", FilterOp::Eq, ciborium::Value::Bool(true), "< 'B'", "alice"),
+            ];
+            for (column, op, value, expression, id) in cases {
+                let narrowed = clients.clone().with_condition(column, op, value)?;
+                let query = narrowed.preview().query.unwrap_or_default();
+                // `label` is the last column the SELECT lists.
+                let (_, filter) = query.rsplit_once("label").expect("a projected label");
+                assert!(filter.contains(expression), "{column}: {query}");
+                assert!(!filter.contains(column), "{column}: {query}");
+                assert_eq!(ids_of(&narrowed).await?, [id], "{column}: {query}");
+            }
+            Ok(())
+        }
+
+        /// Quicksearch ORs an `expr:` column's expression with the stored
+        /// searchable columns.
+        #[cfg(feature = "rhai")]
+        #[tokio::test]
+        async fn search_matches_expression_and_stored_columns() -> TestResult {
+            let clients = computed_clients("search_expr").await?;
+            let by_label = clients.clone().with_search("vip-al")?;
+            assert_eq!(ids_of(&by_label).await?, ["alice"]);
+            let by_name = clients.with_search("Bob")?;
+            assert_eq!(ids_of(&by_name).await?, ["bob"]);
+            Ok(())
+        }
+
+        /// `is` and `is_not` are NULL-safe on a column holding true, false
+        /// and NULL; `ne` keeps SQL's `!=`, which a NULL row doesn't match.
+        #[tokio::test]
+        async fn null_safe_operators() -> TestResult {
+            use ciborium::Value;
+            use vantage_vista::FilterOp;
+            let (db, _, _) = clients_orders("null_safe").await;
+            let t = "vista_tri_null_safe";
+            for sql in [
+                format!("DROP TABLE IF EXISTS {t}"),
+                format!("CREATE TABLE {t} (id VARCHAR(20) PRIMARY KEY, t BOOLEAN)"),
+                format!("INSERT INTO {t} VALUES ('yes', true), ('no', false), ('none', NULL)"),
+            ] {
+                sqlx::query(sqlx::AssertSqlSafe(sql))
+                    .execute(db.pool())
+                    .await?;
+            }
+            let block = $block;
+            let spec: $spec = serde_yaml_ng::from_str(&format!(
+                "name: tri\ncolumns:\n  id: {{ type: string, flags: [id] }}\n  \
+                 t: {{ type: bool }}\n{block}:\n  table: {t}\n"
+            ))?;
+            let tri = db.vista_factory().build_from_spec(spec)?;
+            let cases = [
+                (FilterOp::Is, Value::Null, vec!["none"]),
+                (FilterOp::IsNot, Value::Null, vec!["no", "yes"]),
+                (FilterOp::IsNot, Value::Bool(true), vec!["no", "none"]),
+                (FilterOp::Is, Value::Bool(true), vec!["yes"]),
+                (FilterOp::Ne, Value::Bool(true), vec!["no"]),
+            ];
+            for (op, value, expected) in cases {
+                let narrowed = tri.clone().with_condition("t", op, value.clone())?;
+                let mut ids: Vec<String> = narrowed.list_values().await?.into_keys().collect();
+                ids.sort();
+                assert_eq!(ids, expected, "{op:?} {value:?}: {:?}", narrowed.preview().query);
+            }
             Ok(())
         }
 

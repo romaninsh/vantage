@@ -8,11 +8,14 @@
 
 use ciborium::Value as CborValue;
 use vantage_dataset::traits::{InsertableValueSet, ReadableValueSet, WritableValueSet};
+use vantage_expressions::ExprDataSource as _;
+use vantage_surrealdb::surreal_expr;
 use vantage_surrealdb::surrealdb::SurrealDB;
 use vantage_surrealdb::types::AnySurrealType;
 use vantage_surrealdb::vista::factory::SurrealVistaFactory;
 use vantage_table::table::Table;
 use vantage_types::{EmptyEntity, Record};
+use vantage_vista::VistaFactory as _;
 
 /// Both tests write `contained_test` rows. SurrealDB answers concurrent
 /// writes to one table with a transaction conflict, so they take turns.
@@ -162,6 +165,193 @@ async fn a_whole_host_patch_replaces_the_contained_record() {
     assert_eq!(row["address"], lmap(&[("city", text("Paris"))]));
 
     vista.delete(&id).await.unwrap();
+}
+
+/// A `nested_path` column reads one field of its host's object, and a patch
+/// through it changes that field and keeps the others.
+#[tokio::test]
+async fn a_nested_path_patch_keeps_the_hosts_other_fields() {
+    let _turn = TABLE_LOCK.lock().await;
+    let db = v2_db().await;
+    let vista = SurrealVistaFactory::new(db.clone())
+        .from_yaml(
+            r#"
+name: contained_test
+columns:
+  id: { type: thing, flags: [id] }
+  name: { type: json, flags: [hidden] }
+  label: { type: string, nested_path: name.en_US }
+"#,
+        )
+        .unwrap();
+    let id = "contained_test:t5".to_string();
+    db.execute(&surreal_expr!(
+        r#"UPSERT contained_test:t5 CONTENT { name: { en_US: "Bug", de_DE: "Fehler" } }"#
+    ))
+    .await
+    .unwrap();
+    let row = vista.get_value(&id).await.unwrap().unwrap();
+    assert_eq!(row["label"], text("Bug"));
+
+    vista
+        .patch_value(&id, &rec(&[("label", text("Design"))]))
+        .await
+        .unwrap();
+    let row = vista.get_value(&id).await.unwrap().unwrap();
+    assert_eq!(row["label"], text("Design"));
+    let CborValue::Map(name) = &row["name"] else {
+        panic!("name should be an object: {row:?}");
+    };
+    assert!(name.contains(&(text("de_DE"), text("Fehler"))), "{row:?}");
+    assert!(name.contains(&(text("en_US"), text("Design"))), "{row:?}");
+
+    vista.delete(&id).await.unwrap();
+}
+
+/// An `expr:` falls back from one translation to another: `surreal::json`
+/// reads a key (`@` too), and `table.column` a nested column.
+#[tokio::test]
+async fn name_local_falls_back() {
+    let _turn = TABLE_LOCK.lock().await;
+    let db = v2_db().await;
+    let vista = SurrealVistaFactory::new(db.clone())
+        .from_yaml(
+            r#"
+name: contained_test
+columns:
+  id: { type: thing, flags: [id] }
+  name: { type: json, flags: [hidden] }
+  name_en: { type: string, nested_path: name.en_US }
+  name_local: { type: string, expr: 'surreal::coalesce(surreal::json(table.column("name"), "de_DE"), table.column("name_en"))' }
+  name_sr: { type: string, expr: 'surreal::json(surreal::ident("name"), "sr@latin")' }
+"#,
+        )
+        .unwrap();
+    db.execute(&surreal_expr!(
+        r#"UPSERT contained_test:t7 CONTENT { name: { en_US: "Defect", de_DE: "Fehler", "sr@latin": "Greška" } }"#
+    ))
+    .await
+    .unwrap();
+    db.execute(&surreal_expr!(
+        r#"UPSERT contained_test:t8 CONTENT { name: { en_US: "Bug" } }"#
+    ))
+    .await
+    .unwrap();
+
+    let de = vista.get_value("contained_test:t7").await.unwrap().unwrap();
+    assert_eq!(de["name_local"], text("Fehler"), "{de:?}");
+    assert_eq!(de["name_sr"], text("Greška"), "{de:?}");
+    let en = vista.get_value("contained_test:t8").await.unwrap().unwrap();
+    assert_eq!(en["name_local"], text("Bug"), "{en:?}");
+
+    vista.delete("contained_test:t7").await.unwrap();
+    vista.delete("contained_test:t8").await.unwrap();
+}
+
+/// A `nested_path` column saved as null removes its field from the host;
+/// the other fields stay.
+#[tokio::test]
+async fn null_removes_key() {
+    let _turn = TABLE_LOCK.lock().await;
+    let db = v2_db().await;
+    let vista = SurrealVistaFactory::new(db.clone())
+        .from_yaml(
+            r#"
+name: contained_test
+columns:
+  id: { type: thing, flags: [id] }
+  name: { type: json, flags: [hidden] }
+  name_en: { type: string, nested_path: name.en_US }
+  name_de: { type: string, nested_path: name.de_DE }
+"#,
+        )
+        .unwrap();
+    let id = "contained_test:t6".to_string();
+    db.execute(&surreal_expr!(
+        r#"UPSERT contained_test:t6 CONTENT { name: { en_US: "Bug", de_DE: "Fehler" } }"#
+    ))
+    .await
+    .unwrap();
+
+    vista
+        .patch_value(&id, &rec(&[("name_de", CborValue::Null)]))
+        .await
+        .unwrap();
+    let row = vista.get_value(&id).await.unwrap().unwrap();
+    assert_eq!(row["name"], lmap(&[("en_US", text("Bug"))]), "{row:?}");
+    assert_eq!(row["name_en"], text("Bug"));
+
+    // What if the host is written whole with a key no nested column reads:
+    // the host is a free-form object, so the key is kept.
+    vista
+        .patch_value(
+            &id,
+            &rec(&[("name", lmap(&[("en_US", text("X")), ("fr_FR", text("Y"))]))]),
+        )
+        .await
+        .unwrap();
+    let row = vista.get_value(&id).await.unwrap().unwrap();
+    assert_eq!(
+        row["name"],
+        lmap(&[("en_US", text("X")), ("fr_FR", text("Y"))]),
+        "{row:?}"
+    );
+
+    vista.delete(&id).await.unwrap();
+}
+
+/// A `nested_path` column reads and writes one place: a column or host
+/// stored under another field is refused when the table loads, and so is a
+/// nested column on a `base:` vista.
+#[tokio::test]
+async fn a_nested_path_with_a_second_location_is_refused() {
+    use std::sync::Arc;
+    use vantage_surrealdb::vista::SurrealVistaSpec;
+    use vantage_vista::SpecResolver;
+
+    let db = v2_db().await;
+    let tag = |label: &str, name: &str| {
+        format!(
+            "name: contained_test\ncolumns:\n  id: {{ type: thing, flags: [id] }}\n  name: {name}\n  label: {label}\n"
+        )
+    };
+    let nested = "{ type: string, nested_path: name.en_US }";
+    let json = "{ type: json }";
+    for (yaml, refusal) in [
+        (
+            tag(
+                "{ type: string, nested_path: name.en_US, surreal: { field: name.fr_FR } }",
+                json,
+            ),
+            "a nested_path column is stored at its path",
+        ),
+        (
+            tag(nested, "{ type: json, surreal: { field: translations } }"),
+            "a nested_path host is read at its own name",
+        ),
+    ] {
+        let err = SurrealVistaFactory::new(db.clone())
+            .from_yaml(&yaml)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains(refusal), "{err}");
+    }
+
+    let base: SurrealVistaSpec = serde_yaml_ng::from_str(&tag(nested, json)).unwrap();
+    let resolver: Arc<dyn SpecResolver<SurrealVistaSpec>> =
+        Arc::new(move |name: &str| (name == "contained_test").then(|| base.clone()));
+    let derived = format!(
+        "name: tag_view\ncolumns:\n  title: {nested}\nsurreal:\n  base: contained_test\n  inherit:\n    columns: [id]\n"
+    );
+    let err = SurrealVistaFactory::new(db)
+        .with_resolver(resolver)
+        .build_from_spec(serde_yaml_ng::from_str(&derived).unwrap())
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("nested_path isn't supported on a `base:` vista"),
+        "{err}"
+    );
 }
 
 /// Without a parent row a contained relation is its bare target: the

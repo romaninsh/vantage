@@ -7,7 +7,7 @@ use vantage_core::{Result, error};
 use vantage_table::column::core::Column as TableColumn;
 use vantage_table::table::{BuildEnv, Table, TableInjector, VistaMetadataOptions};
 use vantage_types::{EmptyEntity, Entity};
-use vantage_vista::{Capability, NoExtras, Vista, VistaCapabilities, VistaFactory};
+use vantage_vista::{BuildContext, Capability, NoExtras, Vista, VistaCapabilities, VistaFactory};
 
 use crate::csv::Csv;
 use crate::type_system::AnyCsvType;
@@ -57,7 +57,15 @@ impl CsvVistaFactory {
     /// with its YAML-declared type; `csv.source` becomes the column's alias
     /// so `read_csv` knows which CSV header to read from.
     pub fn table_from_spec(&self, spec: &CsvVistaSpec) -> Result<Table<Csv, EmptyEntity>> {
-        let env = BuildEnv::root(&spec.name, None, self.injector.clone());
+        self.table_from_spec_in(spec, &BuildContext::default())
+    }
+
+    fn table_from_spec_in(
+        &self,
+        spec: &CsvVistaSpec,
+        cx: &BuildContext,
+    ) -> Result<Table<Csv, EmptyEntity>> {
+        let env = BuildEnv::root(&spec.name, None, self.injector.clone()).with_context(cx.clone());
         build_csv_table(spec, self.csv.clone(), &env)
     }
 }
@@ -86,8 +94,17 @@ fn build_csv_table(
 
     let id_column = spec.resolve_id_column("id");
     let csv = Csv::new(parent).with_id_column(&id_column);
+    if let Some(name) = spec
+        .columns
+        .iter()
+        .find_map(|(name, c)| c.nested_path.as_ref().map(|_| name))
+    {
+        return Err(error!(format!(
+            "column {name}: nested_path isn't supported by CSV"
+        )));
+    }
     let mut table = Table::<Csv, EmptyEntity>::new(stem, csv);
-    table.add_spec_columns(&spec.columns, build_column)?;
+    table.add_spec_columns(&spec.columns, env.context(), build_column)?;
     table.set_spec_id_field(&id_column)?;
     env.inject(&spec.name, &mut table, build_csv_table)?;
     Ok(table)
@@ -99,8 +116,12 @@ impl VistaFactory for CsvVistaFactory {
     type ReferenceExtras = NoExtras;
 
     fn build_from_spec(&self, spec: CsvVistaSpec) -> Result<Vista> {
+        self.build_from_spec_in(spec, &BuildContext::default())
+    }
+
+    fn build_from_spec_in(&self, spec: CsvVistaSpec, cx: &BuildContext) -> Result<Vista> {
         let vista_name = spec.name.clone();
-        let table = self.table_from_spec(&spec)?;
+        let table = self.table_from_spec_in(&spec, cx)?;
         Ok(self.from_table(table)?.with_name(vista_name))
     }
 }

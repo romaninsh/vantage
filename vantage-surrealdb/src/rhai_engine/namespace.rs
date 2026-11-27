@@ -35,6 +35,7 @@ pub(super) fn register_namespace(engine: &mut Engine) {
     ns.func("round", c::fn_round)
         .func("round", c::fn_round_to)
         .func("coalesce", c::fn_coalesce)
+        .func("json", c::fn_json)
         .func("nullif", c::fn_nullif)
         .func("cast", c::fn_cast)
         .func("date_format", c::fn_date_format);

@@ -46,6 +46,12 @@ pub enum FilterOp {
     /// not another. ASCII text — the overwhelmingly common case — behaves the
     /// same everywhere.
     Like,
+    /// `field` is `value`, NULL-safely: NULL is NULL, and a NULL cell never
+    /// equals a value. SQL's `IS NOT DISTINCT FROM`.
+    Is,
+    /// The negation of [`Is`](FilterOp::Is): a NULL cell is not any value.
+    /// SQL's `IS DISTINCT FROM`.
+    IsNot,
 }
 
 /// A [`FilterOp::Like`] operand as the text it matches against — the one
@@ -87,6 +93,8 @@ impl FilterOp {
             "in" | "in_set" => FilterOp::InSet,
             "not_in" | "not_in_set" | "nin" | "!in" => FilterOp::NotInSet,
             "like" | "~" | "contains" => FilterOp::Like,
+            "is" => FilterOp::Is,
+            "is_not" => FilterOp::IsNot,
             _ => return None,
         })
     }
@@ -128,6 +136,8 @@ impl FilterOp {
             FilterOp::InSet => "in",
             FilterOp::NotInSet => "not in",
             FilterOp::Like => "~",
+            FilterOp::Is => "is",
+            FilterOp::IsNot => "is not",
         }
     }
 
@@ -153,7 +163,18 @@ impl FilterOp {
             FilterOp::InSet => "in",
             FilterOp::NotInSet => "!in",
             FilterOp::Like => "~",
+            FilterOp::Is => "is",
+            FilterOp::IsNot => "!is",
         }
+    }
+
+    /// Whether this operator orders its operand (`gt`, `gte`, `lt`, `lte`).
+    #[cfg_attr(not(feature = "rhai"), allow(dead_code))]
+    pub(crate) fn is_ordering(&self) -> bool {
+        matches!(
+            self,
+            FilterOp::Gt | FilterOp::Gte | FilterOp::Lt | FilterOp::Lte
+        )
     }
 
     /// Whether an `Ordering` of `value` relative to the operand satisfies this
@@ -170,9 +191,13 @@ impl FilterOp {
             // Eq/Ne and the set operators don't use a total order; treat as
             // non-matching here so a misuse fails closed rather than silently
             // passing everything. Callers handle these operators directly.
-            FilterOp::Eq | FilterOp::Ne | FilterOp::InSet | FilterOp::NotInSet | FilterOp::Like => {
-                false
-            }
+            FilterOp::Eq
+            | FilterOp::Ne
+            | FilterOp::InSet
+            | FilterOp::NotInSet
+            | FilterOp::Like
+            | FilterOp::Is
+            | FilterOp::IsNot => false,
         }
     }
 }

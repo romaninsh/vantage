@@ -6,12 +6,14 @@ use indexmap::IndexMap;
 use vantage_core::{Context, Result, VantageError, error};
 use vantage_expressions::{Expressive, SelectableDataSource};
 use vantage_types::{EmptyEntity, Entity};
-use vantage_vista::{ColumnFlag, ColumnSpec, JoinKey, ReferenceKind, ReferenceSugar, VistaSpec};
+use vantage_vista::{
+    BuildContext, ColumnFlag, ColumnSpec, JoinKey, ReferenceKind, ReferenceSugar, VistaSpec,
+};
 
 use crate::{
     source::SelectSource,
     table::Table,
-    table::inject::{BuildEnv, BuildKind, BuildTrail, SpecTableBuilder},
+    table::inject::{BuildEnv, BuildKind, SpecTableBuilder},
     traits::table_source::TableSource,
 };
 
@@ -19,14 +21,16 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// Add one spec column. A `lazy:` column becomes a computed column;
     /// any other is built by `build` (unless the table already has it, as a
     /// derived table may) and registered as a title when flagged `title`.
-    /// Returns whether the column is stored.
+    /// Returns whether the column is stored. A `lazy:` script compiles on
+    /// `cx`'s script host, when it has one.
     pub fn add_spec_column<C>(
         &mut self,
         name: &str,
         spec: &ColumnSpec<C>,
+        cx: &BuildContext,
         build: impl FnOnce(&str, &ColumnSpec<C>) -> Result<T::Column<T::AnyType>>,
     ) -> Result<bool> {
-        if self.add_lazy_spec_column(spec, name)? {
+        if self.add_lazy_spec_column(spec, name, cx)? {
             return Ok(false);
         }
         if !self.columns.contains_key(name) {
@@ -42,10 +46,11 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     pub fn add_spec_columns<C>(
         &mut self,
         columns: &IndexMap<String, ColumnSpec<C>>,
+        cx: &BuildContext,
         build: impl Fn(&str, &ColumnSpec<C>) -> Result<T::Column<T::AnyType>>,
     ) -> Result<()> {
         for (name, spec) in columns {
-            self.add_spec_column(name, spec, &build)?;
+            self.add_spec_column(name, spec, cx, &build)?;
         }
         Ok(())
     }
@@ -149,15 +154,13 @@ where
     ) -> Result<Self> {
         let target_name = target.to_string();
         let relation_name = relation.to_string();
-        let child = BuildEnv {
-            resolver: env.resolver.clone(),
-            injector: env.injector.clone(),
-            trail: BuildTrail::default().enter(target)?,
-            kind: BuildKind::Reference {
+        let child = env.reference(
+            target,
+            BuildKind::Reference {
                 from: from.to_string(),
                 relation: relation.to_string(),
             },
-        };
+        )?;
         let build_target = move |source: T| -> Result<Table<T, EmptyEntity>> {
             let Some(r) = &child.resolver else {
                 let mut table = Table::new(target_name.clone(), source);
@@ -263,6 +266,7 @@ where
         select: S,
         inherit_columns: &[String],
         inherit_relations: &[String],
+        cx: &BuildContext,
         build_column: impl Fn(&str, &ColumnSpec<C>) -> Result<T::Column<T::AnyType>>,
     ) -> Result<Self>
     where
@@ -278,7 +282,7 @@ where
             &columns,
             &relations,
         );
-        table.add_spec_columns(&spec.columns, &build_column)?;
+        table.add_spec_columns(&spec.columns, cx, &build_column)?;
         if let Some(id) = &spec.id_column {
             // The base made its own id, not this one: a different id is
             // auto only when its own column says so.

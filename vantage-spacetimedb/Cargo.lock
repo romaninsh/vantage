@@ -2540,7 +2540,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-dataset"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -2557,7 +2557,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-spacetimedb"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -2604,7 +2604,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-vista"
-version = "3.0.0"
+version = "3.2.0"
 dependencies = [
  "async-stream",
  "async-trait",

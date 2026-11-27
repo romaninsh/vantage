@@ -8,6 +8,7 @@
 
 mod build;
 mod columns;
+mod nested;
 mod references;
 #[cfg(feature = "rhai")]
 mod scripting;
@@ -21,7 +22,7 @@ use vantage_table::source::SelectSource;
 use vantage_table::table::{BuildEnv, Table, TableInjector};
 use vantage_types::{EmptyEntity, Entity};
 use vantage_vista::{
-    Capability, SpecResolver, Vista, VistaCapabilities, VistaFactory, VistaMetadata,
+    BuildContext, Capability, SpecResolver, Vista, VistaCapabilities, VistaFactory, VistaMetadata,
 };
 
 use crate::surrealdb::SurrealDB;
@@ -111,7 +112,16 @@ impl SurrealVistaFactory {
         &self,
         spec: &SurrealVistaSpec,
     ) -> Result<Table<SurrealDB, EmptyEntity>> {
-        let env = BuildEnv::root(&spec.name, self.resolver.clone(), self.injector.clone());
+        self.table_from_spec_in(spec, &BuildContext::default())
+    }
+
+    fn table_from_spec_in(
+        &self,
+        spec: &SurrealVistaSpec,
+        cx: &BuildContext,
+    ) -> Result<Table<SurrealDB, EmptyEntity>> {
+        let env = BuildEnv::root(&spec.name, self.resolver.clone(), self.injector.clone())
+            .with_context(cx.clone());
         build_surreal_table(spec, self.db.clone(), &env)
     }
 }
@@ -122,12 +132,16 @@ impl VistaFactory for SurrealVistaFactory {
     type ReferenceExtras = SurrealReferenceExtras;
 
     fn build_from_spec(&self, spec: SurrealVistaSpec) -> Result<Vista> {
+        self.build_from_spec_in(spec, &BuildContext::default())
+    }
+
+    fn build_from_spec_in(&self, spec: SurrealVistaSpec, cx: &BuildContext) -> Result<Vista> {
         let read_only = spec
             .driver
             .surreal
             .as_ref()
             .is_some_and(|m| m.rhai.is_some() || m.base.is_some());
-        let table = self.table_from_spec(&spec)?;
+        let table = self.table_from_spec_in(&spec, cx)?;
         // Only here, on the table the caller asked for: a reference target
         // or a `base:` table checking its own would build this one again.
         table.check_expressions()?;

@@ -133,19 +133,213 @@ async fn a_dotted_contained_key_answers_to_the_host_rule() -> TestResult {
     assert!(err.is_forbidden(), "{err}");
     assert_eq!(stored().await, r#"{"city":"b"}"#);
 
+    // A rule on the stored name covers the column stored there, and a rule on
+    // the column covers its stored name.
+    let town = || {
+        people
+            .clone()
+            .with_column(
+                vantage_table::column::core::Column::<AnySqliteType>::new("town")
+                    .with_alias("address.city"),
+            )
+            .with_expression("town", |_| {
+                vantage_sql::sqlite_expr!("JSON_EXTRACT(address, '$.city')")
+            })
+    };
+    for (denied, key) in [("address.city", "town"), ("town", "address.city")] {
+        let mut guarded = town();
+        guarded.deny_column(denied, "policy/city-locked");
+        let err = guarded.patch_value("p1", &one(key, "c")).await.unwrap_err();
+        assert!(err.is_forbidden(), "{denied} / {key}: {err}");
+        guarded.replace_value("p1", &one(key, "c")).await?;
+        assert_eq!(stored().await, r#"{"city":"b"}"#, "{denied} / {key}");
+    }
+
+    // The host written whole replaces the nested column too, so a rule on
+    // the column or its stored name covers it: a patch is refused, and a
+    // replace keeps the stored host.
+    let whole = |city: &str| -> Record<AnySqliteType> {
+        [(
+            "address".to_string(),
+            AnySqliteType::untyped(CborValue::Map(vec![("city".into(), city.into())])),
+        )]
+        .into_iter()
+        .collect()
+    };
+    for denied in ["town", "address.city"] {
+        let mut guarded = town();
+        guarded.deny_column(denied, "policy/city-locked");
+        let err = guarded.patch_value("p1", &whole("c")).await.unwrap_err();
+        assert!(err.is_forbidden(), "{denied}: {err}");
+        guarded.replace_value("p1", &whole("c")).await?;
+        assert_eq!(stored().await, r#"{"city":"b"}"#, "{denied}");
+    }
+
     // A whole host value replaces the record, so it needs no read: a set
     // that may update but not read still takes it.
     let blind = people.clone().with_hook(Hook::BeforeSelect(select_hook(
         |_cx: SelectCx<'_, SqliteDB>| Box::pin(async { Err(vantage_core::error!("no reads")) }),
     )));
-    let whole: Record<AnySqliteType> = [(
-        "address".to_string(),
-        AnySqliteType::untyped(CborValue::Map(vec![("city".into(), "d".into())])),
-    )]
-    .into_iter()
-    .collect();
-    blind.patch_value("p1", &whole).await?;
+    blind.patch_value("p1", &whole("d")).await?;
     assert_eq!(stored().await, r#"{"city":"d"}"#);
+    Ok(())
+}
+
+/// A nested column (`town` stored at `address.city`) merges its write into
+/// the host as stored, even when the projection leaves the host out: a key
+/// no column declares stays.
+#[tokio::test]
+async fn a_nested_write_keeps_host_keys_outside_the_projection() -> TestResult {
+    use vantage_sql::sqlite::AnySqliteType;
+    use vantage_sql::sqlite_expr;
+
+    let db = SqliteDB::connect("sqlite::memory:").await.unwrap();
+    sqlx::query("CREATE TABLE person (id TEXT PRIMARY KEY, address TEXT)")
+        .execute(db.pool())
+        .await?;
+    sqlx::query(r#"INSERT INTO person VALUES ('p1', '{"city":"a","zip":"z"}')"#)
+        .execute(db.pool())
+        .await?;
+    let people = Table::<SqliteDB, EmptyEntity>::new("person", db.clone())
+        .with_id_column("id")
+        .with_column_of::<String>("address")
+        .with_column(
+            vantage_table::column::core::Column::<AnySqliteType>::new("town")
+                .with_alias("address.city"),
+        )
+        .with_expression("town", |_| sqlite_expr!("JSON_EXTRACT(address, '$.city')"))
+        .with_contained_one("address", "address", |db| {
+            Table::<SqliteDB, EmptyEntity>::new("address", db).with_column_of::<String>("city")
+        })
+        .with_active_columns(&["id", "town"])?;
+    let town: Record<AnySqliteType> = [("town".to_string(), AnySqliteType::from("b".to_string()))]
+        .into_iter()
+        .collect();
+    people.patch_value("p1", &town).await?;
+    let (stored,): (String,) = sqlx::query_as("SELECT address FROM person WHERE id = 'p1'")
+        .fetch_one(db.pool())
+        .await?;
+    assert_eq!(stored, r#"{"city":"b","zip":"z"}"#);
+
+    // What if a sibling under the host has a rule: a replace through the
+    // nested column still writes it, and the ruled key keeps its stored value.
+    let mut zip_locked = people.clone();
+    zip_locked.deny_column("address.zip", "policy/zip-locked");
+    let town: Record<AnySqliteType> = [("town".to_string(), AnySqliteType::from("c".to_string()))]
+        .into_iter()
+        .collect();
+    zip_locked.replace_value("p1", &town).await?;
+    let (stored,): (String,) = sqlx::query_as("SELECT address FROM person WHERE id = 'p1'")
+        .fetch_one(db.pool())
+        .await?;
+    assert_eq!(stored, r#"{"city":"c","zip":"z"}"#);
+
+    // A rule on the host under another name (`addr` stored at `address`)
+    // covers all of it: the replace keeps the stored host whole.
+    let mut addr_locked = people.clone().with_column(
+        vantage_table::column::core::Column::<AnySqliteType>::new("addr").with_alias("address"),
+    );
+    addr_locked.deny_column("addr", "policy/address-locked");
+    let town: Record<AnySqliteType> = [("town".to_string(), AnySqliteType::from("d".to_string()))]
+        .into_iter()
+        .collect();
+    addr_locked.replace_value("p1", &town).await?;
+    let (stored,): (String,) = sqlx::query_as("SELECT address FROM person WHERE id = 'p1'")
+        .fetch_one(db.pool())
+        .await?;
+    assert_eq!(stored, r#"{"city":"c","zip":"z"}"#);
+
+    // What if a Validate hook reads the nested column: it sees the value
+    // being written, and the stored row the old one, on a patch and on an
+    // insert. The nested column still isn't written as a column of its own.
+    type Seen = Arc<Mutex<Vec<(Option<CborValue>, Option<CborValue>)>>>;
+    let seen: Seen = Arc::default();
+    let hook = |seen: Seen| {
+        before_hook(move |cx: BeforeCx<'_, SqliteDB>| {
+            let town = |row: &Record<AnySqliteType>| row.get("town").map(|v| v.value().clone());
+            seen.lock()
+                .unwrap()
+                .push((town(cx.record), cx.stored.and_then(town)));
+            Box::pin(async { Ok(()) })
+        })
+    };
+    let hooked = people
+        .clone()
+        .with_hook(Hook::BeforeUpdate(Phase::Validate, hook(seen.clone())))
+        .with_hook(Hook::BeforeInsert(Phase::Validate, hook(seen.clone())));
+    let town = |name: &str| -> Record<AnySqliteType> {
+        [("town".to_string(), AnySqliteType::from(name.to_string()))]
+            .into_iter()
+            .collect()
+    };
+    hooked.patch_value("p1", &town("e")).await?;
+    hooked.insert_value("p2".to_string(), &town("f")).await?;
+    assert_eq!(
+        *seen.lock().unwrap(),
+        [
+            (
+                Some(CborValue::Text("e".into())),
+                Some(CborValue::Text("c".into()))
+            ),
+            (Some(CborValue::Text("f".into())), None),
+        ]
+    );
+    let (stored,): (String,) = sqlx::query_as("SELECT address FROM person WHERE id = 'p2'")
+        .fetch_one(db.pool())
+        .await?;
+    assert_eq!(stored, r#"{"city":"f"}"#);
+    Ok(())
+}
+
+/// A `nested_path` column reads and writes one place: a column or host
+/// stored under another name is refused when the table loads, and so is a
+/// nested column on a `base:` vista.
+#[tokio::test]
+async fn a_nested_path_with_a_second_location_is_refused() -> TestResult {
+    use vantage_sql::sqlite::vista::SqliteVistaSpec;
+    use vantage_vista::SpecResolver;
+
+    let db = SqliteDB::connect("sqlite::memory:").await.unwrap();
+    let tag = |label: &str, name: &str| {
+        format!(
+            "name: tag\ncolumns:\n  id: {{ type: int, flags: [id] }}\n  name: {name}\n  label: {label}\n"
+        )
+    };
+    let nested = "{ type: string, nested_path: name.en_US }";
+    let json = "{ type: json }";
+    for (yaml, refusal) in [
+        (
+            tag(
+                "{ type: string, nested_path: name.en_US, sqlite: { column: title } }",
+                json,
+            ),
+            "a nested_path column is stored at its path",
+        ),
+        (
+            tag(nested, "{ type: json, sqlite: { column: translations } }"),
+            "a nested_path host is read at its own name",
+        ),
+    ] {
+        let err = db.vista_factory().from_yaml(&yaml).unwrap_err().to_string();
+        assert!(err.contains(refusal), "{err}");
+    }
+
+    let base: SqliteVistaSpec = serde_yaml_ng::from_str(&tag(nested, json))?;
+    let resolver: Arc<dyn SpecResolver<SqliteVistaSpec>> =
+        Arc::new(move |name: &str| (name == "tag").then(|| base.clone()));
+    let derived = format!(
+        "name: tag_view\ncolumns:\n  title: {nested}\nsqlite:\n  base: tag\n  inherit:\n    columns: [id]\n"
+    );
+    let err = db
+        .vista_factory()
+        .with_resolver(resolver)
+        .build_from_spec(serde_yaml_ng::from_str(&derived)?)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("nested_path isn't supported on a `base:` vista"),
+        "{err}"
+    );
     Ok(())
 }
 
