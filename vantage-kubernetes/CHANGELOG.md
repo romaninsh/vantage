@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.0 — 2026-11-27
+
+- **Breaking:** kube 5.2 (was 0.99) and k8s-openapi 0.29 (was 0.24). `KubernetesCluster::new`
+  takes a kube 5 `kube::Client`, so callers that build their own client must upgrade kube too.
+  Clears RUSTSEC-2026-0600 (kube-client 0.99.0). No code change.
+- With no `certificate-authority` in the kubeconfig, kube 5 checks the server certificate with
+  the OS verifier (rustls-platform-verifier) instead of loading native roots.
+
 ## 0.8.2 — 2026-11-26
 
 - Requires vantage-table 6.0.0. No code change.
