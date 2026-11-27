@@ -440,14 +440,39 @@ async fn numeric_record_ids() {
     ))
     .await
     .unwrap();
+    // A zero-padded text key isn't an integer's form: it stays its own row.
+    db.execute(&surreal_expr!(
+        "CREATE tw_numeric:⟨007⟩ SET name = 'padded', score = 0"
+    ))
+    .await
+    .unwrap();
 
     let listed = ds.list_table_values(&table).await.unwrap();
     let mut ids: Vec<String> = listed.keys().map(|t| t.id().to_string()).collect();
     ids.sort();
     assert_eq!(
         ids,
-        vec!["-1".to_string(), "7".to_string(), "ship".to_string()]
+        vec![
+            "-1".to_string(),
+            "007".to_string(),
+            "7".to_string(),
+            "ship".to_string()
+        ]
     );
+
+    let padded = Thing::new("tw_numeric", "007");
+    let mut padded_patch = Record::new();
+    padded_patch.insert("name".to_string(), AnySurrealType::new("p".to_string()));
+    let patched = ds
+        .patch_table_value(&table, &padded, &padded_patch)
+        .await
+        .unwrap();
+    assert_eq!(
+        patched.get("name").and_then(|v| v.try_get::<String>()),
+        Some("p".to_string())
+    );
+    ds.delete_table_value(&table, &padded).await.unwrap();
+    assert!(ds.get_table_value(&table, &padded).await.unwrap().is_none());
 
     let minus = Thing::new("tw_numeric", "-1");
     let row = ds.get_table_value(&table, &minus).await.unwrap().unwrap();
