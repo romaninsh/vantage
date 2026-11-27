@@ -92,12 +92,18 @@ impl FromStr for Thing {
 impl SurrealType for Thing {
     type Target = SurrealTypeThingMarker;
 
+    /// An id of only digits addresses the integer key (`todo:7`), not the
+    /// string key `todo:⟨7⟩`.
     fn to_cbor(&self) -> ciborium::Value {
+        let key = match integer_key(&self.id) {
+            Some(n) => ciborium::Value::Integer(n.into()),
+            None => ciborium::Value::Text(self.id.clone()),
+        };
         ciborium::Value::Tag(
             8,
             Box::new(ciborium::Value::Array(vec![
                 ciborium::Value::Text(self.table.clone()),
-                ciborium::Value::Text(self.id.clone()),
+                key,
             ])),
         )
     }
@@ -107,10 +113,15 @@ impl SurrealType for Thing {
             ciborium::Value::Tag(8, boxed_value) => {
                 if let ciborium::Value::Array(arr) = *boxed_value
                     && arr.len() == 2
-                    && let (ciborium::Value::Text(table), ciborium::Value::Text(id)) =
-                        (&arr[0], &arr[1])
+                    && let ciborium::Value::Text(table) = &arr[0]
                 {
-                    return Some(Thing::new(table.clone(), id.clone()));
+                    return match &arr[1] {
+                        ciborium::Value::Text(id) => Some(Thing::new(table.clone(), id.clone())),
+                        ciborium::Value::Integer(n) => {
+                            Some(Thing::new(table.clone(), i128::from(*n).to_string()))
+                        }
+                        _ => None,
+                    };
                 }
                 None
             }
@@ -128,9 +139,25 @@ impl Expressive<AnySurrealType> for Thing {
             format!(
                 "{}:{}",
                 surreal_client::escape_identifier(&self.table),
-                surreal_client::escape_record_id(&self.id)
+                record_key(&self.id)
             ),
             vec![],
         )
+    }
+}
+
+/// The integer an id names: only its canonical form (`7`, `-1`), the form an
+/// integer key reads back as. `007` and `+7` are text keys, so a row listed
+/// as `todo:⟨007⟩` is written back to itself, not to `todo:7`.
+pub(crate) fn integer_key(id: &str) -> Option<i64> {
+    id.parse::<i64>().ok().filter(|n| n.to_string() == id)
+}
+
+/// `id` as a record key in SurrealQL: an integer key bare, anything else
+/// escaped (`⟨007⟩`).
+pub(crate) fn record_key(id: &str) -> String {
+    match integer_key(id) {
+        Some(n) => n.to_string(),
+        None => surreal_client::escape_identifier(id),
     }
 }

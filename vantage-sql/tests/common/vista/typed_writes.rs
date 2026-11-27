@@ -368,6 +368,29 @@ columns:
                 Ok(())
             }
 
+            /// A datetime operand on a `date` column (a "due this week" chip's
+            /// `now + 7 days`) compares as its UTC date, in a list and a count.
+            #[tokio::test]
+            async fn date_column_filtered_by_datetime_operand() -> TestResult {
+                let vista = events("dtop").await;
+                let now = chrono::Utc::now();
+                let today = now.date_naive();
+                for (id, days) in [("near", 2), ("soon", 5), ("far", 20)] {
+                    let due = today + chrono::Duration::days(days);
+                    vista
+                        .insert_value(id, &row(&[("due", text(&due.to_string()))]))
+                        .await?;
+                }
+                let week = vantage_types::temporal::instant(&(now + chrono::Duration::days(7)));
+                let mut narrowed = vista.clone();
+                narrowed.add_condition("due", FilterOp::Lte, week)?;
+                let mut listed: Vec<_> = narrowed.list_values().await?.into_keys().collect();
+                listed.sort();
+                assert_eq!(listed, ["near", "soon"]);
+                assert_eq!(narrowed.count().await?, 2);
+                Ok(())
+            }
+
             /// A condition value that doesn't fit its column is refused as a
             /// write of it is, never compared as text.
             #[tokio::test]
@@ -376,6 +399,7 @@ columns:
                 for (column, op, value) in [
                     ("at", FilterOp::Eq, text("soon")),
                     ("starts", FilterOp::Gt, text("25:99")),
+                    ("due", FilterOp::Lte, text("2026-12-04T15:00:00Z")),
                     (
                         "due",
                         FilterOp::InSet,

@@ -47,7 +47,7 @@ impl SurrealInsert {
 
     pub(crate) fn target_expr(&self) -> Expr {
         match &self.id {
-            Some(id) => crate::surreal_expr!("{}:{}", (self.table), (id)),
+            Some(id) => crate::surreal_expr!("{}:{}", (self.table), (id.record_key_expr())),
             None => self.table.expr(),
         }
     }

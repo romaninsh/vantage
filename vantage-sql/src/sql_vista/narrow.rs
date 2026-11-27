@@ -2,20 +2,23 @@
 //! clause is checked before it is pushed, so a refused one leaves the shell's
 //! query as it was.
 
+use std::any::type_name;
+
+use chrono::NaiveDate;
 use ciborium::Value as CborValue;
 use vantage_core::{Result, error};
 use vantage_dataset::traits::ReadableValueSet;
 use vantage_expressions::expr_any;
 use vantage_table::sorting::{OrderBy, SortDirection as TableSortDirection};
 use vantage_table::traits::column_like::ColumnLike;
-use vantage_types::{Entity, Record};
+use vantage_types::{Entity, Record, temporal};
 use vantage_vista::{
     Capability, Condition, FilterOp, SortDirection, condition_column_error, unsupported,
 };
 
 use super::dialect::{Shell, SqlShellDialect};
 use super::shell::cbor_record;
-use crate::declared::{is_absent, is_temporal};
+use crate::declared::{is_absent, is_temporal, without_option};
 use crate::where_subject;
 
 /// The binary comparison template of `op`, `None` for the other operators.
@@ -35,6 +38,16 @@ fn is_op(op: FilterOp) -> bool {
     matches!(op, FilterOp::Is | FilterOp::IsNot)
 }
 
+/// `value` as a carrier date when it is a tagged instant: the instant's UTC
+/// date. Text is returned as it is, for the column's coercion to judge, so
+/// datetime text is refused rather than truncated.
+fn instant_as_date(value: &CborValue) -> CborValue {
+    match (value, temporal::as_instant(value)) {
+        (CborValue::Tag(..), Some(at)) => temporal::date(&at.date_naive()),
+        _ => value.clone(),
+    }
+}
+
 impl<T, E> Shell<T, E>
 where
     T: SqlShellDialect,
@@ -46,19 +59,31 @@ where
     /// takes compares as the stored form does, and a value that doesn't fit
     /// is the write's error. No value (null, `""`) and every other column
     /// compare the value as given.
+    ///
+    /// An instant against a date column compares as its UTC date, which a
+    /// write would refuse: a filter such as "due within 7 days of now" has no
+    /// date of its own to give.
     fn operand(&self, field: &str, value: &CborValue) -> Result<T::Value> {
-        let cell = T::cell(value.clone());
-        let temporal = self
+        let Some(declared) = self
             .table
             .columns()
             .get(field)
-            .is_some_and(|column| is_temporal(column.get_type()));
-        if !temporal || is_absent(value) {
-            return Ok(cell);
+            .map(|column| column.get_type())
+            .filter(|declared| is_temporal(declared))
+        else {
+            return Ok(T::cell(value.clone()));
+        };
+        if is_absent(value) {
+            return Ok(T::cell(value.clone()));
         }
+        let value = if without_option(declared) == type_name::<NaiveDate>() {
+            instant_as_date(value)
+        } else {
+            value.clone()
+        };
         self.table
             .data_source()
-            .coerce_column_value(&self.table, field, cell)
+            .coerce_column_value(&self.table, field, T::cell(value))
     }
 
     /// `condition` with the operand [`apply_condition`](Self::apply_condition)

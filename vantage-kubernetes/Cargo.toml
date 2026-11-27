@@ -1,6 +1,6 @@
 [package]
 name = "vantage-kubernetes"
-version = "0.8.2"
+version = "0.9.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Romans Malinovskis <me@nearly.guru>"]
@@ -22,11 +22,11 @@ vantage-vista = { version = "3.0.0", path = "../vantage-vista" }
 # Native Kubernetes client: config/auth/TLS only. We issue raw list
 # requests and project the JSON ourselves, so k8s-openapi's generated
 # types are deliberately not pulled in.
-kube = { version = "0.99", default-features = false, features = ["client", "config", "rustls-tls"] }
+kube = { version = "5.2", default-features = false, features = ["client", "config", "rustls-tls"] }
 # kube-client depends on k8s-openapi, which requires a Kubernetes version
 # feature to be selected. We don't use its generated types (we work with raw
 # JSON), but the version must be pinned for the dependency graph to build.
-k8s-openapi = { version = "0.24", features = ["latest"] }
+k8s-openapi = { version = "0.29", features = ["latest"] }
 http = "1"
 # rustls 0.23 requires a process-wide CryptoProvider to be selected; we
 # install the ring provider in `KubernetesCluster::try_default`.

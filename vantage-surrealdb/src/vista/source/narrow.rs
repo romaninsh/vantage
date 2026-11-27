@@ -8,7 +8,7 @@ use vantage_dataset::traits::ReadableValueSet;
 use vantage_expressions::Expressive;
 use vantage_table::sorting::{OrderBy, SortDirection as TableSortDirection};
 use vantage_table::traits::table_source::TableSource;
-use vantage_types::{Entity, Record};
+use vantage_types::{Entity, Record, temporal};
 use vantage_vista::{
     Capability, Condition, FilterOp, NativeCondition, SortDirection, operand_text, unsupported,
 };
@@ -21,6 +21,16 @@ use crate::surreal_expr;
 use crate::surrealdb::impls::table_source::null_safe;
 use crate::thing::Thing;
 use crate::types::{AnySurrealType, SurrealType};
+
+/// `value` as a carrier date when it is a tagged instant: the instant's UTC
+/// date. Text is returned as it is, for the column's coercion to judge, so
+/// datetime text matches nothing rather than being truncated.
+fn instant_as_date(value: &CborValue) -> CborValue {
+    match (value, temporal::as_instant(value)) {
+        (CborValue::Tag(..), Some(at)) => temporal::date(&at.date_naive()),
+        _ => value.clone(),
+    }
+}
 
 impl<E> SurrealTableShell<E>
 where
@@ -68,8 +78,13 @@ where
     /// `parse_id`).
     ///
     /// An `IN` list converts each element. No value (null, `""`) is compared
-    /// as given, and so is a value that doesn't fit the column: it matches
+    /// as given, and so is a value that doesn't fit the column (in the form
+    /// a write sends it, SurrealDB refusing a tag 0 datetime): it matches
     /// nothing, as it did before typing.
+    ///
+    /// An instant against a `date` column compares as its UTC date (stored as
+    /// that date's midnight), which a write would refuse: a filter such as
+    /// "due within 7 days of now" has no date of its own to give.
     fn operand(&self, field: &str, value: &CborValue) -> CborValue {
         match value {
             CborValue::Text(id) if self.metadata.id_column.as_deref().unwrap_or("id") == field => {
@@ -80,12 +95,20 @@ where
             }
             CborValue::Null | CborValue::Tag(6, _) => value.clone(),
             CborValue::Text(text) if text.is_empty() => value.clone(),
-            _ => self
-                .table
-                .data_source()
-                .coerce_column_value(&self.table, field, AnySurrealType::from(value.clone()))
-                .map(AnySurrealType::into_value)
-                .unwrap_or_else(|_| value.clone()),
+            _ => {
+                let value = match super::declared_kind(&self.table, field) {
+                    Some("date") => instant_as_date(value),
+                    _ => value.clone(),
+                };
+                let typed = self
+                    .table
+                    .data_source()
+                    .coerce_column_value(&self.table, field, AnySurrealType::from(value.clone()))
+                    .map(AnySurrealType::into_value)
+                    .unwrap_or(value);
+                // What the column left untyped is sent as a write sends it.
+                super::datetimes_as_tag12(typed)
+            }
         }
     }
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.3.1 — 2026-11-27
+
+- A table with an integer record key (`CREATE todo:7`) reads again instead of failing with `row missing id field`: the key reads as id `"7"`, and an id written as an integer (`"7"`, `"-1"`) addresses the integer key for get, patch, delete and insert. `"007"` and `"+7"` stay text keys (`todo:⟨007⟩`), so a zero-padded row is written back to itself, not to `todo:7`. A record whose key is an array or an object fails the list with ``list_table_values: `todo:[1, 2]` has an array key, which Vantage tables can't address``. Text keys made only of digits (`todo:⟨7⟩`), including ones vantage-surrealdb 3.3.0 and earlier wrote when given an id like `"7"`, can no longer be reached by id.
+- A vista condition with a datetime against a `date` column: the operand becomes its UTC date (sent as its midnight, as dates are stored), so `where("due", "lte", now + 7 days)` lists and counts the rows due by that day, `lt now` excludes today, `gte now` includes today and `eq now` matches today's rows. Before, the list and the count failed with `SurrealDB can't decode a parameter carrying this CBOR tag (tag: 0`. A datetime operand on a column without a datetime type is sent as SurrealDB's datetime too, as a write sends it. Datetime text (`"2026-12-04T15:00:00Z"`) on a `date` column isn't truncated; it's compared as text, as before, and a write of a datetime carrying a time of day to a `date` column is still refused.
+
 ## 3.3.0 — 2026-11-27
 
 - A `nested_path` column saved as null removes its field from the host object (vantage-table 6.0.0); before, the object kept `de_DE: NULL`. Writes stay read-merge-write.
