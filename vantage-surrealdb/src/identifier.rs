@@ -26,6 +26,15 @@ impl Identifier {
         }
     }
 
+    /// The identifier as a record key: digits-only renders bare, the integer
+    /// key `todo:7`.
+    pub(crate) fn record_key_expr(&self) -> crate::Expr {
+        vantage_expressions::Expression::new(
+            surreal_client::escape_record_id(&self.identifier),
+            vec![],
+        )
+    }
+
     /// `self.other`, each segment escaped on its own.
     pub fn dot(self, other: impl Into<String>) -> crate::Expr {
         surreal_expr!("{}.{}", (self), (Identifier::new(other.into())))

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.18.5 — 2026-11-27
+
+- A vista condition with a datetime against a `date` column, on SQLite, PostgreSQL and MySQL: the operand becomes its UTC date, so `where("due", "lte", now + 7 days)` lists and counts the rows due by that day, `lt now` excludes today, `gte now` includes today and `eq now` matches today's rows. Before, the condition was refused with ``due: '…T15:33:06Z' doesn't fit type `date` ``. Datetime text (`"2026-12-04T15:00:00Z"`) on a `date` column is still refused, as is a write of a datetime carrying a time of day.
+
 ## 0.18.4 — 2026-11-27
 
 - JSON keys may hold `@` (`sr@latin`, `sr@Cyrl`), in `sql::json` / `sql::json_raw` and in a `nested_path` key: letters, digits, `_`, `-` and `@`; quotes, backslashes, `.` and `{}` stay refused. SQLite now quotes a key that isn't an identifier (`$."sr@latin"`, `$."en-US"`), as MySQL does; PostgreSQL writes it as a string literal.

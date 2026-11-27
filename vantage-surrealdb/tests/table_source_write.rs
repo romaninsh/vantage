@@ -414,3 +414,107 @@ async fn test_insert_with_thing_reference() {
         .ok();
     db.execute(&surreal_expr!("DELETE tw_ref_child")).await.ok();
 }
+
+// -- numeric record ids --
+
+#[tokio::test]
+async fn numeric_record_ids() {
+    let db = get_db().await;
+    let table = make_table(db.clone(), "tw_numeric");
+    let ds = table.data_source();
+
+    db.execute(&surreal_expr!("DELETE tw_numeric")).await.ok();
+    db.execute(&surreal_expr!(
+        "CREATE tw_numeric:7 SET name = 'seven', score = 7"
+    ))
+    .await
+    .unwrap();
+    db.execute(&surreal_expr!(
+        "CREATE tw_numeric:ship SET name = 'ship', score = 1"
+    ))
+    .await
+    .unwrap();
+
+    db.execute(&surreal_expr!(
+        "CREATE tw_numeric:-1 SET name = 'minus', score = -1"
+    ))
+    .await
+    .unwrap();
+
+    let listed = ds.list_table_values(&table).await.unwrap();
+    let mut ids: Vec<String> = listed.keys().map(|t| t.id().to_string()).collect();
+    ids.sort();
+    assert_eq!(
+        ids,
+        vec!["-1".to_string(), "7".to_string(), "ship".to_string()]
+    );
+
+    let minus = Thing::new("tw_numeric", "-1");
+    let row = ds.get_table_value(&table, &minus).await.unwrap().unwrap();
+    assert_eq!(
+        row.get("name").and_then(|v| v.try_get::<String>()),
+        Some("minus".to_string())
+    );
+    let mut minus_patch = Record::new();
+    minus_patch.insert("name".to_string(), AnySurrealType::new("m".to_string()));
+    let patched = ds
+        .patch_table_value(&table, &minus, &minus_patch)
+        .await
+        .unwrap();
+    assert_eq!(
+        patched.get("name").and_then(|v| v.try_get::<String>()),
+        Some("m".to_string())
+    );
+
+    let seven = Thing::new("tw_numeric", "7");
+    let row = ds.get_table_value(&table, &seven).await.unwrap().unwrap();
+    assert_eq!(
+        row.get("name").and_then(|v| v.try_get::<String>()),
+        Some("seven".to_string())
+    );
+
+    let mut partial = Record::new();
+    partial.insert("name".to_string(), AnySurrealType::new("x".to_string()));
+    let patched = ds
+        .patch_table_value(&table, &seven, &partial)
+        .await
+        .unwrap();
+    assert_eq!(
+        patched.get("name").and_then(|v| v.try_get::<String>()),
+        Some("x".to_string())
+    );
+    let quoted = db
+        .execute(&surreal_expr!("SELECT * FROM tw_numeric:⟨7⟩"))
+        .await
+        .unwrap();
+    assert!(
+        quoted.value().as_array().is_some_and(|a| a.is_empty()),
+        "no tw_numeric:⟨7⟩ may exist"
+    );
+
+    ds.delete_table_value(&table, &seven).await.unwrap();
+    assert!(ds.get_table_value(&table, &seven).await.unwrap().is_none());
+
+    let eight = Thing::new("tw_numeric", "8");
+    ds.insert_table_value(&table, &eight, &make_record("eight", 8))
+        .await
+        .unwrap();
+    let created = db
+        .execute(&surreal_expr!("SELECT * FROM tw_numeric:8"))
+        .await
+        .unwrap();
+    assert_eq!(created.value().as_array().map(|a| a.len()), Some(1));
+
+    db.execute(&surreal_expr!("CREATE tw_numeric:[1, 2] SET name = 'arr'"))
+        .await
+        .unwrap();
+    let err = ds.list_table_values(&table).await.unwrap_err();
+    assert!(
+        err.to_string().contains(
+            "list_table_values: `tw_numeric:[1, 2]` has an array key, which Vantage tables can't address"
+        ),
+        "got: {err}"
+    );
+
+    db.execute(&surreal_expr!("DELETE tw_numeric")).await.ok();
+}

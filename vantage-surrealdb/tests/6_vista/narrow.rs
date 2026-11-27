@@ -403,6 +403,36 @@ columns:
     Ok(())
 }
 
+/// A datetime operand on a `date` column (a "due this week" chip's
+/// `now + 7 days`) compares as its UTC date, in a list and a count.
+#[tokio::test]
+async fn date_column_filtered_by_datetime_operand() -> TestResult {
+    let (db, _) = setup().await;
+    let yaml = "name: task\ncolumns:\n  id: { type: thing, flags: [id] }\n  due: { type: date }\n";
+    let vista = db.vista_factory().from_yaml(yaml)?;
+    let now = chrono::Utc::now();
+    let today = now.date_naive();
+    for (id, days) in [("near", 2), ("soon", 5), ("far", 20)] {
+        let due = today + chrono::Duration::days(days);
+        let row = [("due".to_string(), CborValue::Text(due.to_string()))];
+        vista.insert_value(id, &row.into_iter().collect()).await?;
+    }
+    let week = vantage_types::temporal::instant(&(now + chrono::Duration::days(7)));
+    let mut narrowed = vista.clone();
+    narrowed.add_condition("due", FilterOp::Lte, week)?;
+    assert_eq!(sorted_ids(&narrowed).await?, ["task:near", "task:soon"]);
+    assert_eq!(narrowed.count().await?, 2);
+
+    // Datetime text isn't truncated: it doesn't fit the column, so it matches
+    // nothing.
+    let near_at_15 = format!("{}T15:00:00Z", today + chrono::Duration::days(2));
+    let mut text = vista.clone();
+    text.add_condition("due", FilterOp::Eq, CborValue::Text(near_at_15))?;
+    assert!(sorted_ids(&text).await?.is_empty());
+    assert_eq!(text.count().await?, 0);
+    Ok(())
+}
+
 /// `is` and `is_not` with NULL test for `NONE`; `is_not` with a value counts
 /// a row holding NULL and a row without the field.
 #[tokio::test]

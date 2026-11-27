@@ -92,12 +92,18 @@ impl FromStr for Thing {
 impl SurrealType for Thing {
     type Target = SurrealTypeThingMarker;
 
+    /// An id of only digits addresses the integer key (`todo:7`), not the
+    /// string key `todo:⟨7⟩`.
     fn to_cbor(&self) -> ciborium::Value {
+        let key = match self.id.parse::<i64>() {
+            Ok(n) if !self.id.is_empty() => ciborium::Value::Integer(n.into()),
+            _ => ciborium::Value::Text(self.id.clone()),
+        };
         ciborium::Value::Tag(
             8,
             Box::new(ciborium::Value::Array(vec![
                 ciborium::Value::Text(self.table.clone()),
-                ciborium::Value::Text(self.id.clone()),
+                key,
             ])),
         )
     }
@@ -107,10 +113,15 @@ impl SurrealType for Thing {
             ciborium::Value::Tag(8, boxed_value) => {
                 if let ciborium::Value::Array(arr) = *boxed_value
                     && arr.len() == 2
-                    && let (ciborium::Value::Text(table), ciborium::Value::Text(id)) =
-                        (&arr[0], &arr[1])
+                    && let ciborium::Value::Text(table) = &arr[0]
                 {
-                    return Some(Thing::new(table.clone(), id.clone()));
+                    return match &arr[1] {
+                        ciborium::Value::Text(id) => Some(Thing::new(table.clone(), id.clone())),
+                        ciborium::Value::Integer(n) => {
+                            Some(Thing::new(table.clone(), i128::from(*n).to_string()))
+                        }
+                        _ => None,
+                    };
                 }
                 None
             }

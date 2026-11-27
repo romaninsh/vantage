@@ -71,6 +71,31 @@ fn parse_cbor_row(
     (thing, Record::from_indexmap(fields))
 }
 
+/// The refusal for a record id whose key is an array or an object, which a
+/// Vantage table can't address by a single string id.
+fn compound_key_error(id: &ciborium::Value) -> Option<String> {
+    let ciborium::Value::Tag(8, inner) = id else {
+        return None;
+    };
+    let ciborium::Value::Array(parts) = inner.as_ref() else {
+        return None;
+    };
+    let (Some(ciborium::Value::Text(table)), Some(key)) = (parts.first(), parts.get(1)) else {
+        return None;
+    };
+    let kind = match key {
+        ciborium::Value::Array(_) => "an array key",
+        ciborium::Value::Map(_) => "an object key",
+        _ => return None,
+    };
+    let shown = AnySurrealType::from_cbor(key)
+        .map(|k| k.to_string())
+        .unwrap_or_else(|| format!("{key:?}"));
+    Some(format!(
+        "list_table_values: `{table}:{shown}` has {kind}, which Vantage tables can't address"
+    ))
+}
+
 /// Extract the first CBOR map from a result that may be a map or an array-of-maps.
 fn extract_first_map(
     result: AnySurrealType,
@@ -400,6 +425,14 @@ impl TableSource for SurrealDB {
                 ciborium::Value::Map(m) => m,
                 _ => continue,
             };
+
+            let compound_key = map
+                .iter()
+                .find(|(k, _)| matches!(k, ciborium::Value::Text(s) if *s == id_field_name))
+                .and_then(|(_, v)| compound_key_error(v));
+            if let Some(message) = compound_key {
+                return Err(error!(message));
+            }
 
             let (thing, record) = parse_cbor_row(map, &id_field_name, table.table_name());
             let id = thing.ok_or_else(|| {
