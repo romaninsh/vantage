@@ -10,7 +10,8 @@ use vantage_expressions::{Expression, Expressive, ExpressiveEnum};
 /// extracts as text.
 ///
 /// Renders as (extract as text by default):
-/// - **SQLite:**     `JSON_EXTRACT("col", '$.field')`
+/// - **SQLite:**     `JSON_EXTRACT("col", '$.field')`, a key that isn't an
+///   identifier quoted (`'$."sr@latin"'`), as on MySQL
 /// - **MySQL:**      `` JSON_UNQUOTE(JSON_EXTRACT(`col`, '$.field')) ``
 /// - **PostgreSQL:** `"col" ->> 'field'` or `"col" -> 'a' ->> 'b'`
 ///
@@ -60,10 +61,40 @@ pub fn json_extract<T: Debug + Display + Clone>(
     JsonExtract::new(source, path)
 }
 
+/// A JSON key that a script or a `nested_path` may name: letters, digits,
+/// `_`, `-` and `@` (`en_US`, `en-US`, `sr@latin`). Keys go into the SQL as
+/// literals, so a quote, backslash, `.` or `{}` never reaches the statement.
+#[cfg(any(feature = "rhai", feature = "vista"))]
+pub(crate) fn valid_json_key(key: &str) -> bool {
+    !key.is_empty()
+        && key
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '@'))
+}
+
 /// Helper: create an inline SQL literal (not a bind parameter).
 fn sql_lit<T: Debug + Display + Clone>(s: &str) -> Expression<T> {
     let escaped = s.replace('\'', "''");
     Expression::new(format!("'{escaped}'"), vec![])
+}
+
+/// A `$.a.b` JSON path, each key bare when it's an identifier and quoted
+/// otherwise (`$."en-US"`, `$."sr@latin"`), as SQLite and MySQL read it.
+#[cfg(any(feature = "sqlite", feature = "mysql"))]
+fn dollar_path(path: &[String]) -> String {
+    let key = |k: &String| {
+        let mut chars = k.chars();
+        let bare = chars
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+            && chars.all(|c| c.is_ascii_alphanumeric() || c == '_');
+        if bare {
+            k.clone()
+        } else {
+            format!("\"{}\"", k.replace('\\', "\\\\").replace('"', "\\\""))
+        }
+    };
+    format!("$.{}", path.iter().map(key).collect::<Vec<_>>().join("."))
 }
 
 #[cfg(feature = "sqlite")]
@@ -71,7 +102,7 @@ impl Expressive<crate::sqlite::types::AnySqliteType>
     for JsonExtract<crate::sqlite::types::AnySqliteType>
 {
     fn expr(&self) -> Expression<crate::sqlite::types::AnySqliteType> {
-        let json_path = format!("$.{}", self.path.join("."));
+        let json_path = dollar_path(&self.path);
         Expression::new(
             "JSON_EXTRACT({}, {})",
             vec![
@@ -91,22 +122,7 @@ impl Expressive<crate::mysql::types::AnyMysqlType>
     fn expr(&self) -> Expression<crate::mysql::types::AnyMysqlType> {
         // MySQL takes a bare key only when it's an identifier; `en-US` or
         // `1st` must be quoted (`$."en-US"`).
-        let key = |k: &String| {
-            let mut chars = k.chars();
-            let bare = chars
-                .next()
-                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
-                && chars.all(|c| c.is_ascii_alphanumeric() || c == '_');
-            if bare {
-                k.clone()
-            } else {
-                format!("\"{}\"", k.replace('\\', "\\\\").replace('"', "\\\""))
-            }
-        };
-        let json_path = format!(
-            "$.{}",
-            self.path.iter().map(key).collect::<Vec<_>>().join(".")
-        );
+        let json_path = dollar_path(&self.path);
         let template = if self.as_json {
             "JSON_EXTRACT({}, {})"
         } else {

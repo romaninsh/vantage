@@ -208,6 +208,98 @@ columns:
     vista.delete(&id).await.unwrap();
 }
 
+/// An `expr:` falls back from one translation to another: `surreal::json`
+/// reads a key (`@` too), and `table.column` a nested column.
+#[tokio::test]
+async fn name_local_falls_back() {
+    let _turn = TABLE_LOCK.lock().await;
+    let db = v2_db().await;
+    let vista = SurrealVistaFactory::new(db.clone())
+        .from_yaml(
+            r#"
+name: contained_test
+columns:
+  id: { type: thing, flags: [id] }
+  name: { type: json, flags: [hidden] }
+  name_en: { type: string, nested_path: name.en_US }
+  name_local: { type: string, expr: 'surreal::coalesce(surreal::json(table.column("name"), "de_DE"), table.column("name_en"))' }
+  name_sr: { type: string, expr: 'surreal::json(surreal::ident("name"), "sr@latin")' }
+"#,
+        )
+        .unwrap();
+    db.execute(&surreal_expr!(
+        r#"UPSERT contained_test:t7 CONTENT { name: { en_US: "Defect", de_DE: "Fehler", "sr@latin": "Greška" } }"#
+    ))
+    .await
+    .unwrap();
+    db.execute(&surreal_expr!(
+        r#"UPSERT contained_test:t8 CONTENT { name: { en_US: "Bug" } }"#
+    ))
+    .await
+    .unwrap();
+
+    let de = vista.get_value("contained_test:t7").await.unwrap().unwrap();
+    assert_eq!(de["name_local"], text("Fehler"), "{de:?}");
+    assert_eq!(de["name_sr"], text("Greška"), "{de:?}");
+    let en = vista.get_value("contained_test:t8").await.unwrap().unwrap();
+    assert_eq!(en["name_local"], text("Bug"), "{en:?}");
+
+    vista.delete("contained_test:t7").await.unwrap();
+    vista.delete("contained_test:t8").await.unwrap();
+}
+
+/// A `nested_path` column saved as null removes its field from the host;
+/// the other fields stay.
+#[tokio::test]
+async fn null_removes_key() {
+    let _turn = TABLE_LOCK.lock().await;
+    let db = v2_db().await;
+    let vista = SurrealVistaFactory::new(db.clone())
+        .from_yaml(
+            r#"
+name: contained_test
+columns:
+  id: { type: thing, flags: [id] }
+  name: { type: json, flags: [hidden] }
+  name_en: { type: string, nested_path: name.en_US }
+  name_de: { type: string, nested_path: name.de_DE }
+"#,
+        )
+        .unwrap();
+    let id = "contained_test:t6".to_string();
+    db.execute(&surreal_expr!(
+        r#"UPSERT contained_test:t6 CONTENT { name: { en_US: "Bug", de_DE: "Fehler" } }"#
+    ))
+    .await
+    .unwrap();
+
+    vista
+        .patch_value(&id, &rec(&[("name_de", CborValue::Null)]))
+        .await
+        .unwrap();
+    let row = vista.get_value(&id).await.unwrap().unwrap();
+    assert_eq!(row["name"], lmap(&[("en_US", text("Bug"))]), "{row:?}");
+    assert_eq!(row["name_en"], text("Bug"));
+
+    // What if the host is written whole with a key no nested column reads:
+    // the host is a free-form object, so the key is kept.
+    vista
+        .patch_value(
+            &id,
+            &rec(&[("name", lmap(&[("en_US", text("X")), ("fr_FR", text("Y"))]))]),
+        )
+        .await
+        .unwrap();
+    let row = vista.get_value(&id).await.unwrap().unwrap();
+    assert_eq!(
+        row["name"],
+        lmap(&[("en_US", text("X")), ("fr_FR", text("Y"))]),
+        "{row:?}"
+    );
+
+    vista.delete(&id).await.unwrap();
+}
+
 /// A `nested_path` column reads and writes one place: a column or host
 /// stored under another field is refused when the table loads, and so is a
 /// nested column on a `base:` vista.

@@ -5,6 +5,7 @@
 use ciborium::Value as CborValue;
 use vantage_core::{Result, error};
 use vantage_dataset::traits::ReadableValueSet;
+use vantage_expressions::expr_any;
 use vantage_table::sorting::{OrderBy, SortDirection as TableSortDirection};
 use vantage_table::traits::column_like::ColumnLike;
 use vantage_types::{Entity, Record};
@@ -183,15 +184,25 @@ where
         self.push_order(field, dir)
     }
 
-    /// A tie-breaker after the orders already set: `ORDER BY a, b`.
+    /// A tie-breaker after the orders already set: `ORDER BY a, b`. An
+    /// expression column orders by its expression, as a condition compares
+    /// it: the SELECT alias isn't there when the projection leaves the
+    /// column out.
     pub(super) fn push_order(&mut self, field: &str, dir: SortDirection) -> Result<()> {
         self.check_order_column(field)?;
         let direction = match dir {
             SortDirection::Ascending => TableSortDirection::Ascending,
             SortDirection::Descending => TableSortDirection::Descending,
         };
+        let expression = match self.table.try_expression_column(field)? {
+            Some(expr) => self
+                .table
+                .data_source()
+                .expression_condition(expr_any!("({})", (expr)))?,
+            None => T::order_term(field),
+        };
         self.table.add_order(OrderBy {
-            expression: T::order_term(field),
+            expression,
             direction,
         });
         Ok(())

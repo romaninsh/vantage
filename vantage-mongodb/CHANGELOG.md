@@ -1,5 +1,11 @@
 # Changelog
 
+## 5.0.2 — 2026-11-27
+
+- A `nested_path` column saved as null removes its field from the host document (vantage-table 6.0.1); before, the document kept `de_DE: null`. Writes stay read-merge-write.
+- A projection that lists a field and a path under it (`name` and a nested column at `name.en_US`) keeps only the parent, in `find` and in the pipeline's `$project`. MongoDB 4.4+ refused the pair with "Path collision at name.en_US"; the nested column reads its key from the projected parent.
+- A `nested_path` root written whole keeps fields no nested column reads (vantage-table 6.0.1): `address = {secret: …}` is no longer refused. A dotted key (`address.street`) still names a declared field.
+
 ## 5.0.1 — 2026-11-26
 
 - `build_from_spec_in(spec, cx)`: `lazy:` columns compile on the context's script host, on the root table and its reference targets. Requires vantage-table 6.0.0.

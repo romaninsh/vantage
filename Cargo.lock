@@ -6001,7 +6001,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-mongodb"
-version = "5.0.1"
+version = "5.0.2"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -6063,7 +6063,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-sql"
-version = "0.18.4"
+version = "0.18.5"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -6093,7 +6093,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-surrealdb"
-version = "3.2.1"
+version = "3.2.2"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -6126,7 +6126,7 @@ dependencies = [
 
 [[package]]
 name = "vantage-table"
-version = "6.0.0"
+version = "6.0.1"
 dependencies = [
  "async-stream",
  "async-trait",

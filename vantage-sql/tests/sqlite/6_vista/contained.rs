@@ -248,6 +248,46 @@ async fn a_nested_write_keeps_host_keys_outside_the_projection() -> TestResult {
         .fetch_one(db.pool())
         .await?;
     assert_eq!(stored, r#"{"city":"c","zip":"z"}"#);
+
+    // What if a Validate hook reads the nested column: it sees the value
+    // being written, and the stored row the old one, on a patch and on an
+    // insert. The nested column still isn't written as a column of its own.
+    type Seen = Arc<Mutex<Vec<(Option<CborValue>, Option<CborValue>)>>>;
+    let seen: Seen = Arc::default();
+    let hook = |seen: Seen| {
+        before_hook(move |cx: BeforeCx<'_, SqliteDB>| {
+            let town = |row: &Record<AnySqliteType>| row.get("town").map(|v| v.value().clone());
+            seen.lock()
+                .unwrap()
+                .push((town(cx.record), cx.stored.and_then(town)));
+            Box::pin(async { Ok(()) })
+        })
+    };
+    let hooked = people
+        .clone()
+        .with_hook(Hook::BeforeUpdate(Phase::Validate, hook(seen.clone())))
+        .with_hook(Hook::BeforeInsert(Phase::Validate, hook(seen.clone())));
+    let town = |name: &str| -> Record<AnySqliteType> {
+        [("town".to_string(), AnySqliteType::from(name.to_string()))]
+            .into_iter()
+            .collect()
+    };
+    hooked.patch_value("p1", &town("e")).await?;
+    hooked.insert_value("p2".to_string(), &town("f")).await?;
+    assert_eq!(
+        *seen.lock().unwrap(),
+        [
+            (
+                Some(CborValue::Text("e".into())),
+                Some(CborValue::Text("c".into()))
+            ),
+            (Some(CborValue::Text("f".into())), None),
+        ]
+    );
+    let (stored,): (String,) = sqlx::query_as("SELECT address FROM person WHERE id = 'p2'")
+        .fetch_one(db.pool())
+        .await?;
+    assert_eq!(stored, r#"{"city":"f"}"#);
     Ok(())
 }
 

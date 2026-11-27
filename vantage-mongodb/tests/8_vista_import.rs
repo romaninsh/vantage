@@ -336,18 +336,19 @@ async fn import_keeps_nested_paths() -> TestResult {
     );
     assert!(docs[0].get("city").is_none());
 
-    // The sub-document takes only declared paths on import too.
-    let mut sneaky = Record::new();
-    sneaky.insert(
+    // A host only nested_path columns point into is a free-form document:
+    // written whole on import, it keeps keys no column reads.
+    let mut whole = Record::new();
+    whole.insert(
         "address".to_string(),
         CborValue::Map(vec![("secret".into(), "x".into())]),
     );
-    let err = v
-        .import_values(&batch(vec![(ObjectId::new(), sneaky)]))
-        .await
-        .unwrap_err();
-    assert!(err.is_forbidden(), "{err}");
-    assert_eq!(stored(&db, "clients").await?.len(), 1);
+    assert_eq!(
+        v.import_values(&batch(vec![(ObjectId::new(), whole)]))
+            .await?,
+        1
+    );
+    assert_eq!(stored(&db, "clients").await?.len(), 2);
 
     teardown(&db).await;
     Ok(())

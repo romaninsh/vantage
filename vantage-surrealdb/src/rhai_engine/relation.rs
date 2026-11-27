@@ -78,6 +78,26 @@ pub fn register_relations(engine: &mut Engine) {
             })
         },
     );
+    // `table.column(name)`: an expression column's expression (a nested
+    // column's field read, an `expr:`), else the stored field.
+    engine.register_fn(
+        "column",
+        |t: &mut RhaiTable, name: &str| -> Rhai<RhaiExpr> {
+            if let Some(expr) =
+                t.0.try_expression_column(name)
+                    .map_err(|e| err(e.to_string()))?
+            {
+                return Ok(RhaiExpr(expr));
+            }
+            let column =
+                t.0.columns()
+                    .get(name)
+                    .ok_or_else(|| err(format!("table.column(\"{name}\"): no such column")))?;
+            Ok(RhaiExpr(
+                Identifier::new(column.alias().unwrap_or(name)).expr(),
+            ))
+        },
+    );
     engine.register_fn(
         "where",
         |r: &mut RhaiRelation, column: &str, value: Dynamic| -> Rhai<RhaiRelation> {

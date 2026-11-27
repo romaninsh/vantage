@@ -5,6 +5,7 @@
 //! ```rhai
 //! table.ref("tags").order_by("tag_name").join_json("project_tags_id")
 //! table.ref("favorites").where("user_id", session.uid).exists()
+//! sql::coalesce(table.column("name_de"), table.column("name_en"))
 //! ```
 //!
 //! Each aggregate renders through [`Table::relation_expression`], so the
@@ -17,6 +18,7 @@ use vantage_rhai::rhai::{self, Dynamic, Engine};
 use vantage_table::sorting::SortDirection;
 use vantage_table::source::SelectSeed;
 use vantage_table::table::{Aggregate, RelationQuery, Table};
+use vantage_table::traits::column_like::ColumnLike as _;
 use vantage_table::traits::table_source::TableSource;
 use vantage_types::EmptyEntity;
 use vantage_vista::FilterOp;
@@ -256,6 +258,26 @@ where
             q: RelationQuery::new(name),
         })
     });
+
+    // `table.column(name)`: an expression column's expression (a nested
+    // column's JSON read, an `expr:`), else the stored column by its stored
+    // name.
+    engine.register_fn(
+        "column",
+        |t: &mut RhaiTable<T>, name: &str| -> Rhai<Ex<T>> {
+            if let Some(expr) =
+                t.0.try_expression_column(name)
+                    .map_err(|e| rhai_err(e.to_string()))?
+            {
+                return Ok(RhaiExpr(expr));
+            }
+            let column =
+                t.0.columns()
+                    .get(name)
+                    .ok_or_else(|| rhai_err(format!("table.column(\"{name}\"): no such column")))?;
+            Ok(RhaiExpr(ident(column.alias().unwrap_or(name)).expr()))
+        },
+    );
 
     engine.register_fn("where", |r: &mut Rel<T>, column: &str, value: Dynamic| {
         r.clone().where_eq(column, value)

@@ -77,7 +77,10 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         hooks: &[(Phase, BeforeFn<T>)],
         record: &mut Record<T::Value>,
         update: Option<UpdateOf<'_, T>>,
-    ) -> Result<()> {
+    ) -> Result<()>
+    where
+        T::Value: InvariantValue,
+    {
         self.write_steps(hooks, record, update, false).await
     }
 
@@ -90,7 +93,10 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         record: &mut Record<T::Value>,
         update: Option<UpdateOf<'_, T>>,
         contained: bool,
-    ) -> Result<()> {
+    ) -> Result<()>
+    where
+        T::Value: InvariantValue,
+    {
         let (shaping, validating) =
             hooks.split_at(hooks.partition_point(|(phase, _)| *phase < Phase::Validate));
         let erased = self.as_entity_erased();
@@ -101,7 +107,64 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         self.strip_imported_columns(record);
         self.strip_expression_columns(record);
         self.coerce_record(record)?;
-        run_before(validating, record, update, erased).await
+        // The Validate hooks see each nested column of a host being written
+        // as the merged host holds it; the host alone is stored.
+        let nested = self.nested_values(record);
+        let names: Vec<String> = nested.iter().map(|(name, _)| name.clone()).collect();
+        record.extend(nested);
+        let checked = run_before(validating, record, update, erased).await;
+        for name in &names {
+            record.shift_remove(name);
+        }
+        checked
+    }
+
+    /// Each nested column under a host `record` holds, with its value read
+    /// out of that host; null where the host lacks the key.
+    fn nested_values(&self, record: &Record<T::Value>) -> Vec<(String, T::Value)>
+    where
+        T::Value: InvariantValue,
+    {
+        let source = self.data_source();
+        let read = |host: &T::Value, rest: &str| {
+            let mut value = host.clone();
+            for key in rest.split('.') {
+                let mut field = source
+                    .contained_records(&value)
+                    .ok()
+                    .flatten()
+                    .and_then(|records| records.into_iter().next())
+                    .and_then(|mut record| record.shift_remove(key))?;
+                std::mem::swap(&mut value, &mut field);
+            }
+            Some(value)
+        };
+        let null = || {
+            source
+                .contained_host(Vec::new(), false)
+                .ok()
+                .filter(|v| v.is_null())
+        };
+        let mut values = Vec::new();
+        for name in self.columns().keys() {
+            let Some(path) = self.nested_column_path(name) else {
+                continue;
+            };
+            let host = self.contained.iter().find_map(|rel| {
+                let host = rel.host_column();
+                (dotted_under(path, host)
+                    && rel.kind() == vantage_vista::ReferenceKind::ContainsOne)
+                    .then(|| record.get(host).map(|value| (host, value)))
+                    .flatten()
+            });
+            let Some((host, value)) = host else {
+                continue;
+            };
+            if let Some(value) = read(value, &path[host.len() + 1..]).or_else(null) {
+                values.push((name.clone(), value));
+            }
+        }
+        values
     }
 
     /// Whether `record` has a dotted key under a contained host
@@ -139,13 +202,17 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
     /// and nothing is read or written. A partial record is merged into the
     /// stored one (`update`'s row as it stands), so fields stored there
     /// before stay as they are; a dotted key two levels down (`a.b.c`)
-    /// merges into the stored `a.b` the same way. The contained table's
-    /// update hooks get the stored record, under the host row's id.
+    /// merges into the stored `a.b` the same way. A dotted key saved as null
+    /// removes its field, so the host holds no `"key": null`. The contained
+    /// table's update hooks get the stored record, under the host row's id.
     async fn write_contained(
         &self,
         record: &mut Record<T::Value>,
         update: Option<UpdateOf<'_, T>>,
-    ) -> Result<()> {
+    ) -> Result<()>
+    where
+        T::Value: InvariantValue,
+    {
         let stored = update.and_then(|u| u.stored);
         for rel in &self.contained {
             let host = rel.host_column();
@@ -194,7 +261,23 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
                         ));
                     }
                     for change in records.iter_mut() {
+                        // An unlisted relation is a driver's `nested_path`
+                        // sugar over a free-form map: a key no nested column
+                        // reads is kept as given, the others are checked.
+                        let free: Vec<(String, T::Value)> = if rel.is_listed() {
+                            Vec::new()
+                        } else {
+                            let keys: Vec<String> = change
+                                .keys()
+                                .filter(|key| !target.columns().contains_key(key.as_str()))
+                                .cloned()
+                                .collect();
+                            keys.into_iter()
+                                .filter_map(|key| change.shift_remove(&key).map(|v| (key, v)))
+                                .collect()
+                        };
                         Box::pin(target.check_contained(change, None)).await?;
+                        change.extend(free);
                     }
                     records
                 }
@@ -224,7 +307,11 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
                     Box::pin(target.check_contained(&mut change, child)).await?;
                     let merged = base.get_or_insert_with(Record::new);
                     for (key, value) in change {
-                        merged.insert(key, value);
+                        if value.is_null() {
+                            merged.shift_remove(&key);
+                        } else {
+                            merged.insert(key, value);
+                        }
                     }
                     base.into_iter().collect()
                 }
@@ -246,7 +333,10 @@ impl<T: TableSource, E: Entity<T::Value>> Table<T, E> {
         &self,
         record: &mut Record<T::Value>,
         update: Option<UpdateOf<'_, T>>,
-    ) -> Result<()> {
+    ) -> Result<()>
+    where
+        T::Value: InvariantValue,
+    {
         let hooks = if update.is_some() {
             self.before_update_hooks()
         } else {

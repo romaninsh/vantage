@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.2.2 — 2026-11-27
+
+- A `nested_path` column saved as null removes its field from the host object (vantage-table 6.0.1); before, the object kept `de_DE: NULL`. Writes stay read-merge-write.
+- A `nested_path` host written whole keeps fields no nested column reads (`name = {en_US, fr_FR}`), and Validate hooks see a nested column's new value (vantage-table 6.0.1).
+- Rhai: `surreal::json(expr, key)` renders `expr["key"]`, the key letters, digits, `_`, `-` and `@` (`sr@latin`); anything else is refused, since the key is written into the query. `table.column(name)` in an `expr:` script gives an expression column's expression (a `nested_path` column's field read, another `expr:`), else the stored field; an unknown name is refused with ``table.column("<name>"): no such column``. So `surreal::coalesce(surreal::json(table.column("name"), "de_DE"), table.column("name_en"))` reads `name["de_DE"] ?? name.en_US`.
+
 ## 3.2.1 — 2026-11-26
 
 - `build_from_spec_in(spec, cx)`: `lazy:` columns compile on the context's script host, on the root table, its reference targets and its `base:` table. Requires vantage-table 6.0.0.

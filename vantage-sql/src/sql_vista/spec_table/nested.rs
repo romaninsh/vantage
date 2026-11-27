@@ -12,28 +12,22 @@ use vantage_types::EmptyEntity;
 use vantage_vista::{BuildContext, ColumnFlag, ColumnSpec, ContainedYaml};
 
 use super::{SpecOf, SqlSpecDialect};
+use crate::primitives::json_extract::valid_json_key;
 
 /// Each nested column's host and key. A path is one key below its host,
-/// the key being letters, digits, `_` and `-`, as it goes into SQL as a
-/// literal.
+/// the key passing `valid_json_key`, as it goes into SQL as a literal.
 fn nested_keys<T: SqlSpecDialect>(spec: &SpecOf<T>) -> Result<Vec<(&str, &str, &str)>> {
     let mut keys = Vec::new();
     for (name, column) in &spec.columns {
         let Some(path) = &column.nested_path else {
             continue;
         };
-        let key_ok = |key: &str| {
-            !key.is_empty()
-                && key
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
-        };
         match path.split_once('.') {
-            Some((host, key)) if key_ok(key) => keys.push((name.as_str(), host, key)),
+            Some((host, key)) if valid_json_key(key) => keys.push((name.as_str(), host, key)),
             _ => {
                 return Err(error!(
                     "nested_path names a JSON column and one key in it (`name.en_US`), the key \
-                     being letters, digits, `_` and `-`",
+                     being letters, digits, `_`, `-` and `@`",
                     column = name,
                     nested_path = path
                 ));

@@ -410,16 +410,12 @@ where
     if keys.is_empty() {
         return Err(super::convert::rhai_err("sql::json needs a path"));
     }
-    // The keys are written into the SQL as literals: only plain names, so
-    // no quote, backslash or `{}` can reach the statement.
-    if let Some(bad) = keys.iter().find(|k| {
-        k.is_empty()
-            || !k
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
-    }) {
+    if let Some(bad) = keys
+        .iter()
+        .find(|k| !crate::primitives::json_extract::valid_json_key(k))
+    {
         return Err(super::convert::rhai_err(format!(
-            "sql::json path keys are letters, digits, `_` and `-`; got {bad:?}"
+            "sql::json path keys are letters, digits, `_`, `-` and `@`; got {bad:?}"
         )));
     }
     let extract = JsonExtract::new(unwrap_expr::<V>(expr)?, keys);

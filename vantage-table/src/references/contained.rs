@@ -82,7 +82,10 @@ impl<T: TableSource + 'static> ContainedRelation<T> {
     }
 
     /// This relation left out of the table's vista references: it checks
-    /// writes to its host column, but no consumer lists or traverses it.
+    /// writes to its host column, but no consumer lists or traverses it. It
+    /// is a driver's sugar over a free-form host (`nested_path` columns), so
+    /// a host value written whole keeps the keys its table doesn't declare;
+    /// a dotted key still names a declared one.
     pub fn unlisted(mut self) -> Self {
         self.listed = false;
         self

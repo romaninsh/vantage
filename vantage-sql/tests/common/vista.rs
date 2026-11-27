@@ -13,7 +13,8 @@
 //!   clients `alice` and `bob`, orders `o1`, `o2` (alice, 10 and 20) and
 //!   `o3` (bob, 30), returning the client and orders table names;
 //! - `async fn typed_events(suffix: &str) -> (DB, String)`: an empty table
-//!   for the typed-write cases (`vista/typed_writes.rs`), returning its name.
+//!   for the typed-write and nested-column cases (`vista/typed_writes.rs`,
+//!   `vista/nested_writes.rs`), returning its name.
 //!
 //! It then invokes `vista_tests!(SpecType, "block")`, `block` being the
 //! dialect's YAML driver key.
@@ -22,8 +23,14 @@
 #[path = "vista/client_orders.rs"]
 mod client_orders;
 #[macro_use]
+#[path = "vista/nested_writes.rs"]
+mod nested_writes;
+#[macro_use]
 #[path = "vista/product.rs"]
 mod product;
+#[macro_use]
+#[path = "vista/translated.rs"]
+mod translated;
 #[macro_use]
 #[path = "vista/typed_writes.rs"]
 mod typed_writes;
@@ -33,5 +40,7 @@ macro_rules! vista_tests {
         vista_product_tests!($block);
         vista_client_orders_tests!($spec, $block);
         vista_typed_writes_tests!($block);
+        vista_nested_writes_tests!($block);
+        vista_translated_tests!($spec, $block);
     };
 }
