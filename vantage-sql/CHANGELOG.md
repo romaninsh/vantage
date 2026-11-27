@@ -1,15 +1,12 @@
 # Changelog
 
-## 0.18.5 — 2026-11-27
+## 0.18.4 — 2026-11-27
 
 - JSON keys may hold `@` (`sr@latin`, `sr@Cyrl`), in `sql::json` / `sql::json_raw` and in a `nested_path` key: letters, digits, `_`, `-` and `@`; quotes, backslashes, `.` and `{}` stay refused. SQLite now quotes a key that isn't an identifier (`$."sr@latin"`, `$."en-US"`), as MySQL does; PostgreSQL writes it as a string literal.
-- A `nested_path` column saved as null removes its key from the JSON host (vantage-table 6.0.1), on SQLite, PostgreSQL and MySQL; before, the host kept `"key": null`. Writes stay read-merge-write, one UPDATE per record.
+- A `nested_path` column saved as null removes its key from the JSON host (vantage-table 6.0.0), on SQLite, PostgreSQL and MySQL; before, the host kept `"key": null`. Writes stay read-merge-write, one UPDATE per record.
 - Rhai: `table.column(name)` in an `expr:` script: an expression column's expression (a `nested_path` column's JSON read, another `expr:`), else the stored column by its stored name; an unknown name is refused with ``table.column("<name>"): no such column``. `sql::coalesce(table.column("name_de"), table.column("name_en"))` falls back from one translation to another, and a relation's `field`, `join_concat` and `order_by` over such a column inline its expression.
-- A `nested_path` host written whole keeps keys no nested column reads (`name = {en_US, fr_FR}`), and Validate hooks see a nested column's new value (vantage-table 6.0.1).
+- A `nested_path` host written whole keeps keys no nested column reads (`name = {en_US, fr_FR}`), and Validate hooks see a nested column's new value (vantage-table 6.0.0).
 - A vista sort on an expression column orders by its expression, as a condition and a quicksearch already compare it, on SQLite, PostgreSQL and MySQL. Before, ORDER BY named the SELECT alias, which isn't there when the projection leaves the column out.
-
-## 0.18.4 — 2026-11-26
-
 - `build_from_spec_in(spec, cx)` on SQLite, PostgreSQL and MySQL: `lazy:` columns compile on the context's script host, on the root table, its reference targets and its `base:` table. Requires vantage-table 6.0.0.
 - A table whose id is an expression declared an integer type (`type: int`, `expr: '"a" * 1000000 + "b"'`) binds the id as an integer on PostgreSQL and SQLite, so a row reads, patches and deletes by the id its insert returned. Before, PostgreSQL failed with `operator does not exist: integer = text` and SQLite found no row.
 - A vista condition (`=`, `>`, `in_set`, `like`, …) and a quicksearch on an `expr:` column put the column's expression in WHERE, on PostgreSQL, MySQL and SQLite: `where("mine", true)` over `table.ref("assignments").where("user_id", session.uid).exists()` filters by the `EXISTS`. Before, PostgreSQL and MySQL failed with `column "mine" does not exist`, since SQL has no SELECT alias in WHERE. ORDER BY keeps the alias.

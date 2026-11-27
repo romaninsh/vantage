@@ -1,13 +1,10 @@
 # Changelog
 
-## 6.0.1 — 2026-11-27
+## 6.0.0 — 2026-11-27
 
 - A nested column or dotted key saved as null removes its key from the contained record, so `name` keeps no `"de_DE": null`; `""` is stored as `""`. A patch of a key the host lacks adds it, and a patch on a NULL host creates the object. All nested columns of one host still merge into one host value, written by the record's single update (read-merge-write on every backend).
 - A host written whole through an unlisted contained relation (the `nested_path` sugar) keeps keys no nested column reads: `name = {en_US: "X", fr_FR: "Y"}` is stored as given, the declared keys still checked by the contained table. Before, `fr_FR` was refused with "column is not declared on this table". A listed `contains_one` / `contains_many` stays strict, and so does a dotted key.
 - The Validate hooks of an insert, replace or patch see each nested column of a host being written as the merged host holds it (null where the key is gone), so a rule comparing `record.name_en` with `stored.name_en` sees the new value. Before, the record lacked the nested column and a rule's patch row showed the stored value. The nested columns are taken off again before the write.
-
-## 6.0.0 — 2026-11-26
-
 - **Breaking:** `Table::add_spec_column`, `add_spec_columns` and `derive_from_spec` take a `&BuildContext` (vantage-vista) before the column builder, and a `lazy:` column compiles on its script host when it has one. A driver passes `env.context()` from its `BuildEnv`; a caller without a load passes `&BuildContext::default()`, which keeps the fixed host with only the date functions. `add_lazy_spec_column` is no longer public.
 - `BuildEnv` carries the load's `BuildContext`: `with_context(cx)` sets it on a root environment and `context()` reads it. `nested()` and every reference target's environment copy it, so a reference target and a `base:` table compile their `lazy:` columns on the same host as the root. `BuildEnv` is `#[non_exhaustive]`; build one with `BuildEnv::root`.
 - A rule's `table.where(column, value)` on an `expr:` column compares the column's expression, so `table.where("mine", true)` over an `exists()` column filters by the `EXISTS`. Before, the condition named the SELECT alias, which PostgreSQL and MySQL refuse in WHERE. `where(column, "in", values)` on an expression column is an error.
